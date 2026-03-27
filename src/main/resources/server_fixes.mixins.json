@@ -8,7 +8,6 @@
   "mixins": [
     "VillagerMixin",
     "PlayerMixin",
-    "PacketListenerMixin",
     "throttling.CookingPotThrottlingMixin",
     "throttling.RoasterThrottlingMixin",
     "throttling.StoveThrottlingMixin",

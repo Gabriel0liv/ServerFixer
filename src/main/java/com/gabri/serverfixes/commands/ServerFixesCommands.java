@@ -46,7 +46,7 @@ public class ServerFixesCommands {
                         })))
                 .then(Commands.literal("reset")
                     .executes(context -> {
-                        AntiSwapExploitHandler.resetSwaps();
+                        AntiSwapExploitHandler.resetAll();
                         context.getSource().sendSuccess(() -> Component.literal("Anti-Swap cache cleared.").withStyle(ChatFormatting.GREEN), true);
                         return 1;
                     })))
