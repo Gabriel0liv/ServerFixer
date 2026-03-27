@@ -1,0 +1,37 @@
+package com.gabri.serverfixes;
+
+import com.gabri.serverfixes.commands.ServerFixesCommands;
+import com.gabri.serverfixes.config.ServerFixesConfig;
+import com.gabri.serverfixes.events.AntiSwapExploitHandler;
+import com.gabri.serverfixes.events.MalumScytheFix;
+import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.RegisterCommandsEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.ModLoadingContext;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.config.ModConfig;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
+@SuppressWarnings("all")
+@Mod(ServerFixes.MODID)
+public class ServerFixes {
+    public static final String MODID = "server_fixes";
+    private static final Logger LOGGER = LogManager.getLogger();
+
+    public ServerFixes() {
+        LOGGER.info("[ServerFixes] --- STARTING INITIALIZATION ---");
+        ModLoadingContext.get().registerConfig(ModConfig.Type.SERVER, ServerFixesConfig.SPEC);
+        MinecraftForge.EVENT_BUS.register(this);
+        MinecraftForge.EVENT_BUS.register(AntiSwapExploitHandler.class);
+        MinecraftForge.EVENT_BUS.register(MalumScytheFix.class);
+        LOGGER.info("[ServerFixes] --- INITIALIZATION COMPLETE ---");
+    }
+
+    @SubscribeEvent
+    public void onRegisterCommands(RegisterCommandsEvent event) {
+        LOGGER.info("[ServerFixes] Registering commands...");
+        ServerFixesCommands.register(event.getDispatcher());
+        LOGGER.info("[ServerFixes] Commands registered successfully.");
+    }
+}

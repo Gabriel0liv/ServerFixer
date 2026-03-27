@@ -1,0 +1,20 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "com.gabri.serverfixes.mixin",
+  "refmap": "server_fixes.refmap.json",
+  "compatibilityLevel": "JAVA_17",
+  "plugin": "com.gabri.serverfixes.mixin.ServerFixesMixinPlugin",
+  "mixins": [
+    "VillagerMixin",
+    "PlayerMixin",
+    "PacketListenerMixin",
+    "throttling.CookingPotThrottlingMixin",
+    "throttling.RoasterThrottlingMixin",
+    "throttling.StoveThrottlingMixin",
+    "throttling.FermentationBarrelThrottlingMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
