@@ -23,7 +23,6 @@ public class ServerFixes {
         LOGGER.info("[ServerFixes] --- STARTING INITIALIZATION ---");
         ModLoadingContext.get().registerConfig(ModConfig.Type.SERVER, ServerFixesConfig.SPEC);
         MinecraftForge.EVENT_BUS.register(this);
-        MinecraftForge.EVENT_BUS.register(AntiSwapExploitHandler.class);
         MinecraftForge.EVENT_BUS.register(MalumScytheFix.class);
         LOGGER.info("[ServerFixes] --- INITIALIZATION COMPLETE ---");
     }
