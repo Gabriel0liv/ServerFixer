@@ -11,9 +11,23 @@ Um mod abrangente de performance, correção de exploits e utilitários administ
 *   **Malum Scythe Fix**: Corrige um bug específico no mod Malum, onde o dano mágico era aplicado incorretamente em dobro durante ataques de varredura (sweep) com a foice.
 
 ### Seletores de Entidades Avançados
-Estende os seletores vanilla @e e @a com novos argumentos poderosos:
-*   `effect=<id>` e `effectlvl=<range>`: Filtra entidades por efeitos de poção ativos e seus níveis (ex: @e[effect=minecraft:speed,effectlvl=1..]).
-*   **Integração com Curios**: Filtra jogadores com base em itens equipados em slots específicos do Curios (ex: @a[ring=minecraft:iron_ingot] ou @a[curio=mod:item]).
+O mod estende os seletores vanilla (`@e`, `@a`, `@p`, `@r`, `@s`) com argumentos poderosos para filtragem técnica.
+
+#### Filtros de Efeitos de Poção
+*   `effect=<id>`: Filtra entidades que possuem o efeito especificado (ex: `@e[effect=minecraft:speed]`).
+*   `effectlvl=<range>`: Filtra pelo nível (amplificador) do efeito anterior. Aceita intervalos (ex: `@e[effect=minecraft:strength,effectlvl=1..3]`).
+
+#### Filtros de Inventário Curios
+Se o mod **Curios API** estiver instalado, você pode filtrar jogadores por itens equipados em slots específicos:
+*   `curio=<item>` ou `curios=<item>`: Verifica se o item está em **qualquer** slot de Curios.
+*   **Slots Específicos**: Você pode usar o nome do slot diretamente:
+    *   `ring=<item>` (Anéis)
+    *   `belt=<item>` (Cinto)
+    *   `necklace=<item>` (Colar)
+    *   `charm=<item>` (Amuletos)
+    *   `head=<item>` / `body=<item>` / `back=<item>`
+    *   `hands=<item>` / `feet=<item>` / `bracelet=<item>`
+*   Exemplo de uso: `@a[ring=minecraft:iron_ingot,necklace=botania:amulet_base]`.
 
 ### Melhorias de Villagers
 *   **Brain Throttling**: Taxas de atualização (tick rates) configuráveis para a IA dos villagers, reduzindo o lag do servidor em salas de troca.
