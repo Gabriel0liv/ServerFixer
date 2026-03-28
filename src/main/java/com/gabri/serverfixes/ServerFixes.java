@@ -40,22 +40,24 @@ public class ServerFixes {
         MinecraftForge.EVENT_BUS.register(VillagerHandler.class);
         MinecraftForge.EVENT_BUS.register(AntiSwapExploitHandler.class);
         
-        // Custom target selector arguments (@e[effect=...])
-        // This one is always registered early
-        EffectSelectorOptions.register();
         
         LOGGER.info("[ServerFixes] --- INITIALIZATION COMPLETE ---");
     }
 
     private void onCommonSetup(final FMLCommonSetupEvent event) {
-        // We no longer register Curios selectors here to ensure slot types are loaded
+        event.enqueueWork(() -> {
+            LOGGER.info("[ServerFixes] Registering entity selector options (@e[effect=...], @e[ring=...])...");
+            EffectSelectorOptions.register();
+            if (ModList.get().isLoaded("curios")) {
+                CuriosSelectorOptions.registerAll();
+            }
+        });
     }
 
     @SubscribeEvent
     public void onRegisterCommands(RegisterCommandsEvent event) {
-        // Register Curios selectors right before commands are built
+        // Fallback for dynamic Curios slots that might load after common setup
         if (ModList.get().isLoaded("curios")) {
-            LOGGER.info("[ServerFixes] Curios detected! Registering dynamic selectors during command registration...");
             CuriosSelectorOptions.registerAll();
         }
 
