@@ -12,6 +12,7 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.ChatFormatting;
+import net.minecraft.world.entity.player.Player;
 
 @SuppressWarnings("all")
 public class ServerFixesCommands {
@@ -92,18 +93,24 @@ public class ServerFixesCommands {
                     .then(Commands.argument("val", BoolArgumentType.bool())
                         .executes(ctx -> {
                             boolean val = BoolArgumentType.getBool(ctx, "val");
-                            ServerFixesConfig.DEBUG_DAMAGE_RECEIVED.set(val);
-                            ctx.getSource().sendSuccess(() -> Component.literal("Damage Received Debug: ").withStyle(ChatFormatting.GRAY)
-                                .append(Component.literal(String.valueOf(val)).withStyle(val ? ChatFormatting.GREEN : ChatFormatting.RED)), true);
+                            if (ctx.getSource().getEntity() instanceof Player player) {
+                                if (val) player.addTag("sf_debug_damage_received");
+                                else player.removeTag("sf_debug_damage_received");
+                                ctx.getSource().sendSuccess(() -> Component.literal("Personal Damage Received Debug: ").withStyle(ChatFormatting.GRAY)
+                                    .append(Component.literal(String.valueOf(val)).withStyle(val ? ChatFormatting.GREEN : ChatFormatting.RED)), true);
+                            }
                             return 1;
                         })))
                 .then(Commands.literal("dealt")
                     .then(Commands.argument("val", BoolArgumentType.bool())
                         .executes(ctx -> {
                             boolean val = BoolArgumentType.getBool(ctx, "val");
-                            ServerFixesConfig.DEBUG_DAMAGE_DEALT.set(val);
-                            ctx.getSource().sendSuccess(() -> Component.literal("Damage Dealt Debug: ").withStyle(ChatFormatting.GRAY)
-                                .append(Component.literal(String.valueOf(val)).withStyle(val ? ChatFormatting.GREEN : ChatFormatting.RED)), true);
+                            if (ctx.getSource().getEntity() instanceof Player player) {
+                                if (val) player.addTag("sf_debug_damage_dealt");
+                                else player.removeTag("sf_debug_damage_dealt");
+                                ctx.getSource().sendSuccess(() -> Component.literal("Personal Damage Dealt Debug: ").withStyle(ChatFormatting.GRAY)
+                                    .append(Component.literal(String.valueOf(val)).withStyle(val ? ChatFormatting.GREEN : ChatFormatting.RED)), true);
+                            }
                             return 1;
                         })))
                 .then(Commands.literal("breakdown")
@@ -119,18 +126,24 @@ public class ServerFixesCommands {
                 .then(Commands.argument("val", BoolArgumentType.bool())
                     .executes(ctx -> {
                         boolean val = BoolArgumentType.getBool(ctx, "val");
-                        ServerFixesConfig.DEBUG_VILLAGERS.set(val);
-                        ctx.getSource().sendSuccess(() -> Component.literal("Villager Debug: ").withStyle(ChatFormatting.GRAY)
-                            .append(Component.literal(String.valueOf(val)).withStyle(val ? ChatFormatting.GREEN : ChatFormatting.RED)), true);
+                        if (ctx.getSource().getEntity() instanceof Player player) {
+                            if (val) player.addTag("sf_debug_villagers");
+                            else player.removeTag("sf_debug_villagers");
+                            ctx.getSource().sendSuccess(() -> Component.literal("Personal Villager Debug: ").withStyle(ChatFormatting.GRAY)
+                                .append(Component.literal(String.valueOf(val)).withStyle(val ? ChatFormatting.GREEN : ChatFormatting.RED)), true);
+                        }
                         return 1;
                     })))
             .then(Commands.literal("antiswap")
                 .then(Commands.argument("val", BoolArgumentType.bool())
                     .executes(ctx -> {
                         boolean val = BoolArgumentType.getBool(ctx, "val");
-                        ServerFixesConfig.DEBUG_ANTISWAP.set(val);
-                        ctx.getSource().sendSuccess(() -> Component.literal("Anti-Swap Debug: ").withStyle(ChatFormatting.GRAY)
-                            .append(Component.literal(String.valueOf(val)).withStyle(val ? ChatFormatting.GREEN : ChatFormatting.RED)), true);
+                        if (ctx.getSource().getEntity() instanceof Player player) {
+                            if (val) player.addTag("sf_debug_antiswap");
+                            else player.removeTag("sf_debug_antiswap");
+                            ctx.getSource().sendSuccess(() -> Component.literal("Personal Anti-Swap Debug: ").withStyle(ChatFormatting.GRAY)
+                                .append(Component.literal(String.valueOf(val)).withStyle(val ? ChatFormatting.GREEN : ChatFormatting.RED)), true);
+                        }
                         return 1;
                     }))));
 

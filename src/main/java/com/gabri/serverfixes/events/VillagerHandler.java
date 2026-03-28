@@ -22,7 +22,7 @@ public class VillagerHandler {
             Player player = event.getEntity();
             
             // 1. Interaction Debug
-            if (ServerFixesConfig.DEBUG_VILLAGERS.get()) {
+            if (ServerFixesConfig.DEBUG_VILLAGERS.get() && player.getTags().contains("sf_debug_villagers")) {
                 Component debugMsg = Component.literal("[Merchant Debug] Interação detectada!")
                     .withStyle(ChatFormatting.GOLD);
                 player.sendSystemMessage(debugMsg);
@@ -40,7 +40,7 @@ public class VillagerHandler {
                     if (offers != null && !offers.isEmpty()) {
                         offers.forEach(offer -> offer.resetUses());
                         
-                        if (ServerFixesConfig.DEBUG_VILLAGERS.get()) {
+                        if (ServerFixesConfig.DEBUG_VILLAGERS.get() && player.getTags().contains("sf_debug_villagers")) {
                             Component successMsg = Component.literal("[Infinite Trade] ✓ Trocas resetadas para este encontro!")
                                 .withStyle(ChatFormatting.GREEN);
                             player.sendSystemMessage(successMsg);

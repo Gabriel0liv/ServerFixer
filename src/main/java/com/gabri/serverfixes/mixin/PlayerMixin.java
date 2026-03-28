@@ -43,7 +43,7 @@ public abstract class PlayerMixin {
             // WEAPON SWAP DETECTED!
             
             // Debug message
-            if (ServerFixesConfig.DEBUG_ANTISWAP.get()) {
+            if (ServerFixesConfig.DEBUG_ANTISWAP.get() && player.getTags().contains("sf_debug_antiswap")) {
                 net.minecraft.network.chat.MutableComponent message = Component.literal("[Anti-Swap] Ataque cancelado! Troca detectada: ").withStyle(ChatFormatting.RED);
                 message.append(Component.literal(snapshot.getHoverName().getString()).withStyle(ChatFormatting.GRAY));
                 message.append(Component.literal(" -> ").withStyle(ChatFormatting.WHITE));

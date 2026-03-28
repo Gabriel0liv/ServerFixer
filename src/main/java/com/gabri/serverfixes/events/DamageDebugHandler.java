@@ -44,6 +44,8 @@ public class DamageDebugHandler {
 
     @SubscribeEvent
     public static void onLivingHurt(LivingHurtEvent event) {
+        // Optimization: only track if the world wide debug is on OR if someone might have the tag
+        // Since we can't easily check all players here, we check the global config as a master switch
         if (!ServerFixesConfig.DEBUG_DAMAGE_RECEIVED.get() && !ServerFixesConfig.DEBUG_DAMAGE_DEALT.get()) return;
         RAW_DAMAGE_TRACKER.put(event.getEntity(), event.getAmount());
     }
@@ -57,11 +59,11 @@ public class DamageDebugHandler {
         if (!RAW_DAMAGE_TRACKER.containsKey(target)) return;
         float raw = RAW_DAMAGE_TRACKER.remove(target);
 
-        if (target instanceof Player victim && ServerFixesConfig.DEBUG_DAMAGE_RECEIVED.get()) {
+        if (target instanceof Player victim && ServerFixesConfig.DEBUG_DAMAGE_RECEIVED.get() && victim.getTags().contains("sf_debug_damage_received")) {
             auditCombat(victim, "Recebido", target, source, raw, actualFinal);
         }
 
-        if (source.getEntity() instanceof Player attacker && ServerFixesConfig.DEBUG_DAMAGE_DEALT.get()) {
+        if (source.getEntity() instanceof Player attacker && ServerFixesConfig.DEBUG_DAMAGE_DEALT.get() && attacker.getTags().contains("sf_debug_damage_dealt")) {
             auditCombat(attacker, "Causado", target, source, raw, actualFinal);
         }
     }
