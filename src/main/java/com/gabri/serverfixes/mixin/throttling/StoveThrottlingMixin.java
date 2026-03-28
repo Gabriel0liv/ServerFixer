@@ -20,7 +20,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class StoveThrottlingMixin {
 
     @Inject(method = "tick", at = @At("HEAD"), cancellable = true)
-    private void throttleTick(Level world, BlockPos pos, BlockState state, Object blockEntity, CallbackInfo ci) {
+    private static void throttleTick(Level world, BlockPos pos, BlockState state, Object blockEntity, CallbackInfo ci) {
         if (!ServerFixesConfig.THROTTLE_FARM_AND_CHARM.get()) return;
         int rate = ServerFixesConfig.COOKING_POT_TICK_RATE.get();
         if (rate > 1 && world.getGameTime() % rate != 0) {

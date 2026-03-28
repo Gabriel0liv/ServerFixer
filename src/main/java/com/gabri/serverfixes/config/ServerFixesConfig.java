@@ -8,12 +8,18 @@ public class ServerFixesConfig {
 
     public static final ForgeConfigSpec.BooleanValue ENABLE_ANTI_SWAP;
     public static final ForgeConfigSpec.BooleanValue ENABLE_INFINITE_TRADES;
-    public static final ForgeConfigSpec.BooleanValue ENABLE_DEBUG_LOGGING;
     public static final ForgeConfigSpec.LongValue ANTI_SWAP_COOLDOWN;
     public static final ForgeConfigSpec.IntValue VILLAGER_TICK_RATE;
     public static final ForgeConfigSpec.ConfigValue<String> INFINITE_TRADE_TAG;
 
-    // Farm & Charm Throttling
+    // Debug Settings
+    public static final ForgeConfigSpec.BooleanValue DEBUG_DAMAGE_RECEIVED;
+    public static final ForgeConfigSpec.BooleanValue DEBUG_DAMAGE_DEALT;
+    public static final ForgeConfigSpec.BooleanValue DEBUG_DAMAGE_BREAKDOWN;
+    public static final ForgeConfigSpec.BooleanValue DEBUG_VILLAGERS;
+    public static final ForgeConfigSpec.BooleanValue DEBUG_ANTISWAP;
+
+    // Optimization Throttling
     public static final ForgeConfigSpec.BooleanValue THROTTLE_FARM_AND_CHARM;
     public static final ForgeConfigSpec.IntValue COOKING_POT_TICK_RATE;
     public static final ForgeConfigSpec.IntValue ROASTER_TICK_RATE;
@@ -33,10 +39,6 @@ public class ServerFixesConfig {
                 .comment("Enable or disable the infinite trading system for tagged players.")
                 .define("enableInfiniteTrades", true);
 
-        ENABLE_DEBUG_LOGGING = BUILDER
-                .comment("Enable or disable real-time debug messages for combat snapshots.")
-                .define("enableDebugLogging", false);
-
         ANTI_SWAP_COOLDOWN = BUILDER
                 .comment("The duration (in milliseconds) of the damage block after swapping a main hand item.")
                 .defineInRange("antiSwapCooldown", 800L, 0L, 5000L);
@@ -48,6 +50,32 @@ public class ServerFixesConfig {
         INFINITE_TRADE_TAG = BUILDER
                 .comment("The player tag that allows for infinite trading with villagers.")
                 .define("infiniteTradeTag", "infinite_trades");
+
+        BUILDER.pop();
+
+        BUILDER.push("Debug Settings");
+
+        DEBUG_DAMAGE_RECEIVED = BUILDER
+                .comment("Enable or disable real-time debug messages for combat damage received by players.")
+                .define("debugDamageReceived", false);
+
+        DEBUG_DAMAGE_DEALT = BUILDER
+                .comment("Enable or disable real-time debug messages for combat damage dealt by players.")
+                .define("debugDamageDealt", false);
+
+        DEBUG_DAMAGE_BREAKDOWN = BUILDER
+                .comment("Enable or disable a detailed breakdown of damage reductions (Armor, Effects, Protection).")
+                .define("debugDamageBreakdown", false);
+
+        DEBUG_VILLAGERS = BUILDER
+                .comment("Enable or disable debug logs for villager interactions and trades.")
+                .define("debugVillagers", false);
+
+        DEBUG_ANTISWAP = BUILDER
+                .comment("Enable or disable debug logs for Anti-Swap attack cancellations.")
+                .define("debugAntiSwap", false);
+
+        BUILDER.pop();
 
         BUILDER.push("Optimization Throttling");
 

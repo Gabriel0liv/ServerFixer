@@ -22,7 +22,7 @@ public abstract class PlayerMixin {
     /**
      * Snapshot the held item at the start of every tick.
      */
-    @Inject(method = "tick", at = @At("HEAD"))
+    @Inject(method = "tick", at = @At("HEAD"), remap = true)
     private void onTickHead(CallbackInfo ci) {
         AntiSwapExploitHandler.onTickStart((Player) (Object) this);
     }
@@ -43,12 +43,13 @@ public abstract class PlayerMixin {
             // WEAPON SWAP DETECTED!
             
             // Debug message
-            if (ServerFixesConfig.ENABLE_DEBUG_LOGGING.get()) {
-                player.sendSystemMessage(Component.literal("[Anti-Swap] Ataque cancelado! Troca detectada: ")
-                    .withStyle(ChatFormatting.RED)
-                    .append(Component.literal(snapshot.getHoverName().getString()).withStyle(ChatFormatting.GRAY))
-                    .append(Component.literal(" -> ").withStyle(ChatFormatting.WHITE))
-                    .append(Component.literal(current.getHoverName().getString()).withStyle(ChatFormatting.GOLD)));
+            if (ServerFixesConfig.DEBUG_ANTISWAP.get()) {
+                net.minecraft.network.chat.MutableComponent message = Component.literal("[Anti-Swap] Ataque cancelado! Troca detectada: ").withStyle(ChatFormatting.RED);
+                message.append(Component.literal(snapshot.getHoverName().getString()).withStyle(ChatFormatting.GRAY));
+                message.append(Component.literal(" -> ").withStyle(ChatFormatting.WHITE));
+                message.append(Component.literal(current.getHoverName().getString()).withStyle(ChatFormatting.GOLD));
+                
+                player.sendSystemMessage(message);
             }
 
             // Cancel the attack to prevent Frankenstein attributes or speed exploits.
