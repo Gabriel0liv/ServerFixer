@@ -39,7 +39,7 @@ public class UpdateServerConfigPacket {
                     case "enableAntiSwap": ServerFixesConfig.ENABLE_ANTI_SWAP.set(Boolean.parseBoolean(value)); break;
                     case "antiSwapCooldown": ServerFixesConfig.ANTI_SWAP_COOLDOWN.set(Long.parseLong(value)); break;
                     case "enableInfiniteTrades": ServerFixesConfig.ENABLE_INFINITE_TRADES.set(Boolean.parseBoolean(value)); break;
-                    case "infiniteTradeTag": ServerFixesConfig.INFINITE_TRADE_TAG.set(value != null ? value : ""); break;
+                    case "infiniteTradeTag": ServerFixesConfig.INFINITE_TRADE_TAG.set(normalizeStringValue(value)); break;
                     case "villagerTickRate": ServerFixesConfig.VILLAGER_TICK_RATE.set(Integer.parseInt(value)); break;
                     case "fixBackstabbingExploit": ServerFixesConfig.FIX_BACKSTABBING_EXPLOIT.set(Boolean.parseBoolean(value)); break;
                     case "enableStringEffectIds": ServerFixesConfig.ENABLE_STRING_EFFECT_IDS.set(Boolean.parseBoolean(value)); break;
@@ -62,5 +62,14 @@ public class UpdateServerConfigPacket {
             } catch (Exception ignored) {}
         });
         context.setPacketHandled(true);
+    }
+
+    private static String normalizeStringValue(String rawValue) {
+        if (rawValue == null) return "";
+        String trimmed = rawValue.trim();
+        if (trimmed.length() >= 2 && trimmed.startsWith("\"") && trimmed.endsWith("\"")) {
+            trimmed = trimmed.substring(1, trimmed.length() - 1);
+        }
+        return trimmed;
     }
 }

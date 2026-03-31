@@ -34,8 +34,8 @@ public class VillagerHandler {
 
             // 2. Infinite Trade Logic (Forge Event approach)
             if (ServerFixesConfig.ENABLE_INFINITE_TRADES.get()) {
-                String tag = ServerFixesConfig.INFINITE_TRADE_TAG.get();
-                if (player.getTags().contains(tag)) {
+                String tag = normalizeTag(ServerFixesConfig.INFINITE_TRADE_TAG.get());
+                if (!tag.isEmpty() && player.getTags().contains(tag)) {
                     MerchantOffers offers = merchant.getOffers();
                     if (offers != null && !offers.isEmpty()) {
                         offers.forEach(offer -> offer.resetUses());
@@ -49,5 +49,14 @@ public class VillagerHandler {
                 }
             }
         }
+    }
+
+    private static String normalizeTag(String value) {
+        if (value == null) return "";
+        String trimmed = value.trim();
+        if (trimmed.length() >= 2 && trimmed.startsWith("\"") && trimmed.endsWith("\"")) {
+            trimmed = trimmed.substring(1, trimmed.length() - 1);
+        }
+        return trimmed;
     }
 }

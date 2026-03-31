@@ -1,25 +1,34 @@
 package com.gabri.serverfixes.client.gui;
 
+import com.gabri.serverfixes.client.gui.ItemEditorScreen.AttributeRow;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.CycleButton;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
-import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraftforge.fml.ModList;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 @SuppressWarnings("null")
 public class AddAttributeScreen extends Screen {
-    private final ItemEditorScreen parent;
     private static final int PANEL_WIDTH = 320;
     private static final int PANEL_HEIGHT = 230;
     private static final int FIELD_SPACING = 34;
     private static final int BUTTON_WIDTH = 110;
+    private static final int ACTION_BUTTON_WIDTH = 26;
+    private static final int RESET_BUTTON_WIDTH = 24;
+    private static final int RESET_BUTTON_GAP = 6;
+
+    private final ItemEditorScreen parent;
+    private final AttributeRow editingEntry;
 
     private EditBox nameBox;
     private EditBox amountBox;
@@ -29,10 +38,25 @@ public class AddAttributeScreen extends Screen {
 
     private String pendingName = "";
     private String pendingAmount = "";
+    private String originalName = "";
+    private String originalAmount = "";
+    private int originalOperation = 0;
+    private String originalSlot = "mainhand";
 
     public AddAttributeScreen(ItemEditorScreen parent) {
-        super(Component.literal("Adicionar Atributo"));
+        this(parent, null);
+    }
+
+    public AddAttributeScreen(ItemEditorScreen parent, AttributeRow editingEntry) {
+        super(Component.literal(editingEntry == null ? "Adicionar Atributo" : "Editar Atributo"));
         this.parent = parent;
+        this.editingEntry = editingEntry;
+        if (editingEntry != null) {
+            this.pendingName = editingEntry.getAttributeName();
+            this.pendingAmount = formatAmount(editingEntry.getAmount());
+            this.operation = editingEntry.getOperation();
+            this.slot = editingEntry.getSlot();
+        }
     }
 
     @Override
@@ -42,85 +66,77 @@ public class AddAttributeScreen extends Screen {
         int midX = this.width / 2;
         int panelX = midX - PANEL_WIDTH / 2;
         int panelY = 30;
-        int fieldX = panelX + 20;
-        int fieldWidth = PANEL_WIDTH - 40;
+        int formRight = panelX + PANEL_WIDTH - 20;
+        int fieldX = panelX + 24;
+        int baseFieldWidth = Math.max(140, formRight - fieldX - RESET_BUTTON_WIDTH - 12);
+        int nameFieldWidth = Math.max(160, baseFieldWidth - ACTION_BUTTON_WIDTH - RESET_BUTTON_GAP);
         int currentY = panelY + 40;
 
-        // Name Row
-        this.nameBox = new EditBox(this.font, fieldX, currentY, fieldWidth - 40, 20, Component.literal("ID do Atributo"));
+        this.originalName = this.pendingName;
+        this.originalAmount = this.pendingAmount;
+        this.originalOperation = this.operation;
+        this.originalSlot = this.slot;
+
+        this.nameBox = new EditBox(this.font, fieldX, currentY, nameFieldWidth, 20, Component.literal("ID do Atributo"));
         this.nameBox.setMaxLength(64);
         this.nameBox.setValue(this.pendingName);
+        this.nameBox.setResponder(value -> this.pendingName = value);
         this.addRenderableWidget(this.nameBox);
 
-        // Selector Button
         this.addRenderableWidget(Button.builder(Component.literal("§6..."), (btn) -> {
             this.pendingName = this.nameBox.getValue();
-            this.pendingAmount = this.amountBox.getValue();
+            this.pendingAmount = this.amountBox != null ? this.amountBox.getValue() : this.pendingAmount;
             this.minecraft.setScreen(new AttributeSelectionScreen(this, (attrId) -> {
                 this.pendingName = attrId;
                 this.init();
             }));
-        }).bounds(fieldX + fieldWidth - 30, currentY, 30, 20).build());
+        }).bounds(fieldX + nameFieldWidth + RESET_BUTTON_GAP, currentY, ACTION_BUTTON_WIDTH, 20).build());
+        this.addResetButton(fieldX + nameFieldWidth + RESET_BUTTON_GAP + ACTION_BUTTON_WIDTH + RESET_BUTTON_GAP, currentY, () -> {
+            this.pendingName = this.originalName;
+            this.init();
+        });
 
-        // Amount Row
         currentY += FIELD_SPACING;
-
-        this.amountBox = new EditBox(this.font, fieldX, currentY, fieldWidth, 20, Component.literal("Valor"));
+        this.amountBox = new EditBox(this.font, fieldX, currentY, baseFieldWidth, 20, Component.literal("Valor"));
         this.amountBox.setMaxLength(32);
         this.amountBox.setValue(this.pendingAmount);
+        this.amountBox.setResponder(value -> this.pendingAmount = value);
         this.addRenderableWidget(this.amountBox);
+        this.addResetButton(fieldX + baseFieldWidth + RESET_BUTTON_GAP, currentY, () -> {
+            this.pendingAmount = this.originalAmount;
+            this.init();
+        });
 
-        // Operation Row
         currentY += FIELD_SPACING;
-
-        this.addRenderableWidget(CycleButton.builder(this::getOperationName)
+        this.addRenderableWidget(CycleButton.builder(this::getOperationLabel)
             .withValues(0, 1, 2)
+            .withInitialValue(this.originalOperation)
             .displayOnlyValue()
-            .create(fieldX, currentY, fieldWidth, 20, Component.literal("Operação"), (btn, val) -> this.operation = val));
-
-        // Slot CycleButton
-        java.util.List<String> slotList = new java.util.ArrayList<>();
-        
-        // Filter slots based on category
-        boolean isCurioCategory = parent.getCategory() == ItemEditorScreen.Category.ATTR_CURIOS;
-        
-        if (!isCurioCategory) {
-            // Vanilla slots
-            for (net.minecraft.world.entity.EquipmentSlot eSlot : net.minecraft.world.entity.EquipmentSlot.values()) {
-                slotList.add(eSlot.getName());
-            }
-            slotList.add("any");
-        } else {
-            // Curio slots
-            if (net.minecraftforge.fml.ModList.get().isLoaded("curios")) {
-                try {
-                    slotList.addAll(top.theillusivec4.curios.api.CuriosApi.getSlots(false).keySet());
-                } catch (Exception ignored) {}
-            }
-            if (slotList.isEmpty()) slotList.add("any"); // Fallback
-        }
-        
-        String[] slots = slotList.toArray(new String[0]);
-        String initialSlot = isCurioCategory && slotList.size() > 0 ? slotList.get(0) : "mainhand";
-        
-        // Ensure this.slot is initialized to the first valid slot for the category
-        if (this.slot.equals("mainhand") && isCurioCategory && slotList.size() > 0) {
-            this.slot = initialSlot;
-        } else if (!isCurioCategory && !isVanillaSlot(this.slot)) {
-            this.slot = "mainhand";
-        }
+            .create(fieldX, currentY, baseFieldWidth, 20, Component.literal("Operação"), (btn, val) -> this.operation = val));
+        this.addResetButton(fieldX + baseFieldWidth + RESET_BUTTON_GAP, currentY, () -> {
+            this.operation = this.originalOperation;
+            this.init();
+        });
 
         currentY += FIELD_SPACING;
+        List<String> slotOptions = collectSlotOptions();
+        if (!slotOptions.contains(this.slot)) {
+            slotOptions.add(this.slot);
+        }
+        String[] slots = slotOptions.toArray(new String[0]);
 
-        this.addRenderableWidget(CycleButton.builder((String s) -> Component.literal("Slot: " + s))
+        this.addRenderableWidget(CycleButton.builder((String option) -> Component.literal(option.toUpperCase(Locale.ROOT)))
             .withValues(slots)
             .displayOnlyValue()
             .withInitialValue(this.slot)
-            .create(fieldX, currentY, fieldWidth, 20, Component.literal("Slot"), (btn, val) -> this.slot = val));
+            .create(fieldX, currentY, baseFieldWidth, 20, Component.literal("Slot"), (btn, val) -> this.slot = val));
+        this.addResetButton(fieldX + baseFieldWidth + RESET_BUTTON_GAP, currentY, () -> {
+            this.slot = this.originalSlot;
+            this.init();
+        });
 
-        // Add / Save
         int buttonY = panelY + PANEL_HEIGHT - 40;
-        this.addRenderableWidget(Button.builder(Component.literal("Adicionar"), (btn) -> {
+        this.addRenderableWidget(Button.builder(Component.literal(this.editingEntry == null ? "Salvar" : "Salvar alterações"), (btn) -> {
             try {
                 double amount = Double.parseDouble(this.amountBox.getValue());
                 String attrName = this.nameBox.getValue();
@@ -134,34 +150,55 @@ public class AddAttributeScreen extends Screen {
                 newAttr.putString("Slot", this.slot);
                 newAttr.putUUID("UUID", UUID.randomUUID());
 
-                boolean isCurio = parent.getCategory() == ItemEditorScreen.Category.ATTR_CURIOS;
-                String tagName = isCurio ? "CurioAttributeModifiers" : "AttributeModifiers";
-
-                ListTag list = this.parent.currentTag.getList(tagName, Tag.TAG_COMPOUND);
-                list.add(newAttr);
-                this.parent.currentTag.put(tagName, list);
-
+                boolean targetIsCurio = !ItemEditorScreen.isVanillaSlot(this.slot);
+                this.parent.upsertAttribute(this.editingEntry, newAttr, targetIsCurio);
                 this.minecraft.setScreen(this.parent);
-            } catch (Exception e) {
+            } catch (Exception ignored) {
                 // Ignore invalid numbers
             }
         }).bounds(midX - BUTTON_WIDTH - 10, buttonY, BUTTON_WIDTH, 20).build());
-        this.addRenderableWidget(Button.builder(Component.literal("Cancelar"), (btn) -> {
-            this.minecraft.setScreen(this.parent);
-        }).bounds(midX + 10, buttonY, BUTTON_WIDTH, 20).build());
+        this.addRenderableWidget(Button.builder(Component.literal("Cancelar"), (btn) -> this.minecraft.setScreen(this.parent))
+            .bounds(midX + 10, buttonY, BUTTON_WIDTH, 20).build());
     }
 
-    private boolean isVanillaSlot(String slot) {
-        for (net.minecraft.world.entity.EquipmentSlot eSlot : net.minecraft.world.entity.EquipmentSlot.values()) {
-            if (eSlot.getName().equalsIgnoreCase(slot)) return true;
+    private void addResetButton(int x, int y, Runnable action) {
+        this.addRenderableWidget(Button.builder(Component.literal("↺"), (btn) -> action.run())
+            .bounds(x, y, RESET_BUTTON_WIDTH, 20)
+            .build());
+    }
+
+    private Component getOperationLabel(int op) {
+        if (op == 0) return Component.literal("Op 0 • Adição (+X)");
+        if (op == 1) return Component.literal("Op 1 • Multiplicar Base (+X%)");
+        return Component.literal("Op 2 • Multiplicar Total (xX)");
+    }
+
+    private static List<String> collectSlotOptions() {
+        List<String> slotOptions = new ArrayList<>();
+        for (EquipmentSlot equip : EquipmentSlot.values()) {
+            String name = equip.getName();
+            if (!slotOptions.contains(name)) {
+                slotOptions.add(name);
+            }
         }
-        return false;
+        if (!slotOptions.contains("any")) {
+            slotOptions.add("any");
+        }
+        if (ModList.get().isLoaded("curios")) {
+            try {
+                top.theillusivec4.curios.api.CuriosApi.getSlots(false).keySet().forEach(slotId -> {
+                    if (!slotOptions.contains(slotId)) {
+                        slotOptions.add(slotId);
+                    }
+                });
+            } catch (Exception ignored) {
+            }
+        }
+        return slotOptions;
     }
 
-    private Component getOperationName(int op) {
-        if (op == 0) return Component.literal("Op 0: Adição (+X)");
-        if (op == 1) return Component.literal("Op 1: Multiplicar Base (+X%)");
-        return Component.literal("Op 2: Multiplicar Total (xX)");
+    private static String formatAmount(double value) {
+        return String.format(Locale.US, "%.2f", value);
     }
 
     @Override
@@ -177,10 +214,10 @@ public class AddAttributeScreen extends Screen {
         int labelX = panelX + 18;
         int baseY = panelY + 40;
         int spacing = FIELD_SPACING;
-        graphics.drawString(this.font, "Nome do atributo", labelX, baseY - 12, 0xFFCCD9F1);
-        graphics.drawString(this.font, "Valor do atributo", labelX, baseY + spacing - 12, 0xFFCCD9F1);
-        graphics.drawString(this.font, "Tipo de operação", labelX, baseY + spacing * 2 - 12, 0xFFCCD9F1);
-        graphics.drawString(this.font, "Slot alvo", labelX, baseY + spacing * 3 - 12, 0xFFCCD9F1);
+        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Nome do atributo", labelX, baseY - 12, 0xFFCCD9F1);
+        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Valor do atributo", labelX, baseY + spacing - 12, 0xFFCCD9F1);
+        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Tipo de operação", labelX, baseY + spacing * 2 - 12, 0xFFCCD9F1);
+        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Slot alvo", labelX, baseY + spacing * 3 - 12, 0xFFCCD9F1);
 
         super.render(graphics, mouseX, mouseY, partialTicks);
     }

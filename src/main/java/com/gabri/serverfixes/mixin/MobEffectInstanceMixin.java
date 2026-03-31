@@ -2,6 +2,7 @@ package com.gabri.serverfixes.mixin;
 
 import com.gabri.serverfixes.config.ServerFixesConfig;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
@@ -24,30 +25,40 @@ public abstract class MobEffectInstanceMixin {
         if (!ServerFixesConfig.ENABLE_STRING_EFFECT_IDS.get()) {
             return;
         }
-        // Tag types: 8 is String, 99 is any Numeric (Byte, Short, Int, Long)
-        if (nbt.contains("Id", 8)) {
-            String idStr = nbt.getString("Id");
-            ResourceLocation rl = ResourceLocation.tryParse(idStr);
-            if (rl != null) {
-                MobEffect effect = ForgeRegistries.MOB_EFFECTS.getValue(rl);
-                if (effect != null) {
-                    int amplifier = nbt.getByte("Amplifier");
-                    int duration = nbt.getInt("Duration");
-                    boolean ambient = nbt.getBoolean("Ambient");
-                    boolean visible = nbt.contains("ShowParticles") ? nbt.getBoolean("ShowParticles") : true;
-                    boolean showIcon = nbt.contains("ShowIcon") ? nbt.getBoolean("ShowIcon") : visible;
-                    
-                    MobEffectInstance inst = new MobEffectInstance(effect, duration, amplifier, ambient, visible, showIcon);
-                    
-                    // Handle vanilla "HiddenEffect" (used for overlapping effects)
-                    if (nbt.contains("HiddenEffect", 10)) {
-                        MobEffectInstance hidden = MobEffectInstance.load(nbt.getCompound("HiddenEffect"));
-                        ((MobEffectInstanceAccessor) inst).setHiddenEffect(hidden);
-                    }
-                    
-                    cir.setReturnValue(inst);
-                }
-            }
+        String idStr = null;
+        if (nbt.contains("IdString", Tag.TAG_STRING)) {
+            idStr = nbt.getString("IdString");
+        } else if (nbt.contains("Id", Tag.TAG_STRING)) {
+            idStr = nbt.getString("Id");
         }
+        if (idStr == null || idStr.isBlank()) {
+            return;
+        }
+
+        ResourceLocation rl = ResourceLocation.tryParse(idStr);
+        if (rl == null) {
+            return;
+        }
+
+        MobEffect effect = ForgeRegistries.MOB_EFFECTS.getValue(rl);
+        if (effect == null) {
+            return;
+        }
+
+        int amplifier = nbt.getByte("Amplifier");
+        int duration = nbt.getInt("Duration");
+        boolean ambient = nbt.getBoolean("Ambient");
+        boolean visible = nbt.contains("ShowParticles") ? nbt.getBoolean("ShowParticles") : true;
+        boolean showIcon = nbt.contains("ShowIcon") ? nbt.getBoolean("ShowIcon") : visible;
+
+        MobEffectInstance inst = new MobEffectInstance(effect, duration, amplifier, ambient, visible, showIcon);
+
+        // Handle vanilla "HiddenEffect" (used for overlapping effects)
+        if (nbt.contains("HiddenEffect", 10)) {
+            MobEffectInstance hidden = MobEffectInstance.load(nbt.getCompound("HiddenEffect"));
+            ((MobEffectInstanceAccessor) inst).setHiddenEffect(hidden);
+        }
+
+        cir.setReturnValue(inst);
     }
 }

@@ -20,4 +20,8 @@ public final class GuiLayoutUtils {
         int padding = 8;
         graphics.fill(centerX - textWidth / 2 - padding, y + 12, centerX + textWidth / 2 + padding, y + 16, underlineColor);
     }
+
+    public static void drawFieldLabel(@NotNull GuiGraphics graphics, @NotNull Font font, @NotNull String label, int x, int y, int color) {
+        graphics.drawString(font, label, x, y, color);
+    }
 }

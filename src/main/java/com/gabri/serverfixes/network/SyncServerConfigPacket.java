@@ -39,7 +39,7 @@ public class SyncServerConfigPacket {
         tag.putBoolean("enableAntiSwap", ServerFixesConfig.ENABLE_ANTI_SWAP.get());
         tag.putLong("antiSwapCooldown", ServerFixesConfig.ANTI_SWAP_COOLDOWN.get());
         tag.putBoolean("enableInfiniteTrades", ServerFixesConfig.ENABLE_INFINITE_TRADES.get());
-        String infiniteTradeTag = ServerFixesConfig.INFINITE_TRADE_TAG.get();
+        String infiniteTradeTag = normalizeStringValue(ServerFixesConfig.INFINITE_TRADE_TAG.get());
         tag.putString("infiniteTradeTag", infiniteTradeTag != null ? infiniteTradeTag : "");
         tag.putInt("villagerTickRate", ServerFixesConfig.VILLAGER_TICK_RATE.get());
         tag.putBoolean("fixBackstabbingExploit", ServerFixesConfig.FIX_BACKSTABBING_EXPLOIT.get());
@@ -60,5 +60,14 @@ public class SyncServerConfigPacket {
         tag.putBoolean("debugVillagers", ServerFixesConfig.DEBUG_VILLAGERS.get());
         tag.putBoolean("debugAntiSwap", ServerFixesConfig.DEBUG_ANTISWAP.get());
         return tag;
+    }
+
+    private static String normalizeStringValue(String rawValue) {
+        if (rawValue == null) return "";
+        String trimmed = rawValue.trim();
+        if (trimmed.length() >= 2 && trimmed.startsWith("\"") && trimmed.endsWith("\"")) {
+            trimmed = trimmed.substring(1, trimmed.length() - 1);
+        }
+        return trimmed;
     }
 }

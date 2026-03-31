@@ -74,9 +74,10 @@ public class ItemCommands {
         }
 
         // Create new effect entry using STRING ID (namespace:id)
-        // Leveraging the MobEffectInstanceMixin to read this correctly.
+        // Keep vanilla-compatible numeric Id while preserving exact namespace id for modded loading.
         CompoundTag effectEntry = new CompoundTag();
-        effectEntry.putString("Id", effectId.toString());
+        effectEntry.putInt("Id", MobEffect.getId(effect));
+        effectEntry.putString("IdString", effectId.toString());
         effectEntry.putInt("Duration", durationTicks);
         effectEntry.putInt("Amplifier", amplifier);
         effectEntry.putBoolean("Ambient", false);
