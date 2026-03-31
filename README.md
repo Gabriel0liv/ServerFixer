@@ -9,6 +9,7 @@ Um mod abrangente de performance, correção de exploits e utilitários administ
 ### Proteção contra Exploits
 *   **Anti-Swap (Ninja Cancellation)**: Previne o "exploit de troca de arma", onde jogadores trocam de item no mesmo tick para aplicar atributos de alto dano ou velocidades de ataque em armas não pretendidas.
 *   **Malum Scythe Fix**: Corrige um bug específico no mod Malum, onde o dano mágico era aplicado incorretamente em dobro durante ataques de varredura (sweep) com a foice.
+*   **Backstabbing Fix**: Restringe o encantamento "Backstabbing" (Punhalada nas Costas) do Farmer's Delight apenas para ataques corpo a corpo físicos (`PLAYER_ATTACK`). Isso evita que o bônus seja aplicado indevidamente a magias e outros tipos de dano modificado.
 
 ### Seletores de Entidades Avançados
 O mod estende os seletores vanilla (`@e`, `@a`, `@p`, `@r`, `@s`) com argumentos poderosos para filtragem técnica.
@@ -42,6 +43,24 @@ Taxas de atualização customizáveis para blocos conhecidos por causar lag em m
 *   **Farm and Charm**: Throttling para Cooking Pots (Panelas) e Roasters (Torradores).
 *   **Vinery**: Throttling para Fermentation Barrels (Barris de Fermentação).
 
+### Persistência de Atributos e Efeitos (Anti-Wipe)
+Desenvolvido para combater o problema de "limpeza de NBT" em servidores híbridos (como Arclight/Mohist), o mod implementa um sistema de backup invisível:
+*   **Atributos Persistentes**: Sincroniza automaticamente tags de atributos (`AttributeModifiers` e `CurioAttributeModifiers`) com um backup interno. Se o servidor limpar os atributos ao carregar o item, o mod os restaura instantaneamente.
+*   **Efeitos em Itens**: Mantém a persistência de efeitos customizados de "Ao Atingir" e "Ao Ser Atingido".
+
+### Editor de Atributos de Item
+Um editor avançado via chat para modificar atributos de qualquer item na mão:
+*   Suporte a slots Vanilla e slots do **Curios API**.
+*   Interface clicável para facilitar a edição.
+*   Comandos: `/serverfixes item attribute <list/set/remove>`.
+
+### Modificadores de Efeito em Itens (On-Hit/On-Hurt)
+Permite adicionar efeitos de poção que são aplicados dinamicamente durante o combate:
+*   `on_hit`: Aplica efeito ao atacar uma entidade.
+*   `on_hurt`: Aplica efeito ao receber dano de uma entidade.
+*   Configuração de chance (0-100%), duração, nível e alvo (Self ou Target).
+*   Comandos: `/serverfixes effect_modifier <add/list/remove>`.
+
 ---
 
 ## Catálogo de Comandos
@@ -52,9 +71,35 @@ O comando principal é `/serverfixes` (requer permissão nível 2).
 | Comando | Descrição |
 | :--- | :--- |
 | `/serverfixes status` | Veja o estado operacional de todos os módulos do mod. |
-| `/serverfixes status <module>` | Get status detalhado para: `villagers`, `antiswap`, `infinitetrade`, `debug`, ou `throttle`. |
+| `/serverfixes status <module>` | Get status detalhado para: `villagers`, `antiswap`, `infinitetrade`, `debug`, `throttle` ou `fix`. |
 
-### Proteção contra Exploits (Anti-Swap)
+### Itens e Atributos (Novo!)
+| Comando | Descrição |
+| :--- | :--- |
+| `/serverfixes item attribute list` | Lista todos os atributos do item na mão principal com links para edição. |
+| `/serverfixes item attribute set <attr> <valor> <op> <slot>` | Define um atributo em um slot específico (suporta Curios). Operações: `ADDITION`, `MULTIPLY_BASE`, `MULTIPLY_TOTAL`. |
+| `/serverfixes item attribute remove <attr>` | Remove um atributo específico do item. |
+
+### Modificadores de Efeito (Novo!)
+| Comando | Descrição |
+| :--- | :--- |
+| `/serverfixes effect_modifier add <on_hit/on_hurt> <efeito> <segundos> <nível> <chance> [self/target]` | Adiciona um efeito de combate ao item. |
+| `/serverfixes effect_modifier list` | Lista os efeitos de combate aplicados ao item na mão. |
+| `/serverfixes effect_modifier remove <on_hit/on_hurt> <index>` | Remove um modificador de efeito pelo seu índice. |
+
+### Correções e Ajustes (Fixes)
+| Comando | Descrição |
+| :--- | :--- |
+| `/serverfixes fix backstabbing <true/false>` | Ativa/desativa a correção do exploit de Backstabbing com magias. |
+| `/serverfixes fix turtle enabled <true/false>` | Ativa/desativa o reequilíbrio da Poção de Mestre Tartaruga. |
+
+### Suporte a IDs de Texto em NBT (Novo!)
+Agora você pode usar os IDs de texto dos efeitos (ex: `"minecraft:speed"`) em qualquer lugar que use NBT de efeitos (`MobEffectInstance`), como poções customizadas.
+- Exemplo de comando: `/give @p potion{CustomPotionEffects:[{Id:"minecraft:regeneration",Duration:200,Amplifier:1}]}`
+- Funciona com efeitos de **qualquer mod** sem precisar saber o ID numérico.
+- `/serverfixes fix effectids <true/false>`: Ativa/desativa este suporte a IDs de texto.
+- `/serverfixes item add_effect <id_do_efeito> <segundos> [nível]`: Adiciona um efeito ao item na sua mão (útil para criar poções customizadas sem editores externos).
+
 | Comando | Descrição |
 | :--- | :--- |
 | `/serverfixes antiswap <true/false>` | Toggle global para o cancelamento de ataque por troca de arma. |

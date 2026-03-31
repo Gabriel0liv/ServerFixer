@@ -27,8 +27,8 @@ public class CuriosSelectorOptions {
         if (!ModList.get().isLoaded("curios")) return;
 
         // 1. Primary selectors
-        safeRegister("curios", "Any Curios slot", null);
-        safeRegister("curio", "Any Curios slot", null);
+        safeRegister("curios", "Filtra por qualquer item em qualquer slot do Curios", null);
+        safeRegister("curio", "Filtra por qualquer item em qualquer slot do Curios", null);
 
         // 2. Standard Curios slots (Pre-registering these ensures they always show up)
         String[] standardSlots = {
@@ -36,14 +36,15 @@ public class CuriosSelectorOptions {
             "hands", "feet", "bracelet", "curio_slot"
         };
         for (String slot : standardSlots) {
-            safeRegister(slot, "Curios slot: " + slot, slot);
+            safeRegister(slot, "Filtra itens no slot de " + slot + " do Curios", slot);
         }
 
         // 3. Dynamic Discovery (Attempt to find any other custom slots from modpack)
         try {
+            // Using the API version provided by the user
             Set<String> dynamicSlots = CuriosApi.getSlots(false).keySet();
             for (String slotId : dynamicSlots) {
-                safeRegister(slotId, "Curios slot: " + slotId, slotId);
+                safeRegister(slotId, "Filtra itens no slot de " + slotId + " do Curios", slotId);
             }
         } catch (Exception ignored) {}
     }
@@ -54,6 +55,7 @@ public class CuriosSelectorOptions {
         try {
             EntitySelectorOptions.register(id, (parser) -> {
                 boolean invert = parser.shouldInvertValue();
+                if (invert) parser.getReader().skip(); // Fix for negation character '!'
                 
                 // Add item suggestions
                 parser.setSuggestions((builder, consumer) -> {
@@ -77,7 +79,7 @@ public class CuriosSelectorOptions {
             
             REGISTERED_OPTIONS.add(id);
         } catch (IllegalArgumentException e) {
-            // Already registered, mark as such to avoid future attempts
+            // Already registered
             REGISTERED_OPTIONS.add(id);
         }
     }

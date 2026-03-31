@@ -11,6 +11,17 @@ public class ServerFixesConfig {
     public static final ForgeConfigSpec.LongValue ANTI_SWAP_COOLDOWN;
     public static final ForgeConfigSpec.IntValue VILLAGER_TICK_RATE;
     public static final ForgeConfigSpec.ConfigValue<String> INFINITE_TRADE_TAG;
+    public static final ForgeConfigSpec.BooleanValue FIX_BACKSTABBING_EXPLOIT;
+    public static final ForgeConfigSpec.BooleanValue ENABLE_STRING_EFFECT_IDS;
+    public static final ForgeConfigSpec.BooleanValue ENABLE_PERSISTENT_ATTRIBUTES;
+    public static final ForgeConfigSpec.BooleanValue ENABLE_ITEM_EFFECT_MODIFIERS;
+
+    // Potion Nerfs
+    public static final ForgeConfigSpec.BooleanValue NERF_TURTLE_MASTER;
+    public static final ForgeConfigSpec.IntValue TURTLE_MASTER_RESISTANCE;
+    public static final ForgeConfigSpec.IntValue TURTLE_MASTER_SLOWNESS;
+    public static final ForgeConfigSpec.IntValue STRONG_TURTLE_MASTER_RESISTANCE;
+    public static final ForgeConfigSpec.IntValue STRONG_TURTLE_MASTER_SLOWNESS;
 
     // Debug Settings
     public static final ForgeConfigSpec.BooleanValue DEBUG_DAMAGE_RECEIVED;
@@ -50,6 +61,44 @@ public class ServerFixesConfig {
         INFINITE_TRADE_TAG = BUILDER
                 .comment("The player tag that allows for infinite trading with villagers.")
                 .define("infiniteTradeTag", "infinite_trades");
+
+        FIX_BACKSTABBING_EXPLOIT = BUILDER
+                .comment("If true, the Backstabbing enchantment from Farmer's Delight will only apply to physical player melee attacks (PLAYER_ATTACK).")
+                .define("fixBackstabbingExploit", true);
+
+        ENABLE_STRING_EFFECT_IDS = BUILDER
+                .comment("If true, MobEffectInstance will support loading from NBT using string IDs (namespace:id).")
+                .define("enableStringEffectIds", true);
+
+        ENABLE_PERSISTENT_ATTRIBUTES = BUILDER
+                .comment("If true, item attributes modified via ServerFixes commands will be backed up in a hidden tag and restored if lost (Fixes Archlight/Mohist attribute reset).")
+                .define("enablePersistentAttributes", true);
+
+        ENABLE_ITEM_EFFECT_MODIFIERS = BUILDER
+                .comment("If true, allows administrators to add custom On-Hit and On-Hurt effects to items via NBT.")
+                .define("enableItemEffectModifiers", true);
+
+        BUILDER.push("potion_nerfs");
+        NERF_TURTLE_MASTER = BUILDER
+                .comment("If true, the Turtle Master potion effects will be limited to the levels below.")
+                .define("nerfTurtleMaster", true);
+        
+        TURTLE_MASTER_RESISTANCE = BUILDER
+                .comment("Maximum Resistance level for Standard and Long Turtle Master potions.")
+                .defineInRange("turtleMasterResistance", 3, 1, 10);
+        
+        TURTLE_MASTER_SLOWNESS = BUILDER
+                .comment("Maximum Slowness level for Standard and Long Turtle Master potions.")
+                .defineInRange("turtleMasterSlowness", 4, 1, 10);
+        
+        STRONG_TURTLE_MASTER_RESISTANCE = BUILDER
+                .comment("Maximum Resistance level for Strong Turtle Master potions.")
+                .defineInRange("strongTurtleMasterResistance", 3, 1, 10);
+        
+        STRONG_TURTLE_MASTER_SLOWNESS = BUILDER
+                .comment("Maximum Slowness level for Strong Turtle Master potions.")
+                .defineInRange("strongTurtleMasterSlowness", 4, 1, 10);
+        BUILDER.pop();
 
         BUILDER.pop();
 

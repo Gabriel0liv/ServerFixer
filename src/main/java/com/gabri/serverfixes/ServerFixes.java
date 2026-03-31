@@ -6,7 +6,6 @@ import com.gabri.serverfixes.commands.ServerFixesCommands;
 import com.gabri.serverfixes.config.ServerFixesConfig;
 import com.gabri.serverfixes.events.AntiSwapExploitHandler;
 import com.gabri.serverfixes.events.DamageDebugHandler;
-import com.gabri.serverfixes.events.MalumScytheFix;
 import com.gabri.serverfixes.events.VillagerHandler;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;
@@ -21,6 +20,9 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import net.minecraftforge.fml.IExtensionPoint;
+import net.minecraftforge.network.NetworkConstants;
+
 @SuppressWarnings("all")
 @Mod(ServerFixes.MODID)
 public class ServerFixes {
@@ -33,6 +35,10 @@ public class ServerFixes {
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
         modEventBus.addListener(this::onCommonSetup);
 
+        // Make the mod optional on the client
+        ModLoadingContext.get().registerExtensionPoint(IExtensionPoint.DisplayTest.class,
+            () -> new IExtensionPoint.DisplayTest(() -> NetworkConstants.IGNORESERVERONLY, (a, b) -> true));
+
         ModLoadingContext.get().registerConfig(ModConfig.Type.SERVER, ServerFixesConfig.SPEC);
         
         MinecraftForge.EVENT_BUS.register(this);
@@ -40,12 +46,14 @@ public class ServerFixes {
         MinecraftForge.EVENT_BUS.register(VillagerHandler.class);
         MinecraftForge.EVENT_BUS.register(AntiSwapExploitHandler.class);
         
-        
         LOGGER.info("[ServerFixes] --- INITIALIZATION COMPLETE ---");
     }
 
     private void onCommonSetup(final FMLCommonSetupEvent event) {
         event.enqueueWork(() -> {
+            LOGGER.info("[ServerFixes] Registering packets...");
+            com.gabri.serverfixes.network.NetworkHandler.registerPackets();
+
             LOGGER.info("[ServerFixes] Registering entity selector options (@e[effect=...], @e[ring=...])...");
             EffectSelectorOptions.register();
             if (ModList.get().isLoaded("curios")) {

@@ -7,12 +7,16 @@ import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.ChatFormatting;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.commands.SharedSuggestionProvider;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraftforge.registries.ForgeRegistries;
 
 import java.util.Collection;
 
@@ -29,7 +33,13 @@ public class EffectCommands {
                     .executes(EffectCommands::showInfo)))
             .then(Commands.literal("modify")
                 .then(Commands.argument("targets", net.minecraft.commands.arguments.EntityArgument.entities())
-                    .then(Commands.argument("effect", net.minecraft.commands.arguments.ResourceArgument.resource(buildContext, net.minecraft.core.registries.Registries.MOB_EFFECT))
+                    .then(Commands.argument("effect", net.minecraft.commands.arguments.ResourceArgument.resource(buildContext, Registries.MOB_EFFECT))
+                        .suggests((ctx, builder) -> {
+                            String remaining = builder.getRemaining().toLowerCase();
+                            return SharedSuggestionProvider.suggest(ForgeRegistries.MOB_EFFECTS.getKeys().stream()
+                                .map(ResourceLocation::toString)
+                                .filter(id -> id.contains(remaining)), builder);
+                        })
                         .then(Commands.argument("seconds", IntegerArgumentType.integer(-1000000, 1000000))
                             .then(Commands.argument("amplifier_delta", IntegerArgumentType.integer(-255, 255))
                                 .executes(EffectCommands::modifyEffect))

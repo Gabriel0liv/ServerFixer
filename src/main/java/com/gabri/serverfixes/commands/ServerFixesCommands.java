@@ -191,8 +191,91 @@ public class ServerFixesCommands {
                         }))))
         );
 
+        // /serverfixes fix backstabbing | turtle ...
+        root.then(Commands.literal("fix")
+            .then(Commands.literal("backstabbing")
+                .then(Commands.argument("val", BoolArgumentType.bool())
+                    .executes(ctx -> {
+                        boolean val = BoolArgumentType.getBool(ctx, "val");
+                        ServerFixesConfig.FIX_BACKSTABBING_EXPLOIT.set(val);
+                        ctx.getSource().sendSuccess(() -> Component.literal("Fix Backstabbing Exploit: ").withStyle(ChatFormatting.GRAY)
+                            .append(Component.literal(String.valueOf(val)).withStyle(val ? ChatFormatting.GREEN : ChatFormatting.RED)), true);
+                        return 1;
+                    })))
+            .then(Commands.literal("turtle")
+                .then(Commands.literal("enabled")
+                    .then(Commands.argument("val", BoolArgumentType.bool())
+                        .executes(ctx -> {
+                            boolean val = BoolArgumentType.getBool(ctx, "val");
+                            ServerFixesConfig.NERF_TURTLE_MASTER.set(val);
+                            ctx.getSource().sendSuccess(() -> Component.literal("Nerf Turtle Master: ").withStyle(ChatFormatting.GRAY)
+                                .append(Component.literal(String.valueOf(val)).withStyle(val ? ChatFormatting.GREEN : ChatFormatting.RED)), true);
+                            return 1;
+                        })))
+                .then(Commands.literal("res")
+                    .then(Commands.argument("level", IntegerArgumentType.integer(1, 10))
+                        .executes(ctx -> {
+                            int val = IntegerArgumentType.getInteger(ctx, "level");
+                            ServerFixesConfig.TURTLE_MASTER_RESISTANCE.set(val);
+                            ctx.getSource().sendSuccess(() -> Component.literal("Turtle Master Resistance (Standard): ").withStyle(ChatFormatting.GRAY)
+                                .append(Component.literal(String.valueOf(val)).withStyle(ChatFormatting.GOLD)), true);
+                            return 1;
+                        })))
+                .then(Commands.literal("slow")
+                    .then(Commands.argument("level", IntegerArgumentType.integer(1, 10))
+                        .executes(ctx -> {
+                            int val = IntegerArgumentType.getInteger(ctx, "level");
+                            ServerFixesConfig.TURTLE_MASTER_SLOWNESS.set(val);
+                            ctx.getSource().sendSuccess(() -> Component.literal("Turtle Master Slowness (Standard): ").withStyle(ChatFormatting.GRAY)
+                                .append(Component.literal(String.valueOf(val)).withStyle(ChatFormatting.GOLD)), true);
+                            return 1;
+                        })))
+                .then(Commands.literal("strong_res")
+                    .then(Commands.argument("level", IntegerArgumentType.integer(1, 10))
+                        .executes(ctx -> {
+                            int val = IntegerArgumentType.getInteger(ctx, "level");
+                            ServerFixesConfig.STRONG_TURTLE_MASTER_RESISTANCE.set(val);
+                            ctx.getSource().sendSuccess(() -> Component.literal("Turtle Master Resistance (Strong): ").withStyle(ChatFormatting.GRAY)
+                                .append(Component.literal(String.valueOf(val)).withStyle(ChatFormatting.GOLD)), true);
+                            return 1;
+                        })))
+                .then(Commands.literal("strong_slow")
+                    .then(Commands.argument("level", IntegerArgumentType.integer(1, 10))
+                        .executes(ctx -> {
+                            int val = IntegerArgumentType.getInteger(ctx, "level");
+                            ServerFixesConfig.STRONG_TURTLE_MASTER_SLOWNESS.set(val);
+                            ctx.getSource().sendSuccess(() -> Component.literal("Turtle Master Slowness (Strong): ").withStyle(ChatFormatting.GRAY)
+                                .append(Component.literal(String.valueOf(val)).withStyle(ChatFormatting.GOLD)), true);
+                            return 1;
+                        }))))
+            .then(Commands.literal("effectids")
+                .then(Commands.argument("val", BoolArgumentType.bool())
+                    .executes(ctx -> {
+                        boolean val = BoolArgumentType.getBool(ctx, "val");
+                        ServerFixesConfig.ENABLE_STRING_EFFECT_IDS.set(val);
+                        ctx.getSource().sendSuccess(() -> Component.literal("String Effect IDs support: ").withStyle(ChatFormatting.GRAY)
+                            .append(Component.literal(String.valueOf(val)).withStyle(val ? ChatFormatting.GREEN : ChatFormatting.RED)), true);
+                        return 1;
+                    })))
+        );
+
+        // /serverfixes item ...
+        ItemCommands.register(root, buildContext);
+        ItemAttributeCommands.register(root, buildContext);
+        ItemEffectModifierCommands.register(root, buildContext);
+
         // /serverfixes effect ...
         EffectCommands.register(root, buildContext);
+
+        // /serverfixes admin_ui
+        root.then(Commands.literal("admin_ui")
+            .executes(ctx -> {
+                if (ctx.getSource().getEntity() instanceof Player player) {
+                    com.gabri.serverfixes.network.NetworkHandler.sendToPlayer((net.minecraft.server.level.ServerPlayer) player, 
+                        new com.gabri.serverfixes.network.SyncServerConfigPacket(com.gabri.serverfixes.network.SyncServerConfigPacket.getCurrentConfig()));
+                }
+                return 1;
+            }));
 
         dispatcher.register(root);
     }
@@ -239,6 +322,30 @@ public class ServerFixesCommands {
             source.sendSuccess(() -> Component.literal("Roaster: ").withStyle(ChatFormatting.GRAY).append(Component.literal(String.valueOf(ServerFixesConfig.ROASTER_TICK_RATE.get())).withStyle(ChatFormatting.GOLD)), false);
             source.sendSuccess(() -> Component.literal("Vinery Enabled: ").withStyle(ChatFormatting.GRAY).append(Component.literal(String.valueOf(ServerFixesConfig.THROTTLE_VINERY.get())).withStyle(ServerFixesConfig.THROTTLE_VINERY.get() ? ChatFormatting.GREEN : ChatFormatting.RED)), false);
             source.sendSuccess(() -> Component.literal("Ferment. Barrel: ").withStyle(ChatFormatting.GRAY).append(Component.literal(String.valueOf(ServerFixesConfig.FERMENTATION_BARREL_TICK_RATE.get())).withStyle(ChatFormatting.GOLD)), false);
+        }
+        if (module == null || module.equals("fix")) {
+            source.sendSuccess(() -> Component.literal("--- Fixes Status ---").withStyle(ChatFormatting.AQUA), false);
+            boolean backstab = ServerFixesConfig.FIX_BACKSTABBING_EXPLOIT.get();
+            source.sendSuccess(() -> Component.literal("Backstabbing Exploit Fix: ").withStyle(ChatFormatting.GRAY)
+                .append(Component.literal(String.valueOf(backstab)).withStyle(backstab ? ChatFormatting.GREEN : ChatFormatting.RED)), false);
+            
+            boolean turtle = ServerFixesConfig.NERF_TURTLE_MASTER.get();
+            source.sendSuccess(() -> Component.literal("Turtle Master Nerf: ").withStyle(ChatFormatting.GRAY)
+                .append(Component.literal(String.valueOf(turtle)).withStyle(turtle ? ChatFormatting.GREEN : ChatFormatting.RED)), false);
+            if (turtle) {
+                source.sendSuccess(() -> Component.literal("  - Standard: Res ").withStyle(ChatFormatting.GRAY)
+                    .append(Component.literal(String.valueOf(ServerFixesConfig.TURTLE_MASTER_RESISTANCE.get())).withStyle(ChatFormatting.GOLD))
+                    .append(Component.literal(", Slow ").withStyle(ChatFormatting.GRAY))
+                    .append(Component.literal(String.valueOf(ServerFixesConfig.TURTLE_MASTER_SLOWNESS.get())).withStyle(ChatFormatting.GOLD)), false);
+                source.sendSuccess(() -> Component.literal("  - Strong: Res ").withStyle(ChatFormatting.GRAY)
+                    .append(Component.literal(String.valueOf(ServerFixesConfig.STRONG_TURTLE_MASTER_RESISTANCE.get())).withStyle(ChatFormatting.GOLD))
+                    .append(Component.literal(", Slow ").withStyle(ChatFormatting.GRAY))
+                    .append(Component.literal(String.valueOf(ServerFixesConfig.STRONG_TURTLE_MASTER_SLOWNESS.get())).withStyle(ChatFormatting.GOLD)), false);
+            }
+
+            boolean stringIds = ServerFixesConfig.ENABLE_STRING_EFFECT_IDS.get();
+            source.sendSuccess(() -> Component.literal("String Effect IDs: ").withStyle(ChatFormatting.GRAY)
+                .append(Component.literal(String.valueOf(stringIds)).withStyle(stringIds ? ChatFormatting.GREEN : ChatFormatting.RED)), false);
         }
         return 1;
     }

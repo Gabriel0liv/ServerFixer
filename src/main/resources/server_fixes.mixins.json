@@ -11,7 +11,13 @@
     "throttling.CookingPotThrottlingMixin",
     "throttling.RoasterThrottlingMixin",
     "throttling.StoveThrottlingMixin",
-    "throttling.FermentationBarrelThrottlingMixin"
+    "throttling.FermentationBarrelThrottlingMixin",
+    "BackstabbingFixMixin",
+    "PotionMixin",
+    "PotionUtilsMixin",
+    "MobEffectInstanceMixin",
+    "AttributePersistenceMixin",
+    "MobEffectInstanceAccessor"
   ],
   "injectors": {
     "defaultRequire": 1
