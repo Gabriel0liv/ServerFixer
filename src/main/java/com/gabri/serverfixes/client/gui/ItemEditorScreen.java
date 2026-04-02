@@ -24,7 +24,9 @@ import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.alchemy.Potion;
 import net.minecraft.world.item.alchemy.PotionUtils;
+import net.minecraft.world.item.alchemy.Potions;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraftforge.registries.ForgeRegistries;
@@ -151,6 +153,9 @@ public class ItemEditorScreen extends Screen {
                             this.minecraft.setScreen(new AddAttributeScreen(this));
                         } else {
                             Category viewCat = isEffectsCategory(this.currentCategory) ? this.activeEffectTab : this.currentCategory;
+                            if (shouldUseVanillaOnUseStorage(viewCat)) {
+                                canonicalizeOnUsePotionStorage();
+                            }
                             this.minecraft.setScreen(new AddEffectScreen(this, viewCat));
                         }
                     }));
@@ -195,13 +200,16 @@ public class ItemEditorScreen extends Screen {
                 this.init();
             }).bounds(contentMidX + 5, bottomY, 100, 20).build());
         } else {
+            this.addRenderableWidget(Button.builder(Component.literal("Salvar no Item"), (btn) -> {
+                normalizePotionEffectsForCompatibility();
+                NetworkHandler.sendToServer(new SaveItemEditorPacket(this.currentTag));
+                this.minecraft.setScreen(null);
+            }).bounds(contentMidX - 105, bottomY, 100, 20).build());
+
             this.addRenderableWidget(Button.builder(Component.literal("Voltar"), (btn) -> {
-                if (this.currentCategory == Category.DISPLAY) {
-                    applyDisplayChanges();
-                }
                 this.currentCategory = Category.MENU;
                 this.init();
-            }).bounds(contentMidX - 50, bottomY, 100, 20).build());
+            }).bounds(contentMidX + 5, bottomY, 100, 20).build());
         }
     }
 
@@ -218,10 +226,19 @@ public class ItemEditorScreen extends Screen {
         if (tagName == null) return;
 
         Category viewCat = effectiveCategory();
+        final boolean useVanillaOnUse = shouldUseVanillaOnUseStorage(viewCat);
+        if (useVanillaOnUse) {
+            canonicalizeOnUsePotionStorage();
+        }
+
         ListTag list;
         final CompoundTag effectCompound;
         final String effectKey;
-        if (viewCat == Category.ON_HIT || viewCat == Category.ON_HURT || viewCat == Category.ON_USE) {
+        if (useVanillaOnUse) {
+            effectCompound = null;
+            effectKey = null;
+            list = this.currentTag.getList("CustomPotionEffects", Tag.TAG_COMPOUND);
+        } else if (viewCat == Category.ON_HIT || viewCat == Category.ON_HURT || viewCat == Category.ON_USE) {
             effectCompound = this.currentTag.getCompound("SF_ItemEffects");
             if (viewCat == Category.ON_HIT) effectKey = "on_hit";
             else if (viewCat == Category.ON_HURT) effectKey = "on_hurt";
@@ -233,35 +250,7 @@ public class ItemEditorScreen extends Screen {
             list = this.currentTag.getList(tagName, Tag.TAG_COMPOUND);
         }
 
-        // Build display list: for ON_USE we merge SF list + potion/base effects so users can edit either source
-        final ListTag displayList;
-        if (viewCat == Category.ON_USE) {
-            displayList = new ListTag();
-            // copy SF on_use entries first
-            if (list != null) {
-                for (int i = 0; i < list.size(); i++) {
-                    displayList.add(list.getCompound(i).copy());
-                }
-            }
-            // append potion effects resolved from CustomPotionEffects / Potion tag
-            ItemStack potionStack = new ItemStack(Items.POTION);
-            if (this.currentTag != null) potionStack.setTag(this.currentTag.copy());
-            java.util.List<MobEffectInstance> potionEffects = PotionUtils.getMobEffects(potionStack);
-            for (MobEffectInstance inst : potionEffects) {
-                CompoundTag entry = new CompoundTag();
-                ResourceLocation key = ForgeRegistries.MOB_EFFECTS.getKey(inst.getEffect());
-                if (key != null) entry.putString("IdString", key.toString());
-                else entry.putInt("Id", MobEffect.getId(inst.getEffect()));
-                entry.putInt("Duration", inst.getDuration());
-                entry.putInt("Amplifier", inst.getAmplifier());
-                entry.putBoolean("Ambient", inst.isAmbient());
-                entry.putBoolean("ShowParticles", inst.isVisible());
-                entry.putBoolean("ShowIcon", inst.showIcon());
-                displayList.add(entry);
-            }
-        } else {
-            displayList = list != null ? list : new ListTag();
-        }
+        final ListTag displayList = list != null ? list : new ListTag();
 
         EffectTableLayout layout = computeEffectTableLayout(contentStartX, contentWidth);
         int total = displayList.size();
@@ -275,45 +264,19 @@ public class ItemEditorScreen extends Screen {
             this.addRenderableWidget(createEditActionButton(layout.editButtonX, yPos + 2, 18, 16, (btn) ->
                 this.minecraft.setScreen(new AddEffectScreen(this, viewCat, index)), "Editar"));
             this.addRenderableWidget(createDeleteActionButton(layout.deleteButtonX, yPos + 2, 18, 16, (btn) -> {
-                // If this is ON_USE merged view, map index back to SF list or potion effects
-                if (viewCat == Category.ON_USE) {
-                    ListTag sfList = effectCompound.getList(effectKey, Tag.TAG_COMPOUND);
-                    int sfSize = sfList.size();
-                    if (index < sfSize) {
-                        // remove from SF list
-                        sfList.remove(index);
-                        effectCompound.put(effectKey, sfList);
-                        this.currentTag.put("SF_ItemEffects", effectCompound);
+                if (useVanillaOnUse) {
+                    ListTag custom = this.currentTag.getList("CustomPotionEffects", Tag.TAG_COMPOUND);
+                    if (index >= 0 && index < custom.size()) {
+                        custom.remove(index);
+                    }
+                    if (custom.isEmpty()) {
+                        this.currentTag.remove("CustomPotionEffects");
+                        this.currentTag.putString("Potion", "minecraft:water");
                     } else {
-                        // remove from potion effects (CustomPotionEffects / Potion)
-                        int potionIndex = index - sfSize;
-                        ItemStack potionStack = new ItemStack(Items.POTION);
-                        if (this.currentTag != null) potionStack.setTag(this.currentTag.copy());
-                        java.util.List<MobEffectInstance> potionEffects = PotionUtils.getMobEffects(potionStack);
-                        ListTag custom = new ListTag();
-                        for (int j = 0; j < potionEffects.size(); j++) {
-                            if (j == potionIndex) continue;
-                            MobEffectInstance inst = potionEffects.get(j);
-                            CompoundTag entry = new CompoundTag();
-                            ResourceLocation key = ForgeRegistries.MOB_EFFECTS.getKey(inst.getEffect());
-                            if (key != null) entry.putString("IdString", key.toString());
-                            else entry.putInt("Id", MobEffect.getId(inst.getEffect()));
-                            entry.putInt("Duration", inst.getDuration());
-                            entry.putInt("Amplifier", inst.getAmplifier());
-                            entry.putBoolean("Ambient", inst.isAmbient());
-                            entry.putBoolean("ShowParticles", inst.isVisible());
-                            entry.putBoolean("ShowIcon", inst.showIcon());
-                            custom.add(entry);
-                        }
-                        if (custom.isEmpty()) {
-                            this.currentTag.remove("CustomPotionEffects");
-                            this.currentTag.putString("Potion", "minecraft:water");
-                        } else {
-                            this.currentTag.put("CustomPotionEffects", custom);
-                        }
+                        this.currentTag.put("CustomPotionEffects", custom);
+                        this.currentTag.putString("Potion", "minecraft:water");
                     }
                 } else {
-                    // default behavior for other lists
                     ListTag target = displayList;
                     target.remove(index);
                     if (effectCompound != null && effectKey != null) {
@@ -323,8 +286,10 @@ public class ItemEditorScreen extends Screen {
                         persistList(tagName, target);
                     }
                 }
-                // adjust offset if needed
-                this.effectScrollOffset = clampScrollOffset(this.effectScrollOffset, Math.max(0, displayList.size() - 1), visibleSlots);
+                int newTotal = useVanillaOnUse
+                    ? this.currentTag.getList("CustomPotionEffects", Tag.TAG_COMPOUND).size()
+                    : displayList.size();
+                this.effectScrollOffset = clampScrollOffset(this.effectScrollOffset, newTotal, visibleSlots);
                 this.init();
             }, "Deletar"));
         }
@@ -731,6 +696,57 @@ public class ItemEditorScreen extends Screen {
         }
     }
 
+    private boolean shouldUseVanillaOnUseStorage(Category viewCat) {
+        if (viewCat != Category.ON_USE) return false;
+        // Potion-like items are represented by Potion/CustomPotionEffects NBT.
+        return this.currentTag.contains("Potion", Tag.TAG_STRING) || this.currentTag.contains("CustomPotionEffects", Tag.TAG_LIST);
+    }
+
+    private void canonicalizeOnUsePotionStorage() {
+        if (!shouldUseVanillaOnUseStorage(effectiveCategory()) && !this.currentTag.contains("Potion", Tag.TAG_STRING)) {
+            return;
+        }
+
+        ListTag custom = this.currentTag.contains("CustomPotionEffects", Tag.TAG_LIST)
+            ? this.currentTag.getList("CustomPotionEffects", Tag.TAG_COMPOUND).copy()
+            : new ListTag();
+
+        Potion basePotion = Potions.WATER;
+        if (this.currentTag.contains("Potion", Tag.TAG_STRING)) {
+            ResourceLocation potionId = ResourceLocation.tryParse(this.currentTag.getString("Potion"));
+            if (potionId != null) {
+                Potion resolved = ForgeRegistries.POTIONS.getValue(potionId);
+                if (resolved != null) {
+                    basePotion = resolved;
+                }
+            }
+        }
+
+        if (basePotion != Potions.WATER && basePotion != Potions.EMPTY) {
+            for (MobEffectInstance inst : basePotion.getEffects()) {
+                CompoundTag vanillaEntry = new CompoundTag();
+                ResourceLocation effectKey = ForgeRegistries.MOB_EFFECTS.getKey(inst.getEffect());
+                if (effectKey != null) vanillaEntry.putString("IdString", effectKey.toString());
+                else vanillaEntry.putInt("Id", MobEffect.getId(inst.getEffect()));
+                vanillaEntry.putInt("Duration", inst.getDuration());
+                vanillaEntry.putInt("Amplifier", inst.getAmplifier());
+                vanillaEntry.putBoolean("Ambient", inst.isAmbient());
+                vanillaEntry.putBoolean("ShowParticles", inst.isVisible());
+                vanillaEntry.putBoolean("ShowIcon", inst.showIcon());
+                custom.add(vanillaEntry);
+            }
+        }
+
+        // Once ON_USE is edited as custom effects, base potion must be neutral to avoid hidden fallback effects.
+        this.currentTag.putString("Potion", "minecraft:water");
+
+        if (custom.isEmpty()) {
+            this.currentTag.remove("CustomPotionEffects");
+        } else {
+            this.currentTag.put("CustomPotionEffects", custom);
+        }
+    }
+
     @Override
     public void render(@NotNull GuiGraphics graphics, int mouseX, int mouseY, float partialTicks) {
         this.renderBackground(graphics);
@@ -767,8 +783,12 @@ public class ItemEditorScreen extends Screen {
         if (tagName == null) return;
 
         Category viewCat = effectiveCategory();
+        boolean useVanillaOnUse = shouldUseVanillaOnUseStorage(viewCat);
         ListTag list;
-        if (viewCat == Category.ON_HIT || viewCat == Category.ON_HURT || viewCat == Category.ON_USE) {
+        if (useVanillaOnUse) {
+            canonicalizeOnUsePotionStorage();
+            list = this.currentTag.getList("CustomPotionEffects", Tag.TAG_COMPOUND);
+        } else if (viewCat == Category.ON_HIT || viewCat == Category.ON_HURT || viewCat == Category.ON_USE) {
             CompoundTag main = this.currentTag.getCompound("SF_ItemEffects");
             if (viewCat == Category.ON_HIT) list = main.getList("on_hit", Tag.TAG_COMPOUND);
             else if (viewCat == Category.ON_HURT) list = main.getList("on_hurt", Tag.TAG_COMPOUND);
@@ -785,35 +805,7 @@ public class ItemEditorScreen extends Screen {
 
         // Determine which logical category we're showing (might be a sub-tab when 'Effects' sidebar is active)
         Category viewCat = effectiveCategory();
-
-        // Build a display list. For ON_USE we merge SF_ItemEffects.on_use entries with any potion/base effects
         ListTag displayList = (list != null) ? list : new ListTag();
-        if (viewCat == Category.ON_USE) {
-            ListTag merged = new ListTag();
-            // start with SF on_use entries (if any)
-            if (list != null) {
-                for (int i = 0; i < list.size(); i++) {
-                    merged.add(list.getCompound(i).copy());
-                }
-            }
-            // then append potion effects from CustomPotionEffects / Potion tag
-            ItemStack potionStack = new ItemStack(Items.POTION);
-            if (this.currentTag != null) potionStack.setTag(this.currentTag.copy());
-            java.util.List<MobEffectInstance> potionEffects = PotionUtils.getMobEffects(potionStack);
-            for (MobEffectInstance inst : potionEffects) {
-                CompoundTag entry = new CompoundTag();
-                ResourceLocation key = ForgeRegistries.MOB_EFFECTS.getKey(inst.getEffect());
-                if (key != null) entry.putString("IdString", key.toString());
-                else entry.putInt("Id", MobEffect.getId(inst.getEffect()));
-                entry.putInt("Duration", inst.getDuration());
-                entry.putInt("Amplifier", inst.getAmplifier());
-                entry.putBoolean("Ambient", inst.isAmbient());
-                entry.putBoolean("ShowParticles", inst.isVisible());
-                entry.putBoolean("ShowIcon", inst.showIcon());
-                merged.add(entry);
-            }
-            displayList = merged;
-        }
 
         int total = displayList.size();
         int firstRowY = LIST_START_Y + layout.headerHeight;
@@ -1356,18 +1348,14 @@ public class ItemEditorScreen extends Screen {
         Category viewCat = effectiveCategory();
 
         int total = 0;
-        if (viewCat == Category.ON_HIT || viewCat == Category.ON_HURT || viewCat == Category.ON_USE) {
+        if (shouldUseVanillaOnUseStorage(viewCat)) {
+            canonicalizeOnUsePotionStorage();
+            total = this.currentTag.getList("CustomPotionEffects", Tag.TAG_COMPOUND).size();
+        } else if (viewCat == Category.ON_HIT || viewCat == Category.ON_HURT || viewCat == Category.ON_USE) {
             CompoundTag main = this.currentTag.getCompound("SF_ItemEffects");
             if (viewCat == Category.ON_HIT) total = main.getList("on_hit", Tag.TAG_COMPOUND).size();
             else if (viewCat == Category.ON_HURT) total = main.getList("on_hurt", Tag.TAG_COMPOUND).size();
-            else {
-                // on_use: include both SF on_use entries and potion/base effects
-                ListTag sf = main.getList("on_use", Tag.TAG_COMPOUND);
-                total = sf.size();
-                ItemStack potionStack = new ItemStack(Items.POTION);
-                if (this.currentTag != null) potionStack.setTag(this.currentTag.copy());
-                total += PotionUtils.getMobEffects(potionStack).size();
-            }
+            else total = main.getList("on_use", Tag.TAG_COMPOUND).size();
         } else {
             total = this.currentTag.getList("CustomPotionEffects", Tag.TAG_COMPOUND).size();
         }
@@ -1494,17 +1482,14 @@ public class ItemEditorScreen extends Screen {
             Category viewCat = effectiveCategory();
 
             int total = 0;
-            if (viewCat == Category.ON_HIT || viewCat == Category.ON_HURT || viewCat == Category.ON_USE) {
+            if (shouldUseVanillaOnUseStorage(viewCat)) {
+                canonicalizeOnUsePotionStorage();
+                total = this.currentTag.getList("CustomPotionEffects", Tag.TAG_COMPOUND).size();
+            } else if (viewCat == Category.ON_HIT || viewCat == Category.ON_HURT || viewCat == Category.ON_USE) {
                 CompoundTag main = this.currentTag.getCompound("SF_ItemEffects");
                 if (viewCat == Category.ON_HIT) total = main.getList("on_hit", Tag.TAG_COMPOUND).size();
                 else if (viewCat == Category.ON_HURT) total = main.getList("on_hurt", Tag.TAG_COMPOUND).size();
-                else {
-                    ListTag sf = main.getList("on_use", Tag.TAG_COMPOUND);
-                    total = sf.size();
-                    ItemStack potionStack = new ItemStack(Items.POTION);
-                    if (this.currentTag != null) potionStack.setTag(this.currentTag.copy());
-                    total += PotionUtils.getMobEffects(potionStack).size();
-                }
+                else total = main.getList("on_use", Tag.TAG_COMPOUND).size();
             } else {
                 total = this.currentTag.getList("CustomPotionEffects", Tag.TAG_COMPOUND).size();
             }

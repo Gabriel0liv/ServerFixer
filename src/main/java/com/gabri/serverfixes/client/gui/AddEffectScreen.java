@@ -388,7 +388,11 @@ public class AddEffectScreen extends Screen {
                     entry.putBoolean("ShowParticles", this.pendingShowParticles);
                     entry.putBoolean("ShowIcon", this.pendingShowIcon);
 
-                    if (this.showPotionOnUseUi) {
+                    boolean useVanillaPotionStorage = this.showPotionOnUseUi
+                        || parent.currentTag.contains("Potion", Tag.TAG_STRING)
+                        || parent.currentTag.contains("CustomPotionEffects", Tag.TAG_LIST);
+
+                    if (useVanillaPotionStorage) {
                         String normalizedColor = normalizeHexColor(this.pendingOnUseColor);
                         if (normalizedColor != null) {
                             int potionColor = parseHexColor(normalizedColor);
@@ -399,65 +403,28 @@ public class AddEffectScreen extends Screen {
                             parent.currentTag.remove("CustomPotionColor");
                         }
 
-                        // Build/update vanilla potion effect list.
-                        ItemStack potionStack = new ItemStack(Items.POTION);
-                        if (parent.currentTag != null) potionStack.setTag(parent.currentTag.copy());
-                        java.util.List<MobEffectInstance> potionEffects = PotionUtils.getMobEffects(potionStack);
-                        ListTag custom = new ListTag();
+                        ListTag custom = parent.currentTag.getList("CustomPotionEffects", Tag.TAG_COMPOUND);
+                        CompoundTag customEntry = new CompoundTag();
+                        writePotionEffectId(customEntry, id);
+                        customEntry.putInt("Duration", dur);
+                        customEntry.putInt("Amplifier", amp);
+                        customEntry.putBoolean("Ambient", this.pendingAmbient);
+                        customEntry.putBoolean("ShowParticles", this.pendingShowParticles);
+                        customEntry.putBoolean("ShowIcon", this.pendingShowIcon);
 
-                        int sfSize = list.size();
-                        int potionIndex = (this.editingIndex >= sfSize) ? (this.editingIndex - sfSize) : -1;
-                        boolean replaced = false;
-
-                        for (int j = 0; j < potionEffects.size(); j++) {
-                            CompoundTag customEntry = new CompoundTag();
-                            if (j == potionIndex) {
-                                writePotionEffectId(customEntry, id);
-                                customEntry.putInt("Duration", dur);
-                                customEntry.putInt("Amplifier", amp);
-                                customEntry.putBoolean("Ambient", this.pendingAmbient);
-                                customEntry.putBoolean("ShowParticles", this.pendingShowParticles);
-                                customEntry.putBoolean("ShowIcon", this.pendingShowIcon);
-                                replaced = true;
-                            } else {
-                                MobEffectInstance inst = potionEffects.get(j);
-                                ResourceLocation key = ForgeRegistries.MOB_EFFECTS.getKey(inst.getEffect());
-                                if (key != null) customEntry.putString("IdString", key.toString());
-                                else customEntry.putInt("Id", MobEffect.getId(inst.getEffect()));
-                                customEntry.putInt("Duration", inst.getDuration());
-                                customEntry.putInt("Amplifier", inst.getAmplifier());
-                                customEntry.putBoolean("Ambient", inst.isAmbient());
-                                customEntry.putBoolean("ShowParticles", inst.isVisible());
-                                customEntry.putBoolean("ShowIcon", inst.showIcon());
-                            }
-                            custom.add(customEntry);
-                        }
-
-                        // New add or editing an old SF entry -> append as potion/custom effect.
-                        if (!replaced) {
-                            CompoundTag customEntry = new CompoundTag();
-                            writePotionEffectId(customEntry, id);
-                            customEntry.putInt("Duration", dur);
-                            customEntry.putInt("Amplifier", amp);
-                            customEntry.putBoolean("Ambient", this.pendingAmbient);
-                            customEntry.putBoolean("ShowParticles", this.pendingShowParticles);
-                            customEntry.putBoolean("ShowIcon", this.pendingShowIcon);
+                        if (this.editingIndex >= 0 && this.editingIndex < custom.size()) {
+                            custom.set(this.editingIndex, customEntry);
+                        } else {
                             custom.add(customEntry);
                         }
 
                         parent.currentTag.put("CustomPotionEffects", custom);
-                        if (!parent.currentTag.contains("Potion", Tag.TAG_STRING)) {
-                            parent.currentTag.putString("Potion", "minecraft:water");
-                        }
+                        // Critical: neutralize vanilla base potion to prevent hidden/reverting base effects.
+                        parent.currentTag.putString("Potion", "minecraft:water");
 
-                        // If we were editing an old SF entry in merged view, migrate it out of SF to avoid duplicates.
-                        if (this.editingIndex >= 0 && this.editingIndex < sfSize) {
-                            list.remove(this.editingIndex);
-                        }
-
-                        // Keep SF data clean for potion-backed ON_USE and ensure non-mod clients see the vanilla data.
+                        // ON_USE for potion items should be fully represented by vanilla NBT.
+                        sfTag.put(listKey, new ListTag());
                         sfTag.remove(ON_USE_MIRROR_TAG);
-                        sfTag.put(listKey, list);
                         parent.currentTag.put("SF_ItemEffects", sfTag);
                         handled = true;
                     } else {
@@ -505,6 +472,39 @@ public class AddEffectScreen extends Screen {
             this.pendingShowParticles = !entry.contains("ShowParticles", Tag.TAG_BYTE) || entry.getBoolean("ShowParticles");
             this.pendingShowIcon = !entry.contains("ShowIcon", Tag.TAG_BYTE) || entry.getBoolean("ShowIcon");
         } else {
+            boolean useVanillaPotionStorage = this.editingCategory == ItemEditorScreen.Category.ON_USE
+                && (this.parent.currentTag.contains("Potion", Tag.TAG_STRING)
+                    || this.parent.currentTag.contains("CustomPotionEffects", Tag.TAG_LIST)
+                    || this.showPotionOnUseUi);
+
+            if (useVanillaPotionStorage) {
+                ListTag custom = this.parent.currentTag.getList("CustomPotionEffects", Tag.TAG_COMPOUND);
+                if (this.editingIndex >= custom.size()) {
+                    this.loadedFromTag = true;
+                    return;
+                }
+                CompoundTag entry = custom.getCompound(this.editingIndex);
+                this.pendingId = resolvePotionEffectId(entry);
+                this.pendingAmp = Integer.toString(entry.getInt("Amplifier"));
+                this.pendingDur = formatSecondsFromTicks(entry.getInt("Duration"));
+                this.pendingAmbient = entry.contains("Ambient", Tag.TAG_BYTE) && entry.getBoolean("Ambient");
+                this.pendingShowParticles = !entry.contains("ShowParticles", Tag.TAG_BYTE) || entry.getBoolean("ShowParticles");
+                this.pendingShowIcon = !entry.contains("ShowIcon", Tag.TAG_BYTE) || entry.getBoolean("ShowIcon");
+                this.pendingChance = "1.0";
+
+                CompoundTag sfTag = this.parent.currentTag.getCompound("SF_ItemEffects");
+                if (sfTag.contains("on_use_color", Tag.TAG_ANY_NUMERIC)) {
+                    this.pendingOnUseColor = colorIntToHex(sfTag.getInt("on_use_color"));
+                } else if (this.parent.currentTag.contains("CustomPotionColor", Tag.TAG_ANY_NUMERIC)) {
+                    this.pendingOnUseColor = colorIntToHex(this.parent.currentTag.getInt("CustomPotionColor"));
+                } else {
+                    this.pendingOnUseColor = "";
+                }
+
+                this.loadedFromTag = true;
+                return;
+            }
+
             CompoundTag sfTag = this.parent.currentTag.getCompound("SF_ItemEffects");
             String listKey;
             if (this.editingCategory == ItemEditorScreen.Category.ON_HIT) listKey = "on_hit";
