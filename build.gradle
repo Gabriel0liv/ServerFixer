@@ -6,6 +6,8 @@ plugins {
     id 'org.spongepowered.mixin' version '0.7.+'
 }
 
+import java.util.regex.Pattern
+
 version = mod_version
 group = mod_group_id
 
@@ -14,6 +16,11 @@ base {
 }
 
 java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+def disableRefmapRemap = (project.findProperty('sfDisableRefmapRemap') ?: 'false').toString().toBoolean()
+def enableAdvancedHotswap = (project.findProperty('sfEnableAdvancedHotswap') ?: 'false').toString().toBoolean()
+def hotswapAgentPath = (project.findProperty('sfHotswapAgentPath') ?: '').toString().trim()
+def hotswapConfigPath = (project.findProperty('sfHotswapConfigPath') ?: 'dev/hotswap/hotswap-agent.properties').toString().trim()
 
 mixin {
     add sourceSets.main, "server_fixes.refmap.json"
@@ -37,12 +44,38 @@ minecraft {
                 }
             }
 
-            property 'mixin.env.remapRefMap', 'true'
-            property 'mixin.env.refMapRemappingFile', "${projectDir}/build/createSrgToMcp/output.srg"
+            if (disableRefmapRemap) {
+                property 'mixin.env.remapRefMap', 'false'
+                property 'mixin.env.disableRefMap', 'true'
+            } else {
+                property 'mixin.env.remapRefMap', 'true'
+                property 'mixin.env.refMapRemappingFile', "${projectDir}/build/createSrgToMcp/output.srg"
+            }
+            property 'mixin.debug.export', 'true'
         }
 
         client {
             property 'forge.enabledGameTestNamespaces', mod_id
+
+            if (enableAdvancedHotswap) {
+                if (hotswapAgentPath.isEmpty()) {
+                    throw new GradleException('Advanced hotswap is enabled, but sfHotswapAgentPath is empty. Pass -PsfHotswapAgentPath="C:/tools/hotswap-agent.jar".')
+                }
+
+                def hotswapAgentFile = project.file(hotswapAgentPath)
+                if (!hotswapAgentFile.exists()) {
+                    throw new GradleException("Advanced hotswap agent was not found at: ${hotswapAgentFile}. Fix -PsfHotswapAgentPath.")
+                }
+
+                jvmArgs "-javaagent:${hotswapAgentFile.absolutePath}"
+
+                def hotswapConfigFile = project.file(hotswapConfigPath)
+                if (hotswapConfigFile.exists()) {
+                    jvmArgs "-Dhotswapagent.config.file=${hotswapConfigFile.absolutePath}"
+                }
+
+                logger.lifecycle("[ServerFixes] Advanced hotswap enabled for runClient with agent: ${hotswapAgentFile}")
+            }
         }
 
         server {
@@ -67,6 +100,10 @@ repositories {
     maven {
         url = "https://maven.theillusivec4.top/"
     }
+
+    maven {
+        url = 'https://api.modrinth.com/maven'
+    }
 }
 
 dependencies {
@@ -75,7 +112,7 @@ dependencies {
     // Curios API
     compileOnly fg.deobf("top.theillusivec4.curios:curios-forge:5.14.1+1.20.1:api")
     runtimeOnly fg.deobf("top.theillusivec4.curios:curios-forge:5.14.1+1.20.1")
-    
+
     // Annotation Processor for Mixin
     annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
 }
@@ -132,4 +169,48 @@ publishing {
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
+}
+
+tasks.register('sanitizeFmlConfig') {
+    doLast {
+        File fmlFile = file('run/config/fml.toml')
+        if (!fmlFile.exists()) {
+            return
+        }
+
+        String text = fmlFile.getText('UTF-8')
+        boolean changed = false
+
+        def ensureBoolean = { String src, String key, boolean defaultValue ->
+            String boolText = defaultValue ? 'true' : 'false'
+            Pattern p = Pattern.compile('(?m)^\\s*' + Pattern.quote(key) + '\\s*=\\s*(.*?)\\s*$')
+            def m = p.matcher(src)
+            if (m.find()) {
+                String raw = m.group(1).trim().toLowerCase(Locale.ROOT)
+                if (raw != 'true' && raw != 'false') {
+                    changed = true
+                    return m.replaceFirst(key + ' = ' + boolText)
+                }
+                return src
+            }
+            changed = true
+            String suffix = src.endsWith('\n') ? '' : '\n'
+            return src + suffix + '# Auto-fixed by ServerFixes run task\n' + key + ' = ' + boolText + '\n'
+        }
+
+        text = ensureBoolean(text, 'earlyWindowSquir', false)
+        text = ensureBoolean(text, 'earlyWindowShowCPU', false)
+        text = ensureBoolean(text, 'earlyWindowLogHelpMessage', false)
+
+        if (changed) {
+            fmlFile.setText(text, 'UTF-8')
+            logger.lifecycle('[ServerFixes] Sanitized run/config/fml.toml to avoid Forge EARLY_WINDOW_* null crash.')
+        }
+    }
+}
+
+tasks.configureEach {
+    if (name == 'runClient') {
+        dependsOn tasks.named('sanitizeFmlConfig')
+    }
 }

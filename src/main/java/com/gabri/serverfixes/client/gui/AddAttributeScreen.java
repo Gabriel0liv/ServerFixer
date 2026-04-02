@@ -1,10 +1,11 @@
 package com.gabri.serverfixes.client.gui;
 
 import com.gabri.serverfixes.client.gui.ItemEditorScreen.AttributeRow;
+import com.gabri.serverfixes.client.gui.editor.SelectableEditBox;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
@@ -24,24 +25,19 @@ public class AddAttributeScreen extends Screen {
     private static final int FIELD_SPACING = 34;
     private static final int BUTTON_WIDTH = 110;
     private static final int ACTION_BUTTON_WIDTH = 26;
-    private static final int RESET_BUTTON_WIDTH = 24;
-    private static final int RESET_BUTTON_GAP = 6;
 
     private final ItemEditorScreen parent;
     private final AttributeRow editingEntry;
 
     private EditBox nameBox;
     private EditBox amountBox;
+    private Button operationButton;
 
     private int operation = 0;
     private String slot = "mainhand";
 
     private String pendingName = "";
     private String pendingAmount = "";
-    private String originalName = "";
-    private String originalAmount = "";
-    private int originalOperation = 0;
-    private String originalSlot = "mainhand";
 
     public AddAttributeScreen(ItemEditorScreen parent) {
         this(parent, null);
@@ -68,16 +64,11 @@ public class AddAttributeScreen extends Screen {
         int panelY = 30;
         int formRight = panelX + PANEL_WIDTH - 20;
         int fieldX = panelX + 24;
-        int baseFieldWidth = Math.max(140, formRight - fieldX - RESET_BUTTON_WIDTH - 12);
-        int nameFieldWidth = Math.max(160, baseFieldWidth - ACTION_BUTTON_WIDTH - RESET_BUTTON_GAP);
+        int baseFieldWidth = Math.max(140, formRight - fieldX - 12);
+        int nameFieldWidth = Math.max(160, baseFieldWidth - ACTION_BUTTON_WIDTH);
         int currentY = panelY + 40;
 
-        this.originalName = this.pendingName;
-        this.originalAmount = this.pendingAmount;
-        this.originalOperation = this.operation;
-        this.originalSlot = this.slot;
-
-        this.nameBox = new EditBox(this.font, fieldX, currentY, nameFieldWidth, 20, Component.literal("ID do Atributo"));
+        this.nameBox = new SelectableEditBox(this.font, fieldX, currentY, nameFieldWidth, 20, Component.literal("ID do Atributo"));
         this.nameBox.setMaxLength(64);
         this.nameBox.setValue(this.pendingName);
         this.nameBox.setResponder(value -> this.pendingName = value);
@@ -90,63 +81,70 @@ public class AddAttributeScreen extends Screen {
                 this.pendingName = attrId;
                 this.init();
             }));
-        }).bounds(fieldX + nameFieldWidth + RESET_BUTTON_GAP, currentY, ACTION_BUTTON_WIDTH, 20).build());
-        this.addResetButton(fieldX + nameFieldWidth + RESET_BUTTON_GAP + ACTION_BUTTON_WIDTH + RESET_BUTTON_GAP, currentY, () -> {
-            this.pendingName = this.originalName;
-            this.init();
-        });
+        }).bounds(fieldX + nameFieldWidth + 6, currentY, ACTION_BUTTON_WIDTH, 20).build());
 
         currentY += FIELD_SPACING;
-        this.amountBox = new EditBox(this.font, fieldX, currentY, baseFieldWidth, 20, Component.literal("Valor"));
+        int opWidth = 56;
+        int amountWidth = Math.max(80, baseFieldWidth - opWidth - 6);
+        this.amountBox = new SelectableEditBox(this.font, fieldX, currentY, amountWidth, 20, Component.literal("Valor"));
         this.amountBox.setMaxLength(32);
         this.amountBox.setValue(this.pendingAmount);
-        this.amountBox.setResponder(value -> this.pendingAmount = value);
+        this.amountBox.setResponder(value -> {
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < value.length(); i++) {
+                char c = value.charAt(i);
+                if ((c >= '0' && c <= '9') || c == '.' || c == '-') sb.append(c);
+            }
+            String filtered = sb.toString();
+            this.pendingAmount = filtered;
+            if (!filtered.equals(value)) {
+                this.amountBox.setValue(filtered);
+            }
+        });
         this.addRenderableWidget(this.amountBox);
-        this.addResetButton(fieldX + baseFieldWidth + RESET_BUTTON_GAP, currentY, () -> {
-            this.pendingAmount = this.originalAmount;
+        // Operation button: cycles operation types on click. Tooltip explains each type.
+        int opX = fieldX + amountWidth + 6;
+        int opY = currentY;
+        this.operationButton = Button.builder(Component.literal(Integer.toString(this.operation)), (btn) -> {
+            // preserve current typed values then rebuild UI to update button label
+            this.pendingName = this.nameBox.getValue();
+            this.pendingAmount = this.amountBox != null ? this.amountBox.getValue() : this.pendingAmount;
+            this.operation = (this.operation + 1) % 3;
             this.init();
-        });
-
-        currentY += FIELD_SPACING;
-        this.addRenderableWidget(CycleButton.builder(this::getOperationLabel)
-            .withValues(0, 1, 2)
-            .withInitialValue(this.originalOperation)
-            .displayOnlyValue()
-            .create(fieldX, currentY, baseFieldWidth, 20, Component.literal("Operação"), (btn, val) -> this.operation = val));
-        this.addResetButton(fieldX + baseFieldWidth + RESET_BUTTON_GAP, currentY, () -> {
-            this.operation = this.originalOperation;
-            this.init();
-        });
+        }).bounds(opX, opY, opWidth, 20).build();
+        this.operationButton.setTooltip(Tooltip.create(Component.literal("0: Adição - soma direta; 1: Mult. Base - multiplica o valor base; 2: Mult. Total - multiplica o total")));
+        this.addRenderableWidget(this.operationButton);
 
         currentY += FIELD_SPACING;
         List<String> slotOptions = collectSlotOptions();
-        if (!slotOptions.contains(this.slot)) {
-            slotOptions.add(this.slot);
-        }
-        String[] slots = slotOptions.toArray(new String[0]);
-
-        this.addRenderableWidget(CycleButton.builder((String option) -> Component.literal(option.toUpperCase(Locale.ROOT)))
-            .withValues(slots)
-            .displayOnlyValue()
-            .withInitialValue(this.slot)
-            .create(fieldX, currentY, baseFieldWidth, 20, Component.literal("Slot"), (btn, val) -> this.slot = val));
-        this.addResetButton(fieldX + baseFieldWidth + RESET_BUTTON_GAP, currentY, () -> {
-            this.slot = this.originalSlot;
-            this.init();
-        });
+        if (!slotOptions.contains(this.slot)) slotOptions.add(this.slot);
+        // Button that opens a searchable slot selection screen (dropdown-like)
+        this.addRenderableWidget(Button.builder(Component.literal(this.slot.toUpperCase(Locale.ROOT)), (btn) -> {
+            this.pendingName = this.nameBox.getValue();
+            this.pendingAmount = this.amountBox != null ? this.amountBox.getValue() : this.pendingAmount;
+            this.minecraft.setScreen(new SlotSelectionScreen(this, slotOptions, (slotId) -> {
+                this.slot = slotId;
+                this.init();
+            }));
+        }).bounds(fieldX, currentY, baseFieldWidth, 20).build());
 
         int buttonY = panelY + PANEL_HEIGHT - 40;
+        int saveX = midX - BUTTON_WIDTH - 10;
+        int cancelX = midX + 10;
+
         this.addRenderableWidget(Button.builder(Component.literal(this.editingEntry == null ? "Salvar" : "Salvar alterações"), (btn) -> {
             try {
                 double amount = Double.parseDouble(this.amountBox.getValue());
                 String attrName = this.nameBox.getValue();
                 if (!attrName.contains(":")) attrName = "minecraft:" + attrName;
 
+                int op = this.operation;
+
                 CompoundTag newAttr = new CompoundTag();
                 newAttr.putString("AttributeName", attrName);
                 newAttr.putString("Name", attrName + "_mod");
                 newAttr.putDouble("Amount", amount);
-                newAttr.putInt("Operation", this.operation);
+                newAttr.putInt("Operation", op);
                 newAttr.putString("Slot", this.slot);
                 newAttr.putUUID("UUID", UUID.randomUUID());
 
@@ -156,22 +154,15 @@ public class AddAttributeScreen extends Screen {
             } catch (Exception ignored) {
                 // Ignore invalid numbers
             }
-        }).bounds(midX - BUTTON_WIDTH - 10, buttonY, BUTTON_WIDTH, 20).build());
+        }).bounds(saveX, buttonY, BUTTON_WIDTH, 20).build());
+
         this.addRenderableWidget(Button.builder(Component.literal("Cancelar"), (btn) -> this.minecraft.setScreen(this.parent))
-            .bounds(midX + 10, buttonY, BUTTON_WIDTH, 20).build());
+            .bounds(cancelX, buttonY, BUTTON_WIDTH, 20).build());
     }
 
-    private void addResetButton(int x, int y, Runnable action) {
-        this.addRenderableWidget(Button.builder(Component.literal("↺"), (btn) -> action.run())
-            .bounds(x, y, RESET_BUTTON_WIDTH, 20)
-            .build());
-    }
+    
 
-    private Component getOperationLabel(int op) {
-        if (op == 0) return Component.literal("Op 0 • Adição (+X)");
-        if (op == 1) return Component.literal("Op 1 • Multiplicar Base (+X%)");
-        return Component.literal("Op 2 • Multiplicar Total (xX)");
-    }
+
 
     private static List<String> collectSlotOptions() {
         List<String> slotOptions = new ArrayList<>();
@@ -216,7 +207,6 @@ public class AddAttributeScreen extends Screen {
         int spacing = FIELD_SPACING;
         GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Nome do atributo", labelX, baseY - 12, 0xFFCCD9F1);
         GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Valor do atributo", labelX, baseY + spacing - 12, 0xFFCCD9F1);
-        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Tipo de operação", labelX, baseY + spacing * 2 - 12, 0xFFCCD9F1);
         GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Slot alvo", labelX, baseY + spacing * 3 - 12, 0xFFCCD9F1);
 
         super.render(graphics, mouseX, mouseY, partialTicks);

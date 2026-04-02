@@ -5,6 +5,7 @@ import com.gabri.serverfixes.config.ServerFixesConfig;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.world.item.ItemStack;
+import net.minecraftforge.common.ForgeConfigSpec;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -37,7 +38,7 @@ public abstract class AttributePersistenceMixin {
     }
 
     private static void serverfixes$syncAttributes(CompoundTag nbt) {
-        if (nbt == null || !ServerFixesConfig.ENABLE_PERSISTENT_ATTRIBUTES.get()) return;
+        if (nbt == null || !serverfixes$isConfigEnabled(ServerFixesConfig.ENABLE_PERSISTENT_ATTRIBUTES)) return;
         
         if (nbt.contains(ItemAttributeCommands.BACKUP_TAG, 9)) {
             ListTag backupList = nbt.getList(ItemAttributeCommands.BACKUP_TAG, 10);
@@ -75,7 +76,7 @@ public abstract class AttributePersistenceMixin {
 
     // Handles persistence for On-Hit and On-Hurt effects
     private static void serverfixes$syncEffects(CompoundTag nbt) {
-        if (nbt == null || !ServerFixesConfig.ENABLE_ITEM_EFFECT_MODIFIERS.get()) return;
+        if (nbt == null || !serverfixes$isConfigEnabled(ServerFixesConfig.ENABLE_ITEM_EFFECT_MODIFIERS)) return;
 
         String mainTag = "SF_ItemEffects";
         String backupTag = "SF_BackupEffects";
@@ -87,6 +88,15 @@ public abstract class AttributePersistenceMixin {
         // If standard exists, keep backup updated
         else if (nbt.contains(mainTag, 10)) {
             nbt.put(backupTag, nbt.getCompound(mainTag).copy());
+        }
+    }
+
+    private static boolean serverfixes$isConfigEnabled(ForgeConfigSpec.BooleanValue value) {
+        if (value == null) return false;
+        try {
+            return value.get();
+        } catch (IllegalStateException ignored) {
+            return false;
         }
     }
 }

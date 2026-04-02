@@ -1,5 +1,7 @@
 package com.gabri.serverfixes.client.gui;
 
+import com.gabri.serverfixes.client.gui.editor.AbstractEditorScreen;
+import com.gabri.serverfixes.client.gui.editor.SelectableEditBox;
 import com.gabri.serverfixes.network.NetworkHandler;
 import com.gabri.serverfixes.network.UpdateServerConfigPacket;
 import net.minecraft.client.gui.GuiGraphics;
@@ -13,6 +15,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
+import net.minecraftforge.registries.ForgeRegistries;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -20,21 +23,44 @@ import java.util.Map;
 import java.util.Objects;
 
 @SuppressWarnings("all")
-public class AdminPanelScreen extends Screen {
+public class AdminPanelScreen extends AbstractEditorScreen {
     private final CompoundTag configData;
-    private static final int SIDEBAR_WIDTH = 150;
-    private static final int CONTENT_PADDING = 12;
+    private static final int OUTER_MARGIN = 8;
+    private static final int INNER_MARGIN = 8;
+    private static final int HEADER_HEIGHT = 20;
+    private static final int BAR_HEIGHT = 16;
+    private static final int FOOTER_HEIGHT = 24;
+    private static final int FIXED_SIDEBAR_WIDTH = 150;
+    private static final int CATEGORY_BUTTON_HEIGHT = 20;
+    private static final int CATEGORY_BUTTON_GAP = 4;
     private static final int ROW_HEIGHT = 32;
     private static final int RESET_BUTTON_WIDTH = 24;
     private static final int RESET_BUTTON_GAP = 6;
     private static final int FIELD_LABEL_MARGIN = 10;
     private static final int FORM_RIGHT_MARGIN = 12;
     private static final int TOGGLE_WIDTH = 60;
+    private static final int FOOTER_BUTTON_WIDTH = 90;
+    private static final int FOOTER_BUTTON_GAP = 20;
     private final List<RowInfo> rowInfos = new ArrayList<>();
     private final Map<String, FieldType> fieldTypes = new LinkedHashMap<>();
     private final Map<String, Object> baselineValues = new LinkedHashMap<>();
     private final Map<String, Object> pendingValues = new LinkedHashMap<>();
     private final List<String> activeCategoryKeys = new ArrayList<>();
+    private int frameX;
+    private int frameY;
+    private int frameW;
+    private int frameH;
+    private int headerY;
+    private int barY;
+    private int sidebarX;
+    private int sidebarY;
+    private int sidebarW;
+    private int sidebarH;
+    private int contentX;
+    private int contentY;
+    private int contentW;
+    private int contentH;
+    private int footerY;
     private Category currentCategory = Category.MAIN;
 
     public enum Category {
@@ -59,68 +85,86 @@ public class AdminPanelScreen extends Screen {
         if (this.minecraft == null) return;
         this.clearWidgets();
         this.rowInfos.clear();
-        int sidebarWidth = SIDEBAR_WIDTH;
-        int contentStartX = sidebarWidth + CONTENT_PADDING;
-        int contentWidth = this.width - contentStartX - CONTENT_PADDING;
-        int y = 8;
-        this.addRenderableWidget(Button.builder(Component.literal("§b✎ Editor de Itens"), (btn) -> openItemEditor())
-            .bounds(8, y, sidebarWidth - 18, 22).build());
-        y += 32;
-        for (Category category : Category.values()) {
-            if (category == Category.MAIN) continue;
-            final Category cat = category;
-            String text = cat.title;
-            if (text == null) text = "Unknown";
-            boolean active = currentCategory == cat;
-            Component buttonText = Component.literal((active ? "§6> " : "") + text);
-            Button btn = Button.builder(buttonText, (b) -> {
-                this.currentCategory = cat;
-                this.init();
-            }).bounds(8, y, sidebarWidth - 18, 22).build();
-            this.addRenderableWidget(btn);
-            y += ROW_HEIGHT - 2;
-        }
-
-        int midContentX = contentStartX + (contentWidth / 2);
+        computeLayout();
+        buildSidebar();
+        buildTopBar();
 
         if (currentCategory == Category.MAIN) {
-            initMainPage(midContentX);
+            initMainPage(this.contentX, this.contentY, this.contentW, this.contentH);
         } else {
-            initCategoryPage(contentStartX, contentWidth);
+            initCategoryPage(this.contentX, this.contentW, this.contentY + 12);
         }
 
-        if (currentCategory != Category.MAIN) {
-            int saveButtonWidth = Math.min(180, contentWidth - 20);
-            int saveX = contentStartX + contentWidth - saveButtonWidth;
-            Button saveBtn = Button.builder(Component.literal("§bSalvar alterações"), (btn) -> savePendingChanges())
-                .bounds(saveX, this.height - 32, saveButtonWidth, 24)
-                .build();
-            this.addRenderableWidget(saveBtn);
-        }
+        int totalButtonsW = FOOTER_BUTTON_WIDTH * 2 + FOOTER_BUTTON_GAP;
+        int leftX = this.frameX + (this.frameW - totalButtonsW) / 2;
+        int rightX = leftX + FOOTER_BUTTON_WIDTH + FOOTER_BUTTON_GAP;
 
-        // Close Button
-        Button closeBtn = Button.builder(Component.literal("§cFechar Menu"), (btn) -> {
-            Minecraft client = this.minecraft;
-            if (client != null) client.setScreen(null);
-        }).bounds(5, this.height - 25, 100, 20).build();
-        this.addRenderableWidget(closeBtn);
+        this.addRenderableWidget(Button.builder(Component.literal(currentCategory == Category.MAIN ? "§cFechar" : "§eVoltar"), (btn) -> {
+            if (this.currentCategory == Category.MAIN) {
+                Minecraft client = this.minecraft;
+                if (client != null) client.setScreen(null);
+            } else {
+                this.currentCategory = Category.MAIN;
+                this.init();
+            }
+        }).bounds(leftX, this.footerY, FOOTER_BUTTON_WIDTH, 20).build());
+
+        Button saveBtn = Button.builder(Component.literal("§bSalvar"), (btn) -> savePendingChanges())
+            .bounds(rightX, this.footerY, FOOTER_BUTTON_WIDTH, 20)
+            .build();
+        saveBtn.active = this.currentCategory != Category.MAIN && hasPendingChanges();
+        this.addRenderableWidget(saveBtn);
     }
 
-    private void initMainPage(int midX) {
-        Minecraft mc = this.minecraft;
-        if (mc == null) return;
-        
-        int y = 50;
-        // Item Editor Button
-        Button editorBtn = Button.builder(Component.literal("§b✎ Editor de Itens"), (btn) -> openItemEditor())
-            .bounds(midX - 100, y, 200, 20).build();
-        this.addRenderableWidget(editorBtn);
+    private void computeLayout() {
+        this.frameX = OUTER_MARGIN;
+        this.frameY = OUTER_MARGIN;
+        this.frameW = Math.max(240, this.width - OUTER_MARGIN * 2);
+        this.frameH = Math.max(170, this.height - OUTER_MARGIN * 2);
+        this.headerY = this.frameY + 6;
+        this.barY = this.headerY + HEADER_HEIGHT + 4;
+        this.footerY = this.frameY + this.frameH - FOOTER_HEIGHT;
 
-        y += 30;
-        Button labelBtn = Button.builder(Component.literal("§eAcesse as categorias ao lado"), (btn) -> {})
-            .bounds(midX - 100, y, 200, 20).build();
-        labelBtn.active = false;
-        this.addRenderableWidget(labelBtn);
+        this.sidebarX = this.frameX + INNER_MARGIN;
+        this.sidebarY = this.barY + BAR_HEIGHT + 6;
+        this.sidebarH = Math.max(90, this.footerY - this.sidebarY - 8);
+
+        int maxSidebarAllowed = Math.max(120, this.frameW - 260);
+        this.sidebarW = Math.min(FIXED_SIDEBAR_WIDTH, maxSidebarAllowed);
+
+        this.contentX = this.sidebarX + this.sidebarW + INNER_MARGIN;
+        this.contentY = this.sidebarY;
+        this.contentW = Math.max(140, this.frameX + this.frameW - INNER_MARGIN - this.contentX);
+        this.contentH = Math.max(90, this.footerY - this.contentY - 8);
+    }
+
+    private void buildSidebar() {
+        int y = this.sidebarY + 4;
+        int buttonX = this.sidebarX + 4;
+        int buttonW = Math.max(80, this.sidebarW - 8);
+        for (Category category : Category.values()) {
+            final Category cat = category;
+            boolean active = this.currentCategory == cat;
+            Component label = Component.literal((active ? "§6> " : "") + cat.title);
+            this.addRenderableWidget(Button.builder(label, (btn) -> {
+                this.currentCategory = cat;
+                this.init();
+            }).bounds(buttonX, y, buttonW, CATEGORY_BUTTON_HEIGHT).build());
+            y += CATEGORY_BUTTON_HEIGHT + CATEGORY_BUTTON_GAP;
+        }
+    }
+
+    private void buildTopBar() {
+        int barButtonH = 16;
+        int leftX = this.contentX + 2;
+        this.addRenderableWidget(Button.builder(Component.literal("Item Editor"), (btn) -> openItemEditor())
+            .bounds(leftX, this.barY, 86, barButtonH).build());
+        this.addRenderableWidget(Button.builder(Component.literal("Raw SNBT"), (btn) -> openRawNbtEditor())
+            .bounds(leftX + 90, this.barY, 82, barButtonH).build());
+    }
+
+    private void initMainPage(int contentStartX, int contentStartY, int contentWidth, int contentHeight) {
+        // Home usa apenas o painel de conteúdo único para evitar redundância visual.
     }
 
     private void openItemEditor() {
@@ -130,20 +174,44 @@ public class AdminPanelScreen extends Screen {
         this.minecraft.setScreen(new ItemEditorScreen(player.getMainHandItem().getOrCreateTag()));
     }
 
-    private void initCategoryPage(int contentStartX, int contentWidth) {
+    private void openRawNbtEditor() {
+        if (this.minecraft == null) return;
+        LocalPlayer player = this.minecraft.player;
+        if (player == null || player.getMainHandItem().isEmpty()) return;
+        // Use the ItemStack save method so the SNBT exactly matches the full ItemStack data (id, Count, tag, etc.)
+        var stack = player.getMainHandItem();
+        try {
+            CompoundTag display = stack.save(new CompoundTag());
+            this.minecraft.setScreen(new NbtEditorScreen(display));
+        } catch (Throwable t) {
+            // Fallback to previous behavior if save isn't available for some mappings
+            CompoundTag display = new CompoundTag();
+            try {
+                var id = ForgeRegistries.ITEMS.getKey(stack.getItem()).toString();
+                display.putString("id", id);
+            } catch (Exception ignored) {}
+            try {
+                display.putByte("Count", (byte) stack.getCount());
+            } catch (Exception ignored) {}
+            if (stack.hasTag() && stack.getTag() != null && !stack.getTag().isEmpty()) {
+                display.put("tag", stack.getTag().copy());
+            }
+            this.minecraft.setScreen(new NbtEditorScreen(display));
+        }
+    }
+
+    private void initCategoryPage(int contentStartX, int contentWidth, int startY) {
         this.activeCategoryKeys.clear();
         int labelX = contentStartX + FIELD_LABEL_MARGIN;
         int rowRight = contentStartX + contentWidth - FORM_RIGHT_MARGIN;
         int resetX = rowRight - RESET_BUTTON_WIDTH;
         int toggleX = resetX - RESET_BUTTON_GAP - TOGGLE_WIDTH;
-        int availableForInput = Math.max(80, toggleX - labelX - RESET_BUTTON_GAP - 10);
+        int inputRight = resetX - RESET_BUTTON_GAP;
+        int minInputX = labelX + 60;
+        int availableForInput = Math.max(60, inputRight - minInputX);
         int inputWidth = Math.min(160, availableForInput);
-        int inputX = toggleX - RESET_BUTTON_GAP - inputWidth;
-        if (inputX < labelX + 60) {
-            inputX = labelX + 60;
-            inputWidth = Math.max(60, toggleX - RESET_BUTTON_GAP - inputX);
-        }
-        int y = 50;
+        int inputX = inputRight - inputWidth;
+        int y = startY;
 
         switch (currentCategory) {
             case SERVER:
@@ -201,7 +269,7 @@ public class AdminPanelScreen extends Screen {
         fieldTypes.put(key, type);
         String baseline = getBaselineString(key, type);
         String pending = getPendingString(key, baseline);
-        EditBox box = new EditBox(this.font, widgetX, y, width, 20, Component.literal(label));
+        EditBox box = new SelectableEditBox(this.font, widgetX, y, width, 20, Component.literal(label));
         if (type == FieldType.INTEGER || type == FieldType.LONG) {
             box.setFilter(AdminPanelScreen::isValidIntegerInput);
         } else if (type == FieldType.SECONDS_TO_TICKS) {
@@ -226,18 +294,18 @@ public class AdminPanelScreen extends Screen {
     @Override
     public void render(@NotNull GuiGraphics graphics, int mouseX, int mouseY, float partialTicks) {
         this.renderBackground(graphics);
-        int sidebarWidth = SIDEBAR_WIDTH;
-        int contentStartX = sidebarWidth + CONTENT_PADDING;
-        int contentWidth = this.width - contentStartX - CONTENT_PADDING;
-        int midContentX = contentStartX + (contentWidth / 2);
+        renderEditorFrame(graphics, Component.literal("§6§l" + currentCategory.title),
+            this.frameX, this.frameY, this.frameW, this.frameH,
+            this.headerY, this.barY, this.contentY, this.footerY);
 
-        GuiLayoutUtils.drawPanel(graphics, 4, 35, sidebarWidth + 6, this.height - 40, 0xC2081116, 0xFF3B4F64);
-        GuiLayoutUtils.drawPanel(graphics, contentStartX - 6, 35, contentWidth + 10, this.height - 40, 0xD71C2330, 0xFF50677F);
-        GuiLayoutUtils.drawTitleWithUnderline(graphics, this.font, Component.literal("§6§l" + currentCategory.title), midContentX, 15, 0xFFF5F5F5, 0xFF3ACAFF);
+        GuiLayoutUtils.drawPanel(graphics, this.sidebarX, this.sidebarY, this.sidebarW, this.sidebarH, 0xBF071014, 0xFF3D5564);
+        GuiLayoutUtils.drawPanel(graphics, this.contentX, this.contentY, this.contentW, this.contentH, 0xD9182432, 0xFF4E6B8D);
 
-        if (currentCategory != Category.MAIN && !rowInfos.isEmpty()) {
-            int x = contentStartX + 5;
-            int rowWidth = contentWidth - 10;
+        if (currentCategory == Category.MAIN) {
+            renderMainOverview(graphics);
+        } else if (!rowInfos.isEmpty()) {
+            int x = this.contentX + 8;
+            int rowWidth = this.contentW - 16;
             for (int i = 0; i < rowInfos.size(); i++) {
                 RowInfo row = rowInfos.get(i);
                 if (i % 2 == 0) {
@@ -246,10 +314,29 @@ public class AdminPanelScreen extends Screen {
                 graphics.drawString(this.font, row.label, x + 5, row.y + 4, 0xE3E6EE);
             }
         } else {
-            graphics.drawCenteredString(this.font, "§7Selecione uma categoria à esquerda para configurar.", midContentX, this.height / 2 + 20, 0xAAAAAA);
+            graphics.drawCenteredString(this.font, "§7Selecione uma categoria à esquerda para configurar.", this.contentX + this.contentW / 2, this.contentY + this.contentH / 2, 0xAAAAAA);
         }
 
         super.render(graphics, mouseX, mouseY, partialTicks);
+    }
+
+    private void renderMainOverview(GuiGraphics graphics) {
+        int areaX = this.contentX + 10;
+        int areaY = this.contentY + 12;
+        int areaW = Math.max(120, this.contentW - 20);
+        int areaH = Math.max(80, this.contentH - 22);
+
+        GuiLayoutUtils.drawPanel(graphics, areaX, areaY, areaW, areaH, 0xCC1C2532, 0xFF4E6B8D);
+
+        int textX = areaX + 12;
+        int y = areaY + 12;
+        graphics.drawString(this.font, "§bVisão Geral", textX, y, 0xFFE5F6FF);
+        y += 22;
+        graphics.drawString(this.font, "§7Use a coluna da esquerda para navegar entre categorias.", textX, y, 0xFFBECBDD);
+        y += 16;
+        graphics.drawString(this.font, "§7Use os botões da barra superior para abrir Item Editor e Raw SNBT.", textX, y, 0xFFBECBDD);
+        y += 16;
+        graphics.drawString(this.font, "§7A tela segue o formato do IBE: sidebar + area unica de conteudo.", textX, y, 0xFFBECBDD);
     }
 
     @Override

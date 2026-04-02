@@ -20,6 +20,8 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.UseAnim;
 import net.minecraftforge.registries.ForgeRegistries;
 
 @SuppressWarnings("all")
@@ -36,12 +38,14 @@ public class ItemEffectModifierCommands {
                 .then(Commands.argument("type", StringArgumentType.word())
                     .suggests((ctx, builder) -> {
                         builder.suggest("on_hit");
+                        builder.suggest("on_use");
                         builder.suggest("on_hurt");
                         return builder.buildFuture();
                     })
                     .then(Commands.argument("effect", ResourceArgument.resource(buildContext, Registries.MOB_EFFECT))
                         .then(Commands.argument("duration", IntegerArgumentType.integer(1))
                             .then(Commands.argument("amplifier", IntegerArgumentType.integer(0, 255))
+                                .executes(ItemEffectModifierCommands::addEffectWithDefaultTarget)
                                 .then(Commands.argument("chance", DoubleArgumentType.doubleArg(0.0, 1.0))
                                     .then(Commands.argument("targetSelf", StringArgumentType.word())
                                         .suggests((ctx, builder) -> {
@@ -64,6 +68,7 @@ public class ItemEffectModifierCommands {
             .then(Commands.literal("remove")
                 .then(Commands.argument("type", StringArgumentType.word())
                     .suggests((ctx, builder) -> {
+                        builder.suggest("on_use");
                         builder.suggest("on_hit");
                         builder.suggest("on_hurt");
                         return builder.buildFuture();
@@ -93,15 +98,28 @@ public class ItemEffectModifierCommands {
         if (stack.isEmpty()) throw NO_ITEM.create();
 
         String type = StringArgumentType.getString(context, "type").toLowerCase();
+        if (type.equals("on_use") && !isOnUseSupportedItem(stack)) {
+            source.sendFailure(Component.literal("on_use so pode ser aplicado em pocoes e itens consumiveis."));
+            return 0;
+        }
+
         MobEffect effect = ResourceArgument.getMobEffect(context, "effect").value();
         ResourceLocation effectId = ForgeRegistries.MOB_EFFECTS.getKey(effect);
         if (effectId == null) return 0;
 
         int duration = IntegerArgumentType.getInteger(context, "duration") * 20; // Transform to ticks
         int amplifier = IntegerArgumentType.getInteger(context, "amplifier");
-        double chance = DoubleArgumentType.getDouble(context, "chance");
+        double chance = 1.0D;
+        try {
+            chance = DoubleArgumentType.getDouble(context, "chance");
+        } catch (IllegalArgumentException ignored) {
+            // chance omitted
+        }
+        if (type.equals("on_use")) {
+            chance = 1.0D;
+        }
         
-        // Default targets: on_hit -> target, on_hurt -> self
+        // Default targets: on_hit -> target, on_hurt -> self. ON_USE ignores target split.
         boolean self = targetStr != null ? targetStr.equalsIgnoreCase("self") : type.equals("on_hurt");
 
         CompoundTag tag = stack.getOrCreateTag();
@@ -112,8 +130,10 @@ public class ItemEffectModifierCommands {
         entry.putString("id", effectId.toString());
         entry.putInt("duration", duration);
         entry.putInt("amplifier", amplifier);
-        entry.putDouble("chance", chance);
-        entry.putBoolean("self", self);
+        if (!type.equals("on_use")) {
+            entry.putDouble("chance", chance);
+            entry.putBoolean("self", self);
+        }
 
         list.add(entry);
         mainTag.put(type, list);
@@ -141,7 +161,7 @@ public class ItemEffectModifierCommands {
         CompoundTag mainTag = tag.getCompound(MAIN_TAG);
         source.sendSuccess(() -> Component.literal("--- Modificadores de Efeito ---").withStyle(ChatFormatting.GOLD), false);
 
-        for (String type : new String[]{"on_hit", "on_hurt"}) {
+        for (String type : new String[]{"on_use", "on_hit", "on_hurt"}) {
             if (mainTag.contains(type, 9)) {
                 ListTag list = mainTag.getList(type, 10);
                 String label = type.toUpperCase() + ":";
@@ -152,12 +172,18 @@ public class ItemEffectModifierCommands {
                     String id = entry.getString("id");
                     int amp = entry.getInt("amplifier") + 1;
                     int dur = entry.getInt("duration") / 20; // Show in seconds
-                    double chv = entry.getDouble("chance") * 100;
-                    boolean self = entry.getBoolean("self");
-                    String targetName = self ? "SELF" : "TARGET";
-                    source.sendSuccess(() -> Component.literal("  " + finalI + ": ").withStyle(ChatFormatting.GRAY)
-                        .append(Component.literal(id).withStyle(ChatFormatting.WHITE))
-                        .append(Component.literal(" (Nivel " + amp + ", " + dur + "s, " + chv + "%, Alvo: " + targetName + ")")), false);
+                    if (type.equals("on_use")) {
+                        source.sendSuccess(() -> Component.literal("  " + finalI + ": ").withStyle(ChatFormatting.GRAY)
+                            .append(Component.literal(id).withStyle(ChatFormatting.WHITE))
+                            .append(Component.literal(" (Nivel " + amp + ", " + dur + "s)")), false);
+                    } else {
+                        double chv = entry.getDouble("chance") * 100;
+                        boolean selfEntry = entry.getBoolean("self");
+                        String targetName = selfEntry ? "SELF" : "TARGET";
+                        source.sendSuccess(() -> Component.literal("  " + finalI + ": ").withStyle(ChatFormatting.GRAY)
+                            .append(Component.literal(id).withStyle(ChatFormatting.WHITE))
+                            .append(Component.literal(" (Nivel " + amp + ", " + dur + "s, " + chv + "%, Alvo: " + targetName + ")")), false);
+                    }
                 }
             }
         }
@@ -190,5 +216,15 @@ public class ItemEffectModifierCommands {
         }
 
         return 1;
+    }
+
+    private static boolean isOnUseSupportedItem(ItemStack stack) {
+        if (stack.isEmpty()) return false;
+        if (stack.getItem() == Items.POTION || stack.getItem() == Items.SPLASH_POTION || stack.getItem() == Items.LINGERING_POTION) {
+            return true;
+        }
+
+        UseAnim anim = stack.getUseAnimation();
+        return stack.isEdible() || anim == UseAnim.EAT || anim == UseAnim.DRINK;
     }
 }

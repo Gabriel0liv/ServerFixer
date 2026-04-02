@@ -1,5 +1,6 @@
 package com.gabri.serverfixes.client.gui;
 
+import com.gabri.serverfixes.client.gui.editor.SelectableEditBox;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -11,6 +12,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraftforge.registries.ForgeRegistries;
 import org.jetbrains.annotations.NotNull;
+import net.minecraft.ChatFormatting;
 
 import java.util.Map;
 import java.util.function.Consumer;
@@ -31,7 +33,7 @@ public class AttributeSelectionScreen extends Screen {
     @Override
     protected void init() {
         super.init();
-        this.searchBox = new EditBox(this.font, this.width / 2 - 100, 20, 200, 20, Component.literal("Buscar"));
+        this.searchBox = new SelectableEditBox(this.font, this.width / 2 - 100, 20, 200, 20, Component.literal("Buscar"));
         this.searchBox.setResponder(this::updateSearch);
         this.searchBox.setFocused(true);
         this.setInitialFocus(this.searchBox);
@@ -101,7 +103,8 @@ public class AttributeSelectionScreen extends Screen {
 
         @Override
         public void render(@NotNull GuiGraphics graphics, int index, int top, int left, int width, int height, int mouseX, int mouseY, boolean isMouseOver, float partialTicks) {
-            graphics.drawString(Minecraft.getInstance().font, this.name, left + 4, top + 2, 0xFFFFFF);
+            Component boldName = this.name.copy().withStyle(ChatFormatting.BOLD);
+            graphics.drawString(Minecraft.getInstance().font, boldName, left + 4, top + 2, 0xFFFFFF);
             graphics.drawString(Minecraft.getInstance().font, this.id, left + 4, top + 12, 0xAAAAAA);
         }
 
