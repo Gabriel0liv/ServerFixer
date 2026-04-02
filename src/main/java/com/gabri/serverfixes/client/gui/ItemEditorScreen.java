@@ -3,10 +3,13 @@ package com.gabri.serverfixes.client.gui;
 import com.gabri.serverfixes.client.gui.editor.DisplayEditorFormModel;
 import com.gabri.serverfixes.client.gui.editor.FormattingPreviewEditBox;
 import com.gabri.serverfixes.client.gui.editor.SelectableEditBox;
+import com.gabri.serverfixes.client.gui.editor.SnbtFormatUtils;
+import com.gabri.serverfixes.client.gui.editor.SyntaxNbtEditBox;
 import com.gabri.serverfixes.commands.ItemAttributeCommands;
 import com.gabri.serverfixes.config.ServerFixesConfig;
 import com.gabri.serverfixes.network.NetworkHandler;
 import com.gabri.serverfixes.network.SaveItemEditorPacket;
+import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
@@ -15,6 +18,7 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
+import net.minecraft.nbt.TagParser;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
@@ -60,6 +64,10 @@ public class ItemEditorScreen extends Screen {
     private int effectScrollOffset = 0;
     private int enchantmentScrollOffset = 0;
     private List<EnchantmentRow> enchantmentRows = new ArrayList<>();
+    private SyntaxNbtEditBox rawNbtBox;
+    private String rawNbtText = "{}";
+    private String rawNbtError;
+    private String rawNbtStatusMessage = "Use os ícones para formatar, resetar ou aplicar.";
     private ScrollTarget draggingScrollTarget = ScrollTarget.NONE;
     private int draggingThumbOffsetY = 0;
     private final boolean editingEnchantedBook;
@@ -89,6 +97,8 @@ public class ItemEditorScreen extends Screen {
     private static final ResourceLocation DELETE_ICON = ResourceLocation.fromNamespaceAndPath("serverfixes", "textures/gui/xmark-solid.png");
     private static final ResourceLocation ADD_ICON = ResourceLocation.fromNamespaceAndPath("serverfixes", "textures/gui/add.png");
     private static final ResourceLocation SAVE_ICON = ResourceLocation.fromNamespaceAndPath("serverfixes", "textures/gui/save.png");
+    private static final ResourceLocation INDENT_ICON = ResourceLocation.fromNamespaceAndPath("serverfixes", "textures/gui/indent-solid.png");
+    private static final ResourceLocation RESET_ICON = ResourceLocation.fromNamespaceAndPath("serverfixes", "textures/gui/reset.png");
     private static final String HIDE_FLAGS_TAG = "HideFlags";
     private static final String SF_HIDE_EFFECT_FLAGS_TAG = "SF_HideEffectFlags";
 
@@ -98,6 +108,7 @@ public class ItemEditorScreen extends Screen {
         ATTRIBUTES("Atributos"),
         ENCHANTMENTS("Encantamentos"),
         HIDE_FLAGS("Hide Flags"),
+        RAW_NBT("Raw NBT"),
         POTIONS("Efeitos"),
         ON_USE("Efeitos Ao Usar (On Use)"),
         ON_HIT("Efeitos Ao Atacar (On Hit)"),
@@ -111,6 +122,7 @@ public class ItemEditorScreen extends Screen {
     public ItemEditorScreen(CompoundTag itemTag) {
         super(Component.literal("Item Editor"));
         this.currentTag = itemTag.copy();
+        this.rawNbtText = this.currentTag.toString();
         this.editingEnchantedBook = detectEnchantedBookContext(itemTag);
         this.displayForm = DisplayEditorFormModel.fromTag(this.currentTag);
     }
@@ -148,11 +160,22 @@ public class ItemEditorScreen extends Screen {
             boolean active = currentCategory == cat;
             Component title = Component.literal((active ? "§6> " : "") + cat.title);
             this.addRenderableWidget(Button.builder(title, (btn) -> {
+                if (this.currentCategory == Category.RAW_NBT && cat != Category.RAW_NBT) {
+                    if (!applyRawNbtIfValid()) {
+                        this.init();
+                        return;
+                    }
+                }
                 if (this.currentCategory == Category.DISPLAY && cat != Category.DISPLAY) {
                     applyDisplayChanges();
                     this.selectedLoreLine = -1;
                 }
                 this.currentCategory = cat;
+                if (cat == Category.RAW_NBT) {
+                    this.rawNbtText = this.currentTag.toString();
+                    this.rawNbtError = null;
+                    this.rawNbtStatusMessage = "Use os ícones para formatar, resetar ou aplicar.";
+                }
                 // when opening the effects sidebar, default to On Use tab
                 if (cat == Category.POTIONS) this.activeEffectTab = Category.ON_USE;
                 this.init();
@@ -234,12 +257,20 @@ public class ItemEditorScreen extends Screen {
             }).bounds(contentMidX + 5, bottomY, 100, 20).build());
         } else {
             this.addRenderableWidget(Button.builder(Component.literal("Salvar no Item"), (btn) -> {
+                if (this.currentCategory == Category.RAW_NBT && !applyRawNbtIfValid()) {
+                    this.init();
+                    return;
+                }
                 normalizePotionEffectsForCompatibility();
                 NetworkHandler.sendToServer(new SaveItemEditorPacket(this.currentTag));
                 this.minecraft.setScreen(null);
             }).bounds(contentMidX - 105, bottomY, 100, 20).build());
 
             this.addRenderableWidget(Button.builder(Component.literal("Voltar"), (btn) -> {
+                if (this.currentCategory == Category.RAW_NBT && !applyRawNbtIfValid()) {
+                    this.init();
+                    return;
+                }
                 this.currentCategory = Category.MENU;
                 this.init();
             }).bounds(contentMidX + 5, bottomY, 100, 20).build());
@@ -260,6 +291,10 @@ public class ItemEditorScreen extends Screen {
         }
         if (currentCategory == Category.HIDE_FLAGS) {
             initHideFlagsList(contentStartX, contentWidth);
+            return;
+        }
+        if (currentCategory == Category.RAW_NBT) {
+            initRawNbtEditor(contentStartX, contentWidth);
             return;
         }
 
@@ -335,6 +370,51 @@ public class ItemEditorScreen extends Screen {
                 this.init();
             }, "Deletar"));
         }
+    }
+
+    private void initRawNbtEditor(int contentStartX, int contentWidth) {
+        int editorX = contentStartX + 10;
+        int toolbarY = 44;
+        int toolbarButtonSize = 18;
+        int toolbarGap = 4;
+        int editorY = toolbarY + toolbarButtonSize + 6;
+        int editorWidth = Math.max(220, contentWidth - 20);
+        int statusY = this.height - 46;
+        int editorHeight = Math.max(90, statusY - editorY - 8);
+
+        Button indentButton = new IconButton(editorX, toolbarY, toolbarButtonSize, toolbarButtonSize,
+            INDENT_ICON, 16, 16,
+            0xFF1E5D85, 0xFF2A7DB3, 0xFF8FD8FF,
+            btn -> formatRawNbtText());
+        indentButton.setTooltip(Tooltip.create(Component.literal("Indentar SNBT")));
+        this.addRenderableWidget(indentButton);
+
+        Button resetButton = new IconButton(editorX + toolbarButtonSize + toolbarGap, toolbarY, toolbarButtonSize, toolbarButtonSize,
+            RESET_ICON, 16, 16,
+            0xFF6A4B1E, 0xFF8A6530, 0xFFC99B59,
+            btn -> resetRawNbtText());
+        resetButton.setTooltip(Tooltip.create(Component.literal("Resetar para a NBT atual")));
+        this.addRenderableWidget(resetButton);
+
+        Button applyButton = new IconButton(editorX + (toolbarButtonSize + toolbarGap) * 2, toolbarY, toolbarButtonSize, toolbarButtonSize,
+            SAVE_ICON, 16, 16,
+            0xFF2E7D32, 0xFF43A047, 0xFF66BB6A,
+            btn -> applyRawNbtFromToolbar());
+        applyButton.setTooltip(Tooltip.create(Component.literal("Validar e aplicar SNBT")));
+        this.addRenderableWidget(applyButton);
+
+        this.rawNbtBox = new SyntaxNbtEditBox(this.font, editorX, editorY, editorWidth, editorHeight,
+            Component.literal("Raw NBT"), Component.empty());
+        this.rawNbtBox.setCharacterLimit(32767);
+        this.rawNbtBox.setValue(this.rawNbtText != null ? this.rawNbtText : this.currentTag.toString());
+        this.rawNbtBox.setValueListener(value -> {
+            this.rawNbtText = value != null ? value : "{}";
+            this.rawNbtError = null;
+            this.rawNbtStatusMessage = "Alterações pendentes no SNBT.";
+            this.rawNbtBox.refreshSuggestionsNow();
+        });
+        this.rawNbtBox.refreshSuggestionsNow();
+        this.addRenderableWidget(this.rawNbtBox);
     }
 
     private boolean isEffectsCategory(Category category) {
@@ -979,12 +1059,72 @@ public class ItemEditorScreen extends Screen {
         }
     }
 
+    private void formatRawNbtText() {
+        String raw = this.rawNbtBox != null ? this.rawNbtBox.getValue() : this.rawNbtText;
+        if (raw == null || raw.isBlank()) {
+            raw = "{}";
+        }
+
+        try {
+            String pretty = SnbtFormatUtils.prettyPrint(raw);
+            this.rawNbtText = pretty;
+            if (this.rawNbtBox != null) {
+                this.rawNbtBox.setValue(pretty);
+                this.rawNbtBox.refreshSuggestionsNow();
+            }
+            this.rawNbtError = null;
+            this.rawNbtStatusMessage = "SNBT formatado com sucesso.";
+        } catch (CommandSyntaxException e) {
+            this.rawNbtError = e.getMessage();
+            this.rawNbtStatusMessage = "Falha ao formatar: SNBT inválido.";
+        }
+    }
+
+    private void resetRawNbtText() {
+        String reset = this.currentTag.toString();
+        this.rawNbtText = reset;
+        if (this.rawNbtBox != null) {
+            this.rawNbtBox.setValue(reset);
+            this.rawNbtBox.refreshSuggestionsNow();
+        }
+        this.rawNbtError = null;
+        this.rawNbtStatusMessage = "SNBT resetado para a versão atual do item.";
+    }
+
+    private void applyRawNbtFromToolbar() {
+        if (applyRawNbtIfValid()) {
+            this.rawNbtStatusMessage = "NBT validada e aplicada.";
+        } else {
+            this.rawNbtStatusMessage = "Falha na validação da NBT.";
+        }
+    }
+
+    private boolean applyRawNbtIfValid() {
+        String raw = this.rawNbtBox != null ? this.rawNbtBox.getValue() : this.rawNbtText;
+        if (raw == null || raw.isBlank()) {
+            raw = "{}";
+        }
+
+        try {
+            CompoundTag parsed = TagParser.parseTag(raw);
+            this.currentTag = parsed;
+            this.rawNbtText = raw;
+            this.rawNbtError = null;
+            return true;
+        } catch (CommandSyntaxException e) {
+            this.rawNbtText = raw;
+            this.rawNbtError = e.getMessage();
+            return false;
+        }
+    }
+
     private String getTagName() {
         switch (currentCategory) {
             case POTIONS: return "CustomPotionEffects";
             case ON_USE: case ON_HIT: case ON_HURT: case ON_EQUIP: return "SF_ItemEffects";
             case ENCHANTMENTS: return getEnchantmentTagName();
             case HIDE_FLAGS: return HIDE_FLAGS_TAG;
+            case RAW_NBT: return null;
             default: return null;
         }
     }
@@ -1059,6 +1199,9 @@ public class ItemEditorScreen extends Screen {
         }
 
         super.render(graphics, mouseX, mouseY, partialTicks);
+        if (this.currentCategory == Category.RAW_NBT && this.rawNbtBox != null) {
+            this.rawNbtBox.renderSuggestionOverlay(graphics);
+        }
     }
 
     private void renderListEntries(GuiGraphics graphics, int contentStartX, int contentWidth) {
@@ -1082,6 +1225,11 @@ public class ItemEditorScreen extends Screen {
             return;
         }
 
+        if (currentCategory == Category.RAW_NBT) {
+            renderRawNbtPanel(graphics, contentStartX, contentWidth);
+            return;
+        }
+
         String tagName = getTagName();
         if (tagName == null) return;
 
@@ -1102,6 +1250,28 @@ public class ItemEditorScreen extends Screen {
         }
 
         renderEffectTable(graphics, list, contentStartX, contentWidth);
+    }
+
+    private void renderRawNbtPanel(GuiGraphics graphics, int contentStartX, int contentWidth) {
+        int editorX = contentStartX + 10;
+        int toolbarY = 44;
+        int editorY = toolbarY + 18 + 6;
+        int editorWidth = Math.max(220, contentWidth - 20);
+        int statusY = this.height - 46;
+        int editorHeight = Math.max(90, statusY - editorY - 8);
+
+        GuiLayoutUtils.drawPanel(graphics, editorX - 6, toolbarY - 8, editorWidth + 12, (editorHeight + (editorY - toolbarY) + 16), 0xCC1C2532, 0xFF4E6B8D);
+        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "SNBT (Raw)", editorX + 70, toolbarY + 5, 0xFFE0E8F5);
+
+        if (this.rawNbtError != null && !this.rawNbtError.isBlank()) {
+            String msg = this.rawNbtError;
+            if (msg.length() > 140) {
+                msg = msg.substring(0, 140) + "...";
+            }
+            graphics.drawString(this.font, "§cErro SNBT: " + msg, editorX, statusY, 0xFFFF5555);
+        } else {
+            graphics.drawString(this.font, "§a" + this.rawNbtStatusMessage, editorX, statusY, 0xFF88FF88);
+        }
     }
 
     private void renderEffectTable(GuiGraphics graphics, ListTag list, int contentStartX, int contentWidth) {

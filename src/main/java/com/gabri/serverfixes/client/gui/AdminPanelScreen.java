@@ -10,12 +10,10 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
-import net.minecraftforge.registries.ForgeRegistries;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -158,9 +156,7 @@ public class AdminPanelScreen extends AbstractEditorScreen {
         int barButtonH = 16;
         int leftX = this.contentX + 2;
         this.addRenderableWidget(Button.builder(Component.literal("Item Editor"), (btn) -> openItemEditor())
-            .bounds(leftX, this.barY, 86, barButtonH).build());
-        this.addRenderableWidget(Button.builder(Component.literal("Raw SNBT"), (btn) -> openRawNbtEditor())
-            .bounds(leftX + 90, this.barY, 82, barButtonH).build());
+            .bounds(leftX, this.barY, 96, barButtonH).build());
     }
 
     private void initMainPage(int contentStartX, int contentStartY, int contentWidth, int contentHeight) {
@@ -172,32 +168,6 @@ public class AdminPanelScreen extends AbstractEditorScreen {
         LocalPlayer player = this.minecraft.player;
         if (player == null || player.getMainHandItem().isEmpty()) return;
         this.minecraft.setScreen(new ItemEditorScreen(player.getMainHandItem().getOrCreateTag()));
-    }
-
-    private void openRawNbtEditor() {
-        if (this.minecraft == null) return;
-        LocalPlayer player = this.minecraft.player;
-        if (player == null || player.getMainHandItem().isEmpty()) return;
-        // Use the ItemStack save method so the SNBT exactly matches the full ItemStack data (id, Count, tag, etc.)
-        var stack = player.getMainHandItem();
-        try {
-            CompoundTag display = stack.save(new CompoundTag());
-            this.minecraft.setScreen(new NbtEditorScreen(display));
-        } catch (Throwable t) {
-            // Fallback to previous behavior if save isn't available for some mappings
-            CompoundTag display = new CompoundTag();
-            try {
-                var id = ForgeRegistries.ITEMS.getKey(stack.getItem()).toString();
-                display.putString("id", id);
-            } catch (Exception ignored) {}
-            try {
-                display.putByte("Count", (byte) stack.getCount());
-            } catch (Exception ignored) {}
-            if (stack.hasTag() && stack.getTag() != null && !stack.getTag().isEmpty()) {
-                display.put("tag", stack.getTag().copy());
-            }
-            this.minecraft.setScreen(new NbtEditorScreen(display));
-        }
     }
 
     private void initCategoryPage(int contentStartX, int contentWidth, int startY) {
@@ -334,7 +304,7 @@ public class AdminPanelScreen extends AbstractEditorScreen {
         y += 22;
         graphics.drawString(this.font, "§7Use a coluna da esquerda para navegar entre categorias.", textX, y, 0xFFBECBDD);
         y += 16;
-        graphics.drawString(this.font, "§7Use os botões da barra superior para abrir Item Editor e Raw SNBT.", textX, y, 0xFFBECBDD);
+        graphics.drawString(this.font, "§7Use o botão da barra superior para abrir o Item Editor.", textX, y, 0xFFBECBDD);
         y += 16;
         graphics.drawString(this.font, "§7A tela segue o formato do IBE: sidebar + area unica de conteudo.", textX, y, 0xFFBECBDD);
     }

@@ -83,14 +83,14 @@ public class PreciseMultiLineEditBox extends MultiLineEditBox {
         return super.mouseReleased(mouseX, mouseY, button);
     }
 
-    private int indexFromMouse(double mouseX, double mouseY) {
+    protected int indexFromMouse(double mouseX, double mouseY) {
         String value = this.getValue();
         MultilineTextField textField = textField();
         if (textField == null) {
             return 0;
         }
 
-        List<LineView> lines = displayLines(textField);
+        List<LineView> lines = getDisplayLines(textField);
         if (lines.isEmpty()) {
             return 0;
         }
@@ -112,7 +112,15 @@ public class PreciseMultiLineEditBox extends MultiLineEditBox {
         return Mth.clamp(begin + charsUntilClick, 0, value.length());
     }
 
-    private List<LineView> displayLines(MultilineTextField textField) {
+    protected List<LineView> getDisplayLines() {
+        MultilineTextField textField = textField();
+        if (textField == null) {
+            return List.of();
+        }
+        return getDisplayLines(textField);
+    }
+
+    protected List<LineView> getDisplayLines(MultilineTextField textField) {
         List<LineView> lines = new ArrayList<>();
         for (Object line : textField.iterateLines()) {
             LineView parsed = toLineView(line);
@@ -123,7 +131,7 @@ public class PreciseMultiLineEditBox extends MultiLineEditBox {
         return lines;
     }
 
-    private LineView toLineView(Object rawLine) {
+    protected LineView toLineView(Object rawLine) {
         if (rawLine == null) {
             return null;
         }
@@ -178,7 +186,7 @@ public class PreciseMultiLineEditBox extends MultiLineEditBox {
         return Character.isWhitespace(c) || WORD_SEPARATORS.indexOf(c) >= 0;
     }
 
-    private void setCursorAndClearSelection(int absoluteIndex) {
+    protected void setCursorAndClearSelection(int absoluteIndex) {
         MultilineTextField textField = textField();
         if (textField == null) {
             return;
@@ -188,7 +196,7 @@ public class PreciseMultiLineEditBox extends MultiLineEditBox {
         textField.seekCursor(Whence.ABSOLUTE, cursor);
     }
 
-    private void moveCursorKeepingSelection(int absoluteIndex) {
+    protected void moveCursorKeepingSelection(int absoluteIndex) {
         MultilineTextField textField = textField();
         if (textField == null) {
             return;
@@ -198,7 +206,7 @@ public class PreciseMultiLineEditBox extends MultiLineEditBox {
         textField.seekCursor(Whence.ABSOLUTE, cursor);
     }
 
-    private void setSelectionRange(int startInclusive, int endExclusive) {
+    protected void setSelectionRange(int startInclusive, int endExclusive) {
         MultilineTextField textField = textField();
         if (textField == null) {
             return;
@@ -213,8 +221,62 @@ public class PreciseMultiLineEditBox extends MultiLineEditBox {
         textField.seekCursor(Whence.ABSOLUTE, end);
     }
 
-    private int clampToValueRange(int index) {
+    protected int clampToValueRange(int index) {
         return Mth.clamp(index, 0, this.getValue().length());
+    }
+
+    protected int lineHeight() {
+        return Math.max(1, this.textFont.lineHeight);
+    }
+
+    protected int cursorIndex() {
+        MultilineTextField textField = textField();
+        return textField != null ? textField.cursor() : 0;
+    }
+
+    protected Font font() {
+        return this.textFont;
+    }
+
+    protected int[] cursorScreenPosition() {
+        String value = this.getValue();
+        MultilineTextField textField = textField();
+        if (textField == null) {
+            return new int[] {this.getX() + this.innerPadding(), this.getY() + this.innerPadding()};
+        }
+
+        int cursor = clampToValueRange(textField.cursor());
+        int lineIndex = textField.getLineAtCursor();
+        Object rawLine = textField.getLineView(lineIndex);
+        LineView line = toLineView(rawLine);
+        if (line == null) {
+            return new int[] {this.getX() + this.innerPadding(), this.getY() + this.innerPadding()};
+        }
+
+        int begin = Mth.clamp(line.beginIndex(), 0, value.length());
+        int colEnd = Mth.clamp(cursor, begin, value.length());
+        String linePrefix = value.substring(begin, colEnd);
+
+        int x = this.getX() + this.innerPadding() + this.textFont.width(linePrefix);
+        int y = this.getY() + this.innerPadding() - (int) this.scrollAmount() + (lineIndex * lineHeight());
+        return new int[] {x, y};
+    }
+
+    protected void replaceRange(int startInclusive, int endExclusive, String replacement) {
+        String value = this.getValue();
+        int start = clampToValueRange(startInclusive);
+        int end = clampToValueRange(endExclusive);
+        if (end < start) {
+            int swap = start;
+            start = end;
+            end = swap;
+        }
+
+        String prefix = value.substring(0, start);
+        String suffix = value.substring(end);
+        String insert = replacement != null ? replacement : "";
+        this.setValue(prefix + insert + suffix);
+        setCursorAndClearSelection(start + insert.length());
     }
 
     private MultilineTextField textField() {
@@ -236,6 +298,6 @@ public class PreciseMultiLineEditBox extends MultiLineEditBox {
         return null;
     }
 
-    private record LineView(int beginIndex, int endIndex) {
+    protected record LineView(int beginIndex, int endIndex) {
     }
 }
