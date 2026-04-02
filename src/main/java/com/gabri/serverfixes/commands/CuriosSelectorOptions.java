@@ -9,9 +9,14 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.fml.ModList;
 import net.minecraftforge.registries.ForgeRegistries;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import top.theillusivec4.curios.api.CuriosApi;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -21,6 +26,7 @@ import java.util.Set;
 @SuppressWarnings("all")
 public class CuriosSelectorOptions {
 
+    private static final Logger LOGGER = LogManager.getLogger();
     private static final Set<String> REGISTERED_OPTIONS = new HashSet<>();
 
     public static void registerAll() {
@@ -30,23 +36,28 @@ public class CuriosSelectorOptions {
         safeRegister("curios", "Filtra por qualquer item em qualquer slot do Curios", null);
         safeRegister("curio", "Filtra por qualquer item em qualquer slot do Curios", null);
 
-        // 2. Standard Curios slots (Pre-registering these ensures they always show up)
-        String[] standardSlots = {
-            "ring", "belt", "necklace", "charm", "head", "body", "back", 
-            "hands", "feet", "bracelet", "curio_slot"
-        };
-        for (String slot : standardSlots) {
-            safeRegister(slot, "Filtra itens no slot de " + slot + " do Curios", slot);
+        // 2. Dynamic Discovery: register only slots actually loaded by Curios.
+        List<String> loadedSlots = getLoadedCuriosSlots();
+        for (String slotId : loadedSlots) {
+            safeRegister(slotId, "Filtra itens no slot de " + slotId + " do Curios", slotId);
         }
 
-        // 3. Dynamic Discovery (Attempt to find any other custom slots from modpack)
+        LOGGER.info("[ServerFixes] Curios slots carregados ({}): {}",
+            loadedSlots.size(), loadedSlots.isEmpty() ? "<nenhum>" : String.join(", ", loadedSlots));
+    }
+
+    public static List<String> getLoadedCuriosSlots() {
+        if (!ModList.get().isLoaded("curios")) {
+            return Collections.emptyList();
+        }
+
         try {
-            // Using the API version provided by the user
-            Set<String> dynamicSlots = CuriosApi.getSlots(false).keySet();
-            for (String slotId : dynamicSlots) {
-                safeRegister(slotId, "Filtra itens no slot de " + slotId + " do Curios", slotId);
-            }
-        } catch (Exception ignored) {}
+            List<String> slots = new ArrayList<>(CuriosApi.getSlots(false).keySet());
+            Collections.sort(slots);
+            return slots;
+        } catch (Exception ignored) {
+            return Collections.emptyList();
+        }
     }
 
     private static void safeRegister(String id, String description, String specificSlot) {

@@ -7,6 +7,7 @@ import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
+import net.minecraft.network.chat.contents.TranslatableContents;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectCategory;
@@ -18,7 +19,10 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.registries.ForgeRegistries;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 @SuppressWarnings("null")
 @Mod.EventBusSubscriber(modid = ServerFixes.MODID, value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.FORGE)
@@ -40,6 +44,8 @@ public class ItemTooltipHandler {
 
         CompoundTag sf = itemTag.getCompound(MAIN_TAG);
 
+        injectOnEquipIntoModifierSections(event.getToolTip(), sf);
+
         List<CompoundTag> onUse = collectEntries(sf, "on_use");
         List<CompoundTag> onHitSelf = collectEntriesBySelf(sf, "on_hit", true);
         List<CompoundTag> onHitTarget = collectEntriesBySelf(sf, "on_hit", false);
@@ -59,6 +65,126 @@ public class ItemTooltipHandler {
         addGroup(tooltip, "Ao Atacar, aplica:", onHitTarget);
         addGroup(tooltip, "Ao Receber Dano, recebe:", onHurtSelf);
         addGroup(tooltip, "Ao Receber Dano, aplica:", onHurtTarget);
+    }
+
+    private static void injectOnEquipIntoModifierSections(List<Component> tooltip, CompoundTag sf) {
+        List<CompoundTag> onEquip = collectEntries(sf, "on_equip");
+        if (onEquip.isEmpty()) {
+            return;
+        }
+
+        Map<String, List<CompoundTag>> groupedBySlot = new LinkedHashMap<>();
+        for (CompoundTag entry : onEquip) {
+            String slot = entry.contains("Slot", Tag.TAG_STRING) ? entry.getString("Slot").toLowerCase(Locale.ROOT) : "any";
+            groupedBySlot.computeIfAbsent(slot, k -> new ArrayList<>()).add(entry);
+        }
+
+        for (Map.Entry<String, List<CompoundTag>> slotGroup : groupedBySlot.entrySet()) {
+            String slot = slotGroup.getKey();
+            List<Component> equipLines = new ArrayList<>();
+            for (CompoundTag entry : slotGroup.getValue()) {
+                Component line = formatOnEquipLine(entry);
+                if (line != null) {
+                    equipLines.add(line);
+                }
+            }
+
+            if (equipLines.isEmpty()) {
+                continue;
+            }
+
+            String slotKey = slotToTooltipKey(slot);
+            int headerIndex = findModifierHeaderIndex(tooltip, slotKey);
+            if (headerIndex >= 0) {
+                int insertIndex = findInsertIndexAfterModifierBlock(tooltip, headerIndex);
+                tooltip.addAll(insertIndex, equipLines);
+                continue;
+            }
+
+            Component header = createSlotHeader(slot);
+            if (!tooltip.isEmpty() && !tooltip.get(tooltip.size() - 1).getString().isBlank()) {
+                tooltip.add(Component.empty());
+            }
+            tooltip.add(header);
+            tooltip.addAll(equipLines);
+        }
+    }
+
+    private static int findModifierHeaderIndex(List<Component> tooltip, String slotKey) {
+        if (slotKey == null) {
+            return -1;
+        }
+
+        for (int i = 0; i < tooltip.size(); i++) {
+            Component line = tooltip.get(i);
+            if (line.getContents() instanceof TranslatableContents translatable) {
+                if (slotKey.equals(translatable.getKey())) {
+                    return i;
+                }
+            }
+        }
+        return -1;
+    }
+
+    private static int findInsertIndexAfterModifierBlock(List<Component> tooltip, int headerIndex) {
+        int i = headerIndex + 1;
+        while (i < tooltip.size()) {
+            Component line = tooltip.get(i);
+            if (isModifierHeader(line) || line.getString().isBlank()) {
+                break;
+            }
+            i++;
+        }
+        return i;
+    }
+
+    private static boolean isModifierHeader(Component component) {
+        if (!(component.getContents() instanceof TranslatableContents translatable)) {
+            return false;
+        }
+        String key = translatable.getKey();
+        return key.startsWith("item.modifiers.") || key.startsWith("curios.modifiers.");
+    }
+
+    private static String slotToTooltipKey(String slot) {
+        if (slot == null || slot.isBlank() || "any".equalsIgnoreCase(slot)) {
+            return null;
+        }
+        String normalized = slot.toLowerCase(Locale.ROOT);
+        if ("mainhand".equals(normalized) || "offhand".equals(normalized)
+            || "head".equals(normalized) || "chest".equals(normalized)
+            || "legs".equals(normalized) || "feet".equals(normalized)) {
+            return "item.modifiers." + normalized;
+        }
+        return "curios.modifiers." + normalized;
+    }
+
+    private static Component createSlotHeader(String slot) {
+        String key = slotToTooltipKey(slot);
+        if (key != null) {
+            return Component.translatable(key).withStyle(ChatFormatting.GRAY);
+        }
+        return Component.literal("Quando equipado em qualquer slot:").withStyle(ChatFormatting.GRAY);
+    }
+
+    private static Component formatOnEquipLine(CompoundTag entry) {
+        MobEffect effect = resolveEffect(entry);
+        if (effect == null) {
+            return null;
+        }
+
+        int amplifier = readInt(entry, "amplifier", "Amplifier", 0);
+        ChatFormatting color = effect.getCategory() == MobEffectCategory.HARMFUL ? ChatFormatting.RED : ChatFormatting.BLUE;
+
+        MutableComponent line = Component.literal(" ")
+            .append(Component.literal("Nível de Efeito: "))
+            .append(Component.translatable(effect.getDescriptionId()));
+
+        if (amplifier > 0) {
+            line.append(Component.literal(" " + toRoman(amplifier + 1)));
+        }
+
+        return line.withStyle(color);
     }
 
     private static void addGroup(List<Component> tooltip, String header, List<CompoundTag> entries) {

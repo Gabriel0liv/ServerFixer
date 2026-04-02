@@ -20,6 +20,7 @@ public class VillagerHandler {
     public static void onEntityInteract(PlayerInteractEvent.EntityInteract event) {
         if (event.getTarget() instanceof AbstractVillager merchant) {
             Player player = event.getEntity();
+            if (player == null || player.level().isClientSide()) return;
             
             // 1. Interaction Debug
             if (ServerFixesConfig.DEBUG_VILLAGERS.get() && player.getTags().contains("sf_debug_villagers")) {

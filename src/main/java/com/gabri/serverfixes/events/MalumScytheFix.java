@@ -36,11 +36,13 @@ public class MalumScytheFix {
 
     @SubscribeEvent(priority = EventPriority.LOWEST, receiveCanceled = true)
     public static void onLivingHurt(LivingHurtEvent event) {
+        if (event == null || event.getEntity() == null || event.getEntity().level().isClientSide()) return;
+
         // Retrieve the damage type location safely
         ResourceLocation damageTypeRL = event.getSource().typeHolder()
-                .unwrapKey()
-                .map(k -> k.location())
-                .orElse(null);
+            .unwrapKey()
+            .map(k -> k.location())
+            .orElse(null);
 
         if (damageTypeRL == null || !SCYTHE_SWEEP_RL.equals(damageTypeRL)) return;
 

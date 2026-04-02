@@ -19,6 +19,7 @@ java.toolchain.languageVersion = JavaLanguageVersion.of(17)
 
 def disableRefmapRemap = (project.findProperty('sfDisableRefmapRemap') ?: 'false').toString().toBoolean()
 def enableAdvancedHotswap = (project.findProperty('sfEnableAdvancedHotswap') ?: 'false').toString().toBoolean()
+def enableCuriosRuntimeInDev = (project.findProperty('sfEnableCuriosRuntimeInDev') ?: 'false').toString().toBoolean()
 def hotswapAgentPath = (project.findProperty('sfHotswapAgentPath') ?: '').toString().trim()
 def hotswapConfigPath = (project.findProperty('sfHotswapConfigPath') ?: 'dev/hotswap/hotswap-agent.properties').toString().trim()
 
@@ -111,7 +112,9 @@ dependencies {
 
     // Curios API
     compileOnly fg.deobf("top.theillusivec4.curios:curios-forge:5.14.1+1.20.1:api")
-    runtimeOnly fg.deobf("top.theillusivec4.curios:curios-forge:5.14.1+1.20.1")
+    if (enableCuriosRuntimeInDev) {
+        runtimeOnly fg.deobf("top.theillusivec4.curios:curios-forge:5.14.1+1.20.1")
+    }
 
     // Annotation Processor for Mixin
     annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'

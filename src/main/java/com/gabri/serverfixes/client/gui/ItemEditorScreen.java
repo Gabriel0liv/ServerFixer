@@ -93,7 +93,8 @@ public class ItemEditorScreen extends Screen {
         POTIONS("Efeitos"),
         ON_USE("Efeitos Ao Usar (On Use)"),
         ON_HIT("Efeitos Ao Atacar (On Hit)"),
-        ON_HURT("Efeitos Ao Receber (On Hurt)");
+        ON_HURT("Efeitos Ao Receber (On Hurt)"),
+        ON_EQUIP("Efeitos Ao Equipar (On Equip)");
 
         public final String title;
         Category(String title) { this.title = title; }
@@ -118,7 +119,7 @@ public class ItemEditorScreen extends Screen {
         int buttonWidth = sidebarWidth - 18;
         for (Category cat : Category.values()) {
             // Skip adding duplicate sidebar entries for effect sub-tabs (they live under the single Effects sidebar)
-            if (cat == Category.ON_HIT || cat == Category.ON_HURT || cat == Category.ON_USE) continue;
+            if (cat == Category.ON_HIT || cat == Category.ON_HURT || cat == Category.ON_USE || cat == Category.ON_EQUIP) continue;
             boolean active = currentCategory == cat;
             Component title = Component.literal((active ? "§6> " : "") + cat.title);
             this.addRenderableWidget(Button.builder(title, (btn) -> {
@@ -238,10 +239,11 @@ public class ItemEditorScreen extends Screen {
             effectCompound = null;
             effectKey = null;
             list = this.currentTag.getList("CustomPotionEffects", Tag.TAG_COMPOUND);
-        } else if (viewCat == Category.ON_HIT || viewCat == Category.ON_HURT || viewCat == Category.ON_USE) {
+        } else if (viewCat == Category.ON_HIT || viewCat == Category.ON_HURT || viewCat == Category.ON_USE || viewCat == Category.ON_EQUIP) {
             effectCompound = this.currentTag.getCompound("SF_ItemEffects");
             if (viewCat == Category.ON_HIT) effectKey = "on_hit";
             else if (viewCat == Category.ON_HURT) effectKey = "on_hurt";
+            else if (viewCat == Category.ON_EQUIP) effectKey = "on_equip";
             else effectKey = "on_use";
             list = effectCompound.getList(effectKey, Tag.TAG_COMPOUND);
         } else {
@@ -306,12 +308,13 @@ public class ItemEditorScreen extends Screen {
 
     private void addEffectCategoryTabs(int contentStartX, int contentWidth) {
         int tabAreaWidth = Math.max(240, contentWidth - 34);
-        int tabsCount = 3;
+        int tabsCount = 4;
         int tabWidth = (tabAreaWidth - (EFFECT_TAB_GAP * (tabsCount - 1))) / tabsCount;
         int startX = contentStartX + 10;
         this.addRenderableWidget(createEffectCategoryTab(startX, EFFECT_TAB_Y, tabWidth, "On Use", Category.ON_USE));
         this.addRenderableWidget(createEffectCategoryTab(startX + (tabWidth + EFFECT_TAB_GAP), EFFECT_TAB_Y, tabWidth, "On Hit", Category.ON_HIT));
         this.addRenderableWidget(createEffectCategoryTab(startX + (tabWidth + EFFECT_TAB_GAP) * 2, EFFECT_TAB_Y, tabWidth, "On Hurt", Category.ON_HURT));
+        this.addRenderableWidget(createEffectCategoryTab(startX + (tabWidth + EFFECT_TAB_GAP) * 3, EFFECT_TAB_Y, tabWidth, "On Equip", Category.ON_EQUIP));
     }
 
     private Button createEffectCategoryTab(int x, int y, int width, String label, Category category) {
@@ -691,7 +694,7 @@ public class ItemEditorScreen extends Screen {
     private String getTagName() {
         switch (currentCategory) {
             case POTIONS: return "CustomPotionEffects";
-            case ON_USE: case ON_HIT: case ON_HURT: return "SF_ItemEffects";
+            case ON_USE: case ON_HIT: case ON_HURT: case ON_EQUIP: return "SF_ItemEffects";
             default: return null;
         }
     }
@@ -788,10 +791,11 @@ public class ItemEditorScreen extends Screen {
         if (useVanillaOnUse) {
             canonicalizeOnUsePotionStorage();
             list = this.currentTag.getList("CustomPotionEffects", Tag.TAG_COMPOUND);
-        } else if (viewCat == Category.ON_HIT || viewCat == Category.ON_HURT || viewCat == Category.ON_USE) {
+        } else if (viewCat == Category.ON_HIT || viewCat == Category.ON_HURT || viewCat == Category.ON_USE || viewCat == Category.ON_EQUIP) {
             CompoundTag main = this.currentTag.getCompound("SF_ItemEffects");
             if (viewCat == Category.ON_HIT) list = main.getList("on_hit", Tag.TAG_COMPOUND);
             else if (viewCat == Category.ON_HURT) list = main.getList("on_hurt", Tag.TAG_COMPOUND);
+            else if (viewCat == Category.ON_EQUIP) list = main.getList("on_equip", Tag.TAG_COMPOUND);
             else list = main.getList("on_use", Tag.TAG_COMPOUND);
         } else {
             list = this.currentTag.getList(tagName, Tag.TAG_COMPOUND);
@@ -892,7 +896,10 @@ public class ItemEditorScreen extends Screen {
             int durationTicks = entry.contains("Duration", Tag.TAG_ANY_NUMERIC) ? entry.getInt("Duration") : entry.contains("duration", Tag.TAG_ANY_NUMERIC) ? entry.getInt("duration") : 0;
             int rawAmp = entry.contains("Amplifier", Tag.TAG_ANY_NUMERIC) ? entry.getInt("Amplifier") : (entry.contains("amplifier", Tag.TAG_ANY_NUMERIC) ? entry.getInt("amplifier") : 0);
             int amplifier = rawAmp + 1;
-            String extras = (viewCat == Category.ON_USE) ? formatOnUseExtras(entry) : formatTriggerExtras(entry);
+            String extras =
+                (viewCat == Category.ON_USE) ? formatOnUseExtras(entry)
+                : (viewCat == Category.ON_EQUIP) ? formatOnEquipExtras(entry)
+                : formatTriggerExtras(entry);
 
             graphics.drawString(this.font, shortEffect, layout.effectX, rowY + 4, 0xDDFFFFFF);
             graphics.drawString(this.font, formatEffectDuration(durationTicks), layout.durationX, rowY + 4, 0xFF90EEFF);
@@ -931,6 +938,13 @@ public class ItemEditorScreen extends Screen {
 
     private static String formatOnUseExtras(CompoundTag entry) {
         return formatPotionExtras(entry);
+    }
+
+    private static String formatOnEquipExtras(CompoundTag entry) {
+        String slot = entry.contains("Slot", Tag.TAG_STRING) ? entry.getString("Slot") : "any";
+        boolean particles = !entry.contains("ShowParticles", Tag.TAG_BYTE) || entry.getBoolean("ShowParticles");
+        boolean icon = !entry.contains("ShowIcon", Tag.TAG_BYTE) || entry.getBoolean("ShowIcon");
+        return "S:" + slot + " P:" + (particles ? "Y" : "N") + " I:" + (icon ? "Y" : "N");
     }
 
     private void renderDisplayForm(GuiGraphics graphics, int contentStartX, int contentWidth) {
@@ -1351,10 +1365,11 @@ public class ItemEditorScreen extends Screen {
         if (shouldUseVanillaOnUseStorage(viewCat)) {
             canonicalizeOnUsePotionStorage();
             total = this.currentTag.getList("CustomPotionEffects", Tag.TAG_COMPOUND).size();
-        } else if (viewCat == Category.ON_HIT || viewCat == Category.ON_HURT || viewCat == Category.ON_USE) {
+        } else if (viewCat == Category.ON_HIT || viewCat == Category.ON_HURT || viewCat == Category.ON_USE || viewCat == Category.ON_EQUIP) {
             CompoundTag main = this.currentTag.getCompound("SF_ItemEffects");
             if (viewCat == Category.ON_HIT) total = main.getList("on_hit", Tag.TAG_COMPOUND).size();
             else if (viewCat == Category.ON_HURT) total = main.getList("on_hurt", Tag.TAG_COMPOUND).size();
+            else if (viewCat == Category.ON_EQUIP) total = main.getList("on_equip", Tag.TAG_COMPOUND).size();
             else total = main.getList("on_use", Tag.TAG_COMPOUND).size();
         } else {
             total = this.currentTag.getList("CustomPotionEffects", Tag.TAG_COMPOUND).size();
@@ -1485,10 +1500,11 @@ public class ItemEditorScreen extends Screen {
             if (shouldUseVanillaOnUseStorage(viewCat)) {
                 canonicalizeOnUsePotionStorage();
                 total = this.currentTag.getList("CustomPotionEffects", Tag.TAG_COMPOUND).size();
-            } else if (viewCat == Category.ON_HIT || viewCat == Category.ON_HURT || viewCat == Category.ON_USE) {
+            } else if (viewCat == Category.ON_HIT || viewCat == Category.ON_HURT || viewCat == Category.ON_USE || viewCat == Category.ON_EQUIP) {
                 CompoundTag main = this.currentTag.getCompound("SF_ItemEffects");
                 if (viewCat == Category.ON_HIT) total = main.getList("on_hit", Tag.TAG_COMPOUND).size();
                 else if (viewCat == Category.ON_HURT) total = main.getList("on_hurt", Tag.TAG_COMPOUND).size();
+                else if (viewCat == Category.ON_EQUIP) total = main.getList("on_equip", Tag.TAG_COMPOUND).size();
                 else total = main.getList("on_use", Tag.TAG_COMPOUND).size();
             } else {
                 total = this.currentTag.getList("CustomPotionEffects", Tag.TAG_COMPOUND).size();

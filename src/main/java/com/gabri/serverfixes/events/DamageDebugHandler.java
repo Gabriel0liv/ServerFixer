@@ -44,6 +44,7 @@ public class DamageDebugHandler {
 
     @SubscribeEvent
     public static void onLivingHurt(LivingHurtEvent event) {
+        if (event == null || event.getEntity() == null || event.getEntity().level().isClientSide()) return;
         // Optimization: only track if the world wide debug is on OR if someone might have the tag
         // Since we can't easily check all players here, we check the global config as a master switch
         if (!ServerFixesConfig.DEBUG_DAMAGE_RECEIVED.get() && !ServerFixesConfig.DEBUG_DAMAGE_DEALT.get()) return;
@@ -53,6 +54,7 @@ public class DamageDebugHandler {
     @SubscribeEvent
     public static void onLivingDamage(LivingDamageEvent event) {
         LivingEntity target = event.getEntity();
+        if (target == null || target.level().isClientSide()) return;
         DamageSource source = event.getSource();
         float actualFinal = event.getAmount();
 

@@ -19,9 +19,13 @@ import net.minecraft.world.item.PotionItem;
 import net.minecraft.world.item.alchemy.Potion;
 import net.minecraft.world.item.alchemy.PotionUtils;
 import net.minecraft.world.item.alchemy.Potions;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraftforge.fml.ModList;
 import net.minecraftforge.registries.ForgeRegistries;
 import org.jetbrains.annotations.NotNull;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
@@ -65,11 +69,13 @@ public class AddEffectScreen extends Screen {
     private String pendingAmp = "0";
     private String pendingChance = "1.0";
     private String pendingOnUseColor = "";
+    private String pendingSlot = "any";
     private boolean loadedFromTag;
 
     private String originalId = "";
     private String originalChance = "1.0";
     private String originalOnUseColor = "";
+    private String originalSlot = "any";
     private boolean originalSelf;
     private boolean showPotionOnUseUi;
     private boolean showPotionPreview;
@@ -232,6 +238,7 @@ public class AddEffectScreen extends Screen {
         this.originalId = this.pendingId;
         this.originalChance = this.pendingChance;
         this.originalOnUseColor = this.pendingOnUseColor;
+        this.originalSlot = this.pendingSlot;
         this.originalSelf = this.pendingSelf;
 
         this.idBox = new SelectableEditBox(this.font, fieldX, this.idRowY, idFieldWidth, 20, Component.literal("ID"));
@@ -311,6 +318,32 @@ public class AddEffectScreen extends Screen {
             } else {
                 this.onUseColorBox = null;
             }
+        } else if (category == ItemEditorScreen.Category.ON_EQUIP) {
+            this.onUseColorBox = null;
+            this.chanceBox = null;
+
+            int toggleWidth = Math.max(78, (baseFieldWidth - 8) / 3);
+            this.addRenderableWidget(createToggleButton(fieldX, this.flagsRowY, toggleWidth, "Ambient", this.pendingAmbient,
+                value -> this.pendingAmbient = value));
+            this.addRenderableWidget(createToggleButton(fieldX + toggleWidth + 4, this.flagsRowY, toggleWidth, "Partículas", this.pendingShowParticles,
+                value -> this.pendingShowParticles = value));
+            this.addRenderableWidget(createToggleButton(fieldX + (toggleWidth + 4) * 2, this.flagsRowY, toggleWidth, "Ícone", this.pendingShowIcon,
+                value -> this.pendingShowIcon = value));
+
+            List<String> slotOptions = collectSlotOptions();
+            if (!slotOptions.contains(this.pendingSlot)) slotOptions.add(this.pendingSlot);
+            this.addRenderableWidget(Button.builder(Component.literal(this.pendingSlot.toUpperCase(Locale.ROOT)), (btn) -> {
+                this.updatePending();
+                this.minecraft.setScreen(new SlotSelectionScreen(this, slotOptions, (slotId) -> {
+                    this.pendingSlot = slotId;
+                    this.init();
+                }));
+            }).bounds(fieldX, this.colorRowY, baseFieldWidth, 20).build());
+
+            this.addResetButton(fieldX + baseFieldWidth + RESET_BUTTON_GAP, this.colorRowY, () -> {
+                this.pendingSlot = this.originalSlot;
+                this.init();
+            });
         } else {
             this.onUseColorBox = null;
             this.chanceBox = new SelectableEditBox(this.font, fieldX, this.flagsRowY, baseFieldWidth, 20, Component.literal("Chance"));
@@ -372,7 +405,8 @@ public class AddEffectScreen extends Screen {
                 String listKey;
                 if (category == ItemEditorScreen.Category.ON_HIT) listKey = "on_hit";
                 else if (category == ItemEditorScreen.Category.ON_HURT) listKey = "on_hurt";
-                else listKey = "on_use"; // default to on_use for the new tab
+                else if (category == ItemEditorScreen.Category.ON_EQUIP) listKey = "on_equip";
+                else listKey = "on_use";
                 ListTag list = sfTag.getList(listKey, Tag.TAG_COMPOUND);
                 
                 CompoundTag entry = new CompoundTag();
@@ -430,6 +464,11 @@ public class AddEffectScreen extends Screen {
                     } else {
                         sfTag.remove(ON_USE_MIRROR_TAG);
                     }
+                } else if (category == ItemEditorScreen.Category.ON_EQUIP) {
+                    entry.putString("Slot", this.pendingSlot == null || this.pendingSlot.isBlank() ? "any" : this.pendingSlot.toLowerCase(Locale.ROOT));
+                    entry.putBoolean("Ambient", this.pendingAmbient);
+                    entry.putBoolean("ShowParticles", this.pendingShowParticles);
+                    entry.putBoolean("ShowIcon", this.pendingShowIcon);
                 } else {
                     entry.putDouble("chance", parseDoubleInput(this.pendingChance, 1.0D));
                     entry.putBoolean("self", this.pendingSelf);
@@ -509,6 +548,7 @@ public class AddEffectScreen extends Screen {
             String listKey;
             if (this.editingCategory == ItemEditorScreen.Category.ON_HIT) listKey = "on_hit";
             else if (this.editingCategory == ItemEditorScreen.Category.ON_HURT) listKey = "on_hurt";
+            else if (this.editingCategory == ItemEditorScreen.Category.ON_EQUIP) listKey = "on_equip";
             else listKey = "on_use";
             ListTag list = sfTag.getList(listKey, Tag.TAG_COMPOUND);
             if (this.editingIndex >= list.size()) {
@@ -546,7 +586,10 @@ public class AddEffectScreen extends Screen {
             this.pendingId = entry.getString("id");
             this.pendingAmp = Integer.toString(entry.getInt("amplifier"));
             this.pendingDur = formatSecondsFromTicks(entry.getInt("duration"));
-            if (this.editingCategory != ItemEditorScreen.Category.ON_USE) {
+            if (this.editingCategory == ItemEditorScreen.Category.ON_EQUIP) {
+                this.pendingChance = "1.0";
+                this.pendingSlot = entry.contains("Slot", Tag.TAG_STRING) ? entry.getString("Slot") : "any";
+            } else if (this.editingCategory != ItemEditorScreen.Category.ON_USE) {
                 this.pendingChance = Double.toString(entry.contains("chance", Tag.TAG_DOUBLE) ? entry.getDouble("chance") : 1.0D);
                 this.pendingSelf = entry.contains("self", Tag.TAG_BYTE) && entry.getBoolean("self");
             } else {
@@ -709,11 +752,12 @@ public class AddEffectScreen extends Screen {
 
     private void addModeTabs(int startX, int y, int totalWidth) {
         int gap = 4;
-        int tabsCount = 3;
+        int tabsCount = 4;
         int tabWidth = Math.max(64, (totalWidth - (tabsCount - 1) * gap) / tabsCount);
         this.addRenderableWidget(createModeTabButton(startX, y, tabWidth, "On Use", ItemEditorScreen.Category.ON_USE));
         this.addRenderableWidget(createModeTabButton(startX + (tabWidth + gap), y, tabWidth, "On Hit", ItemEditorScreen.Category.ON_HIT));
         this.addRenderableWidget(createModeTabButton(startX + (tabWidth + gap) * 2, y, tabWidth, "On Hurt", ItemEditorScreen.Category.ON_HURT));
+        this.addRenderableWidget(createModeTabButton(startX + (tabWidth + gap) * 3, y, tabWidth, "On Equip", ItemEditorScreen.Category.ON_EQUIP));
     }
 
     private Button createModeTabButton(int x, int y, int width, String label, ItemEditorScreen.Category targetCategory) {
@@ -765,6 +809,9 @@ public class AddEffectScreen extends Screen {
                     renderPotionMiniPreview(graphics);
                 }
             }
+        } else if (category == ItemEditorScreen.Category.ON_EQUIP) {
+            GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Flags de render", labelX, this.flagsLabelY, 0xFFCCD9F1);
+            GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Slot de ativação", labelX, this.colorLabelY, 0xFFCCD9F1);
         } else {
             GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Chance de aplicar", labelX, this.flagsLabelY, 0xFFCCD9F1);
             GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Alvo do efeito", labelX, this.colorLabelY, 0xFFCCD9F1);
@@ -834,5 +881,29 @@ public class AddEffectScreen extends Screen {
         }
         CompoundTag tag = stack.getTag();
         return tag != null && (tag.contains("Potion", Tag.TAG_STRING) || tag.contains("CustomPotionEffects", Tag.TAG_LIST));
+    }
+
+    private static List<String> collectSlotOptions() {
+        List<String> slotOptions = new ArrayList<>();
+        for (EquipmentSlot equip : EquipmentSlot.values()) {
+            String name = equip.getName();
+            if (!slotOptions.contains(name)) {
+                slotOptions.add(name);
+            }
+        }
+        if (!slotOptions.contains("any")) {
+            slotOptions.add("any");
+        }
+        if (ModList.get().isLoaded("curios")) {
+            try {
+                top.theillusivec4.curios.api.CuriosApi.getSlots(false).keySet().forEach(slotId -> {
+                    if (!slotOptions.contains(slotId)) {
+                        slotOptions.add(slotId);
+                    }
+                });
+            } catch (Exception ignored) {
+            }
+        }
+        return slotOptions;
     }
 }
