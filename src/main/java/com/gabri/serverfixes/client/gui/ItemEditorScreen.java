@@ -27,6 +27,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.item.alchemy.Potion;
 import net.minecraft.world.item.alchemy.PotionUtils;
 import net.minecraft.world.item.alchemy.Potions;
+import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraftforge.registries.ForgeRegistries;
@@ -57,8 +58,11 @@ public class ItemEditorScreen extends Screen {
     private int loreScrollOffset = 0;
     private int attributeScrollOffset = 0;
     private int effectScrollOffset = 0;
+    private int enchantmentScrollOffset = 0;
+    private List<EnchantmentRow> enchantmentRows = new ArrayList<>();
     private ScrollTarget draggingScrollTarget = ScrollTarget.NONE;
     private int draggingThumbOffsetY = 0;
+    private final boolean editingEnchantedBook;
 
     private static final int SIDEBAR_WIDTH = 150;
     private static final int CONTENT_PADDING = 12;
@@ -85,11 +89,15 @@ public class ItemEditorScreen extends Screen {
     private static final ResourceLocation DELETE_ICON = ResourceLocation.fromNamespaceAndPath("serverfixes", "textures/gui/xmark-solid.png");
     private static final ResourceLocation ADD_ICON = ResourceLocation.fromNamespaceAndPath("serverfixes", "textures/gui/add.png");
     private static final ResourceLocation SAVE_ICON = ResourceLocation.fromNamespaceAndPath("serverfixes", "textures/gui/save.png");
+    private static final String HIDE_FLAGS_TAG = "HideFlags";
+    private static final String SF_HIDE_EFFECT_FLAGS_TAG = "SF_HideEffectFlags";
 
     public enum Category {
         MENU("Editor de Item"),
         DISPLAY("Display"),
         ATTRIBUTES("Atributos"),
+        ENCHANTMENTS("Encantamentos"),
+        HIDE_FLAGS("Hide Flags"),
         POTIONS("Efeitos"),
         ON_USE("Efeitos Ao Usar (On Use)"),
         ON_HIT("Efeitos Ao Atacar (On Hit)"),
@@ -103,7 +111,24 @@ public class ItemEditorScreen extends Screen {
     public ItemEditorScreen(CompoundTag itemTag) {
         super(Component.literal("Item Editor"));
         this.currentTag = itemTag.copy();
+        this.editingEnchantedBook = detectEnchantedBookContext(itemTag);
         this.displayForm = DisplayEditorFormModel.fromTag(this.currentTag);
+    }
+
+    private static boolean detectEnchantedBookContext(CompoundTag itemTag) {
+        if (itemTag != null && itemTag.contains("StoredEnchantments", Tag.TAG_LIST)) {
+            return true;
+        }
+        if (itemTag != null && itemTag.contains("Enchantments", Tag.TAG_LIST)) {
+            return false;
+        }
+
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft != null && minecraft.player != null) {
+            ItemStack mainHand = minecraft.player.getMainHandItem();
+            return !mainHand.isEmpty() && mainHand.is(Items.ENCHANTED_BOOK);
+        }
+        return false;
     }
 
     @Override
@@ -143,23 +168,30 @@ public class ItemEditorScreen extends Screen {
                     addEffectCategoryTabs(contentStartX, contentWidth);
                 }
                 initCategoryList(contentStartX, contentWidth);
-                int addWidth = 22;
-                int addButtonY = isEffectsCategory(this.currentCategory) ? EFFECT_TAB_Y : 42;
-                // Use IconButton with add asset for consistency
-                this.addRenderableWidget(new IconButton(contentStartX + contentWidth - addWidth, addButtonY, addWidth, 18,
-                    ADD_ICON, 16, 16,
-                    0xFF2E7D32, 0xFF43A047, 0xFF66BB6A,
-                    (btn) -> {
-                        if (currentCategory == Category.ATTRIBUTES) {
-                            this.minecraft.setScreen(new AddAttributeScreen(this));
-                        } else {
-                            Category viewCat = isEffectsCategory(this.currentCategory) ? this.activeEffectTab : this.currentCategory;
-                            if (shouldUseVanillaOnUseStorage(viewCat)) {
-                                canonicalizeOnUsePotionStorage();
+                boolean showAddButton = this.currentCategory == Category.ATTRIBUTES
+                    || this.currentCategory == Category.ENCHANTMENTS
+                    || isEffectsCategory(this.currentCategory);
+                if (showAddButton) {
+                    int addWidth = 22;
+                    int addButtonY = isEffectsCategory(this.currentCategory) ? EFFECT_TAB_Y : 42;
+                    // Use IconButton with add asset for consistency
+                    this.addRenderableWidget(new IconButton(contentStartX + contentWidth - addWidth, addButtonY, addWidth, 18,
+                        ADD_ICON, 16, 16,
+                        0xFF2E7D32, 0xFF43A047, 0xFF66BB6A,
+                        (btn) -> {
+                            if (currentCategory == Category.ATTRIBUTES) {
+                                this.minecraft.setScreen(new AddAttributeScreen(this));
+                            } else if (currentCategory == Category.ENCHANTMENTS) {
+                                this.minecraft.setScreen(new AddEnchantmentScreen(this));
+                            } else {
+                                Category viewCat = isEffectsCategory(this.currentCategory) ? this.activeEffectTab : this.currentCategory;
+                                if (shouldUseVanillaOnUseStorage(viewCat)) {
+                                    canonicalizeOnUsePotionStorage();
+                                }
+                                this.minecraft.setScreen(new AddEffectScreen(this, viewCat));
                             }
-                            this.minecraft.setScreen(new AddEffectScreen(this, viewCat));
-                        }
-                    }));
+                        }));
+                }
             }
         }
 
@@ -220,6 +252,14 @@ public class ItemEditorScreen extends Screen {
         }
         if (currentCategory == Category.ATTRIBUTES) {
             initAttributeList(contentStartX, contentWidth);
+            return;
+        }
+        if (currentCategory == Category.ENCHANTMENTS) {
+            initEnchantmentList(contentStartX, contentWidth);
+            return;
+        }
+        if (currentCategory == Category.HIDE_FLAGS) {
+            initHideFlagsList(contentStartX, contentWidth);
             return;
         }
 
@@ -691,10 +731,260 @@ public class ItemEditorScreen extends Screen {
         this.currentTag.put(ItemAttributeCommands.BACKUP_TAG, backup);
     }
 
+    public void addEnchantment(String rawId) {
+        if (rawId == null || rawId.isBlank()) {
+            return;
+        }
+
+        String normalized = rawId.contains(":") ? rawId : "minecraft:" + rawId;
+        ResourceLocation enchantmentId = ResourceLocation.tryParse(normalized);
+        if (enchantmentId == null) {
+            return;
+        }
+
+        Enchantment enchantment = ForgeRegistries.ENCHANTMENTS.getValue(enchantmentId);
+        if (enchantment == null) {
+            return;
+        }
+
+        String tagName = getEnchantmentTagName();
+        ListTag list = this.currentTag.getList(tagName, Tag.TAG_COMPOUND);
+        String idText = enchantmentId.toString();
+
+        for (int i = 0; i < list.size(); i++) {
+            CompoundTag existing = list.getCompound(i);
+            if (idText.equals(existing.getString("id"))) {
+                if (!existing.contains("lvl", Tag.TAG_ANY_NUMERIC)) {
+                    existing.putShort("lvl", (short) 1);
+                    list.set(i, existing);
+                    this.currentTag.put(tagName, list);
+                }
+                return;
+            }
+        }
+
+        CompoundTag entry = new CompoundTag();
+        entry.putString("id", idText);
+        entry.putShort("lvl", (short) 1);
+        list.add(entry);
+        this.currentTag.put(tagName, list);
+    }
+
+    private String getEnchantmentTagName() {
+        return this.editingEnchantedBook ? "StoredEnchantments" : "Enchantments";
+    }
+
+    private List<EnchantmentRow> buildEnchantmentRows() {
+        List<EnchantmentRow> rows = new ArrayList<>();
+        String tagName = getEnchantmentTagName();
+        if (!this.currentTag.contains(tagName, Tag.TAG_LIST)) {
+            return rows;
+        }
+
+        ListTag list = this.currentTag.getList(tagName, Tag.TAG_COMPOUND);
+        for (int i = 0; i < list.size(); i++) {
+            rows.add(new EnchantmentRow(list.getCompound(i), tagName, i));
+        }
+        return rows;
+    }
+
+    private void initEnchantmentList(int contentStartX, int contentWidth) {
+        this.enchantmentRows = buildEnchantmentRows();
+        EnchantmentTableLayout layout = computeEnchantmentTableLayout(contentStartX, contentWidth);
+
+        int total = this.enchantmentRows.size();
+        int firstRowY = LIST_START_Y + layout.headerHeight;
+        int visibleSlots = computeVisibleRows(firstRowY);
+        this.enchantmentScrollOffset = clampScrollOffset(this.enchantmentScrollOffset, total, visibleSlots);
+        int visible = Math.min(visibleSlots, Math.max(0, total - this.enchantmentScrollOffset));
+
+        for (int i = 0; i < visible; i++) {
+            final EnchantmentRow row = this.enchantmentRows.get(this.enchantmentScrollOffset + i);
+            int rowY = LIST_START_Y + layout.headerHeight + (i * ROW_HEIGHT);
+
+            SelectableEditBox levelBox = new SelectableEditBox(this.font, layout.levelInputX, rowY + 2, layout.levelInputWidth, 18, Component.literal("Lvl"));
+            levelBox.setMaxLength(5);
+            levelBox.setFilter(value -> value.isEmpty() || value.matches("\\d{1,5}"));
+            levelBox.setValue(Short.toString((short) row.getLevel()));
+            levelBox.setResponder(value -> updateEnchantmentLevel(row, value));
+            this.addRenderableWidget(levelBox);
+
+            this.addRenderableWidget(createDeleteActionButton(layout.deleteButtonX, rowY + 2, 18, 16, btn -> {
+                ListTag list = this.currentTag.getList(row.getTagName(), Tag.TAG_COMPOUND);
+                if (row.getIndex() >= 0 && row.getIndex() < list.size()) {
+                    list.remove(row.getIndex());
+                    persistList(row.getTagName(), list);
+                    this.enchantmentRows = buildEnchantmentRows();
+                    this.enchantmentScrollOffset = clampScrollOffset(this.enchantmentScrollOffset, this.enchantmentRows.size(), visibleSlots);
+                    this.init();
+                }
+            }, "Deletar"));
+        }
+    }
+
+    private void updateEnchantmentLevel(EnchantmentRow row, String value) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+
+        int parsed;
+        try {
+            parsed = Integer.parseInt(value);
+        } catch (Exception ignored) {
+            return;
+        }
+
+        int level = Mth.clamp(parsed, 1, 32767);
+        ListTag list = this.currentTag.getList(row.getTagName(), Tag.TAG_COMPOUND);
+        if (row.getIndex() < 0 || row.getIndex() >= list.size()) {
+            return;
+        }
+
+        CompoundTag entry = list.getCompound(row.getIndex());
+        entry.putShort("lvl", (short) level);
+        list.set(row.getIndex(), entry);
+        this.currentTag.put(row.getTagName(), list);
+    }
+
+    private EnchantmentTableLayout computeEnchantmentTableLayout(int contentStartX, int contentWidth) {
+        int listX = contentStartX + 8;
+        int tableWidth = Math.max(contentWidth - 16, 320);
+        int headerHeight = 20;
+        int actionsX = listX + tableWidth - 26 - SCROLLBAR_GUTTER;
+        int deleteButtonX = actionsX + 2;
+        int levelInputWidth = 56;
+        int levelInputX = actionsX - levelInputWidth - 8;
+        int nameX = listX + 8;
+        return new EnchantmentTableLayout(listX, tableWidth, headerHeight, nameX, levelInputX, levelInputWidth, actionsX, deleteButtonX);
+    }
+
+    private void renderEnchantmentTable(GuiGraphics graphics, int contentStartX, int contentWidth) {
+        if (this.enchantmentRows.isEmpty()) {
+            this.enchantmentRows = buildEnchantmentRows();
+        }
+
+        EnchantmentTableLayout layout = computeEnchantmentTableLayout(contentStartX, contentWidth);
+        int total = this.enchantmentRows.size();
+        int firstRowY = LIST_START_Y + layout.headerHeight;
+        int visibleSlots = computeVisibleRows(firstRowY);
+        this.enchantmentScrollOffset = clampScrollOffset(this.enchantmentScrollOffset, total, visibleSlots);
+        int rows = Math.min(visibleSlots, Math.max(0, total - this.enchantmentScrollOffset));
+        int panelRows = Math.max(rows, 2);
+        int panelHeight = Math.min(panelRows * ROW_HEIGHT + 46, this.height - LIST_START_Y - 40);
+
+        GuiLayoutUtils.drawPanel(graphics, layout.listX - 6, LIST_START_Y - 10, layout.tableWidth + 12, panelHeight + 16, 0xCC1C2532, 0xFF4E6B8D);
+        graphics.fill(layout.listX, LIST_START_Y - 8, layout.listX + layout.tableWidth, LIST_START_Y + layout.headerHeight - 8, 0x33FFFFFF);
+
+        int headerY = LIST_START_Y - 6;
+        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Encantamento", layout.nameX, headerY + 4, 0xFFF1F1F1);
+        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Nível", layout.levelInputX, headerY + 4, 0xFFF1F1F1);
+        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Ações", layout.actionsX + 3, headerY + 4, 0xFFF1F1F1);
+
+        if (total == 0) {
+            graphics.drawString(this.font, "§7Nenhum encantamento registrado", layout.listX + 12, headerY + layout.headerHeight + 4, 0xAAAACCFF);
+            return;
+        }
+
+        int clipTop = firstRowY - 2;
+        int clipBottom = clipTop + (rows * ROW_HEIGHT);
+        graphics.enableScissor(layout.listX, clipTop, layout.listX + layout.tableWidth, clipBottom);
+
+        for (int i = 0; i < rows; i++) {
+            EnchantmentRow row = this.enchantmentRows.get(this.enchantmentScrollOffset + i);
+            int rowY = LIST_START_Y + layout.headerHeight + (i * ROW_HEIGHT);
+            if (i % 2 == 0) {
+                graphics.fill(layout.listX, rowY - 2, layout.listX + layout.tableWidth, rowY + ROW_HEIGHT - 4, 0x17FFFFFF);
+            }
+
+            String displayName = row.getDisplayName();
+            if (displayName.length() > 40) {
+                displayName = displayName.substring(0, 40) + "...";
+            }
+            graphics.drawString(this.font, displayName, layout.nameX, rowY + 4, 0xDDFFFFFF);
+        }
+        graphics.disableScissor();
+
+        if (total > visibleSlots) {
+            drawVanillaLikeScrollbar(graphics, layout.listX + layout.tableWidth - SCROLLBAR_WIDTH, firstRowY, rows, total, this.enchantmentScrollOffset);
+        }
+    }
+
+    private void initHideFlagsList(int contentStartX, int contentWidth) {
+        int listWidth = Math.min(460, Math.max(320, contentWidth - 70));
+        int startX = contentStartX + (contentWidth - listWidth) / 2;
+        int startY = 74;
+        int buttonsTopMargin = 12; // extra gap between title and first button
+        int buttonsStartY = startY + buttonsTopMargin;
+        int rowHeight = 22;
+        int colGap = 8;
+        int buttonWidth = (listWidth - colGap) / 2;
+        int rows = (HideFlagOption.ORDERED.length + 1) / 2;
+
+        for (int i = 0; i < HideFlagOption.ORDERED.length; i++) {
+            HideFlagOption option = HideFlagOption.ORDERED[i];
+            int col = i % 2;
+            int row = i / 2;
+            int x = startX + col * (buttonWidth + colGap);
+            int y = buttonsStartY + row * rowHeight;
+            boolean enabled = isHideFlagEnabled(option);
+
+            String marker = enabled ? "[ X ] " : "[   ] ";
+            String color = enabled ? "§f" : "§7";
+            Component label = Component.literal(color + marker + option.label());
+
+            this.addRenderableWidget(Button.builder(label, btn -> {
+                toggleHideFlag(option);
+                this.init();
+            }).bounds(x, y, buttonWidth, 18).build());
+        }
+    }
+
+    private void renderHideFlagsPanel(GuiGraphics graphics, int contentStartX, int contentWidth) {
+        int listWidth = Math.min(460, Math.max(320, contentWidth - 70));
+        int startX = contentStartX + (contentWidth - listWidth) / 2;
+        int startY = 74;
+        int buttonsTopMargin = 12; // gap between title and first row of buttons
+        int buttonsStartY = startY + buttonsTopMargin;
+        int rowHeight = 22;
+        int rows = (HideFlagOption.ORDERED.length + 1) / 2;
+        int panelHeight = buttonsTopMargin + rows * rowHeight + 22;
+
+        GuiLayoutUtils.drawPanel(graphics, startX - 8, startY - 14, listWidth + 16, panelHeight, 0xCC1C2532, 0xFF4E6B8D);
+        int vanillaMask = getCurrentHideFlags(HIDE_FLAGS_TAG);
+        int effectsMask = getCurrentHideFlags(SF_HIDE_EFFECT_FLAGS_TAG);
+        graphics.drawCenteredString(this.font, "Vanilla: " + vanillaMask + " | Efeitos: " + effectsMask, contentStartX + (contentWidth / 2), startY - 6, 0xFFCCD9F1);
+    }
+
+    private int getCurrentHideFlags(String tagName) {
+        return this.currentTag.contains(tagName, Tag.TAG_ANY_NUMERIC) ? this.currentTag.getInt(tagName) : 0;
+    }
+
+    private boolean isHideFlagEnabled(HideFlagOption option) {
+        int hideFlags = getCurrentHideFlags(option.tagName());
+        return (hideFlags & option.value()) != 0;
+    }
+
+    private void toggleHideFlag(HideFlagOption option) {
+        int hideFlags = getCurrentHideFlags(option.tagName());
+        if ((hideFlags & option.value()) != 0) {
+            hideFlags &= ~option.value();
+        } else {
+            hideFlags |= option.value();
+        }
+
+        if (hideFlags == 0) {
+            this.currentTag.remove(option.tagName());
+        } else {
+            this.currentTag.putInt(option.tagName(), hideFlags);
+        }
+    }
+
     private String getTagName() {
         switch (currentCategory) {
             case POTIONS: return "CustomPotionEffects";
             case ON_USE: case ON_HIT: case ON_HURT: case ON_EQUIP: return "SF_ItemEffects";
+            case ENCHANTMENTS: return getEnchantmentTagName();
+            case HIDE_FLAGS: return HIDE_FLAGS_TAG;
             default: return null;
         }
     }
@@ -779,6 +1069,16 @@ public class ItemEditorScreen extends Screen {
 
         if (currentCategory == Category.ATTRIBUTES) {
             renderAttributeTable(graphics, contentStartX, contentWidth);
+            return;
+        }
+
+        if (currentCategory == Category.ENCHANTMENTS) {
+            renderEnchantmentTable(graphics, contentStartX, contentWidth);
+            return;
+        }
+
+        if (currentCategory == Category.HIDE_FLAGS) {
+            renderHideFlagsPanel(graphics, contentStartX, contentWidth);
             return;
         }
 
@@ -1033,6 +1333,11 @@ public class ItemEditorScreen extends Screen {
                                         int actionsX, int editButtonX, int deleteButtonX) {
     }
 
+    private record EnchantmentTableLayout(int listX, int tableWidth, int headerHeight,
+                                          int nameX, int levelInputX, int levelInputWidth,
+                                          int actionsX, int deleteButtonX) {
+    }
+
     private record EffectTableLayout(int listX, int tableWidth, int headerHeight,
                                      int iconX, int effectX, int durationX, int amplifierX, int extrasX,
                                      int actionsX, int editButtonX, int deleteButtonX) {
@@ -1042,6 +1347,7 @@ public class ItemEditorScreen extends Screen {
         NONE,
         LORE,
         ATTRIBUTES,
+        ENCHANTMENTS,
         EFFECTS
     }
 
@@ -1354,6 +1660,18 @@ public class ItemEditorScreen extends Screen {
         return buildScrollbarGeometry(barX, firstRowY, visible, total, this.attributeScrollOffset);
     }
 
+    private ScrollbarGeometry getEnchantmentScrollbarGeometry() {
+        if (this.currentCategory != Category.ENCHANTMENTS) return null;
+        int contentStartX = SIDEBAR_WIDTH + CONTENT_PADDING;
+        int contentWidth = this.width - contentStartX - CONTENT_PADDING;
+        EnchantmentTableLayout layout = computeEnchantmentTableLayout(contentStartX, contentWidth);
+        int total = this.enchantmentRows.isEmpty() ? buildEnchantmentRows().size() : this.enchantmentRows.size();
+        int firstRowY = LIST_START_Y + layout.headerHeight;
+        int visible = computeVisibleRows(firstRowY);
+        int barX = layout.listX + layout.tableWidth - SCROLLBAR_WIDTH;
+        return buildScrollbarGeometry(barX, firstRowY, visible, total, this.enchantmentScrollOffset);
+    }
+
     private ScrollbarGeometry getEffectScrollbarGeometry() {
         if (!isEffectsCategory(this.currentCategory)) return null;
         int contentStartX = SIDEBAR_WIDTH + CONTENT_PADDING;
@@ -1399,6 +1717,7 @@ public class ItemEditorScreen extends Screen {
         switch (target) {
             case LORE -> this.loreScrollOffset = newOffset;
             case ATTRIBUTES -> this.attributeScrollOffset = newOffset;
+            case ENCHANTMENTS -> this.enchantmentScrollOffset = newOffset;
             case EFFECTS -> this.effectScrollOffset = newOffset;
             default -> {}
         }
@@ -1417,6 +1736,10 @@ public class ItemEditorScreen extends Screen {
             if (inside(attrs, mouseX, mouseY)) {
                 return beginOrJumpScroll(ScrollTarget.ATTRIBUTES, attrs, mouseY);
             }
+            ScrollbarGeometry enchantments = getEnchantmentScrollbarGeometry();
+            if (inside(enchantments, mouseX, mouseY)) {
+                return beginOrJumpScroll(ScrollTarget.ENCHANTMENTS, enchantments, mouseY);
+            }
             ScrollbarGeometry effects = getEffectScrollbarGeometry();
             if (inside(effects, mouseX, mouseY)) {
                 return beginOrJumpScroll(ScrollTarget.EFFECTS, effects, mouseY);
@@ -1431,6 +1754,7 @@ public class ItemEditorScreen extends Screen {
             ScrollbarGeometry geometry = switch (this.draggingScrollTarget) {
                 case LORE -> getLoreScrollbarGeometry();
                 case ATTRIBUTES -> getAttributeScrollbarGeometry();
+                case ENCHANTMENTS -> getEnchantmentScrollbarGeometry();
                 case EFFECTS -> getEffectScrollbarGeometry();
                 default -> null;
             };
@@ -1439,6 +1763,7 @@ public class ItemEditorScreen extends Screen {
                 switch (this.draggingScrollTarget) {
                     case LORE -> this.loreScrollOffset = newOffset;
                     case ATTRIBUTES -> this.attributeScrollOffset = newOffset;
+                    case ENCHANTMENTS -> this.enchantmentScrollOffset = newOffset;
                     case EFFECTS -> this.effectScrollOffset = newOffset;
                     default -> {}
                 }
@@ -1485,6 +1810,22 @@ public class ItemEditorScreen extends Screen {
             if (total > visible && mouseX >= layout.listX && mouseX <= layout.listX + layout.tableWidth && mouseY >= listTop && mouseY <= listBottom) {
                 int step = delta > 0 ? -1 : 1;
                 this.attributeScrollOffset = clampScrollOffset(this.attributeScrollOffset + step, total, visible);
+                this.init();
+                return true;
+            }
+        }
+
+        if (this.currentCategory == Category.ENCHANTMENTS) {
+            int contentStartX = SIDEBAR_WIDTH + CONTENT_PADDING;
+            int contentWidth = this.width - contentStartX - CONTENT_PADDING;
+            EnchantmentTableLayout layout = computeEnchantmentTableLayout(contentStartX, contentWidth);
+            int total = this.enchantmentRows.isEmpty() ? buildEnchantmentRows().size() : this.enchantmentRows.size();
+            int visible = computeVisibleRows(LIST_START_Y + layout.headerHeight);
+            int listTop = LIST_START_Y + layout.headerHeight;
+            int listBottom = listTop + visible * ROW_HEIGHT;
+            if (total > visible && mouseX >= layout.listX && mouseX <= layout.listX + layout.tableWidth && mouseY >= listTop && mouseY <= listBottom) {
+                int step = delta > 0 ? -1 : 1;
+                this.enchantmentScrollOffset = clampScrollOffset(this.enchantmentScrollOffset + step, total, visible);
                 this.init();
                 return true;
             }
@@ -1557,6 +1898,100 @@ public class ItemEditorScreen extends Screen {
 
         public int getIndex() {
             return this.index;
+        }
+    }
+
+    public static final class EnchantmentRow {
+        private final CompoundTag entry;
+        private final String tagName;
+        private final int index;
+
+        public EnchantmentRow(CompoundTag entry, String tagName, int index) {
+            this.entry = entry;
+            this.tagName = tagName;
+            this.index = index;
+        }
+
+        public int getLevel() {
+            if (this.entry.contains("lvl", Tag.TAG_ANY_NUMERIC)) {
+                return this.entry.getShort("lvl") & 0xFFFF;
+            }
+            return 1;
+        }
+
+        public String getId() {
+            return this.entry.getString("id");
+        }
+
+        public String getTagName() {
+            return this.tagName;
+        }
+
+        public int getIndex() {
+            return this.index;
+        }
+
+        public String getDisplayName() {
+            ResourceLocation id = ResourceLocation.tryParse(getId());
+            if (id != null) {
+                Enchantment enchantment = ForgeRegistries.ENCHANTMENTS.getValue(id);
+                if (enchantment != null) {
+                    return Component.translatable(enchantment.getDescriptionId()).getString();
+                }
+            }
+            return getId().isBlank() ? "unknown" : getId();
+        }
+    }
+
+    private enum HideFlagOption {
+        ENCHANTMENTS(HIDE_FLAGS_TAG, 1, "Encantamentos"),
+        MODIFIERS(HIDE_FLAGS_TAG, 2, "Modificadores"),
+        UNBREAKABLE(HIDE_FLAGS_TAG, 4, "Inquebrável"),
+        CAN_DESTROY(HIDE_FLAGS_TAG, 8, "Pode Quebrar"),
+        CAN_PLACE(HIDE_FLAGS_TAG, 16, "Pode ser Colocado em"),
+        MISCELLANEOUS(HIDE_FLAGS_TAG, 32, "Outros"),
+        DYE(HIDE_FLAGS_TAG, 64, "Cor"),
+        UPGRADES(HIDE_FLAGS_TAG, 128, "Upgrades"),
+        EFFECT_ON_USE(SF_HIDE_EFFECT_FLAGS_TAG, 1, "Efeito On Use"),
+        EFFECT_ON_HIT(SF_HIDE_EFFECT_FLAGS_TAG, 2, "Efeito On Hit"),
+        EFFECT_ON_HURT(SF_HIDE_EFFECT_FLAGS_TAG, 4, "Efeito On Hurt"),
+        EFFECT_ON_EQUIP(SF_HIDE_EFFECT_FLAGS_TAG, 8, "Efeito On Equip");
+
+        static final HideFlagOption[] ORDERED = {
+            ENCHANTMENTS,
+            MODIFIERS,
+            UNBREAKABLE,
+            CAN_DESTROY,
+            CAN_PLACE,
+            MISCELLANEOUS,
+            DYE,
+            UPGRADES,
+            EFFECT_ON_USE,
+            EFFECT_ON_HIT,
+            EFFECT_ON_HURT,
+            EFFECT_ON_EQUIP
+        };
+
+        private final String tagName;
+        private final int value;
+        private final String label;
+
+        HideFlagOption(String tagName, int value, String label) {
+            this.tagName = tagName;
+            this.value = value;
+            this.label = label;
+        }
+
+        String tagName() {
+            return this.tagName;
+        }
+
+        int value() {
+            return this.value;
+        }
+
+        String label() {
+            return this.label;
         }
     }
 }

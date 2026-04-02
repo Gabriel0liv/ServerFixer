@@ -29,6 +29,11 @@ import java.util.Map;
 public class ItemTooltipHandler {
 
     private static final String MAIN_TAG = "SF_ItemEffects";
+    private static final String SF_HIDE_EFFECT_FLAGS_TAG = "SF_HideEffectFlags";
+    private static final int HIDE_ON_USE = 1;
+    private static final int HIDE_ON_HIT = 2;
+    private static final int HIDE_ON_HURT = 4;
+    private static final int HIDE_ON_EQUIP = 8;
 
     @SubscribeEvent
     public static void onItemTooltip(ItemTooltipEvent event) {
@@ -43,14 +48,24 @@ public class ItemTooltipHandler {
         }
 
         CompoundTag sf = itemTag.getCompound(MAIN_TAG);
+        int hideEffectFlags = itemTag.contains(SF_HIDE_EFFECT_FLAGS_TAG, Tag.TAG_ANY_NUMERIC)
+            ? itemTag.getInt(SF_HIDE_EFFECT_FLAGS_TAG)
+            : 0;
 
-        injectOnEquipIntoModifierSections(event.getToolTip(), sf);
+        boolean hideOnUse = isHidden(hideEffectFlags, HIDE_ON_USE);
+        boolean hideOnHit = isHidden(hideEffectFlags, HIDE_ON_HIT);
+        boolean hideOnHurt = isHidden(hideEffectFlags, HIDE_ON_HURT);
+        boolean hideOnEquip = isHidden(hideEffectFlags, HIDE_ON_EQUIP);
 
-        List<CompoundTag> onUse = collectEntries(sf, "on_use");
-        List<CompoundTag> onHitSelf = collectEntriesBySelf(sf, "on_hit", true);
-        List<CompoundTag> onHitTarget = collectEntriesBySelf(sf, "on_hit", false);
-        List<CompoundTag> onHurtSelf = collectEntriesBySelf(sf, "on_hurt", true);
-        List<CompoundTag> onHurtTarget = collectEntriesBySelf(sf, "on_hurt", false);
+        if (!hideOnEquip) {
+            injectOnEquipIntoModifierSections(event.getToolTip(), sf);
+        }
+
+        List<CompoundTag> onUse = hideOnUse ? List.of() : collectEntries(sf, "on_use");
+        List<CompoundTag> onHitSelf = hideOnHit ? List.of() : collectEntriesBySelf(sf, "on_hit", true);
+        List<CompoundTag> onHitTarget = hideOnHit ? List.of() : collectEntriesBySelf(sf, "on_hit", false);
+        List<CompoundTag> onHurtSelf = hideOnHurt ? List.of() : collectEntriesBySelf(sf, "on_hurt", true);
+        List<CompoundTag> onHurtTarget = hideOnHurt ? List.of() : collectEntriesBySelf(sf, "on_hurt", false);
 
         boolean hasAny = !onUse.isEmpty() || !onHitSelf.isEmpty() || !onHitTarget.isEmpty() || !onHurtSelf.isEmpty() || !onHurtTarget.isEmpty();
         if (!hasAny) {
@@ -65,6 +80,10 @@ public class ItemTooltipHandler {
         addGroup(tooltip, "Ao Atacar, aplica:", onHitTarget);
         addGroup(tooltip, "Ao Receber Dano, recebe:", onHurtSelf);
         addGroup(tooltip, "Ao Receber Dano, aplica:", onHurtTarget);
+    }
+
+    private static boolean isHidden(int mask, int flag) {
+        return (mask & flag) != 0;
     }
 
     private static void injectOnEquipIntoModifierSections(List<Component> tooltip, CompoundTag sf) {

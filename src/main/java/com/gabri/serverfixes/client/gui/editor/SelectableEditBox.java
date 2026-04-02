@@ -9,12 +9,14 @@ import java.lang.reflect.Field;
 
 @SuppressWarnings("null")
 public class SelectableEditBox extends EditBox {
+    private static final long DOUBLE_CLICK_WINDOW_MS = 250L;
     private static Field displayPosField;
 
     private final Font customFont;
     private boolean dragSelecting;
     private int selectionAnchor = -1;
     private int highlightPos = -1;
+    private long lastClickTime;
 
     public SelectableEditBox(Font font, int x, int y, int width, int height, Component message) {
         super(font, x, y, width, height, message);
@@ -23,13 +25,28 @@ public class SelectableEditBox extends EditBox {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        boolean handled = super.mouseClicked(mouseX, mouseY, button);
         boolean inside = mouseX >= this.getX() && mouseX < this.getX() + this.getWidth()
             && mouseY >= this.getY() && mouseY < this.getY() + this.getHeight();
 
+        boolean handled = super.mouseClicked(mouseX, mouseY, button);
+
         if (button == 0 && inside && this.isFocused()) {
+            int clickedCursor = cursorFromMouseX(mouseX);
+            this.setCursorPosition(clickedCursor);
+
+            long now = System.currentTimeMillis();
+            boolean isDoubleClick = (now - this.lastClickTime) <= DOUBLE_CLICK_WINDOW_MS;
+            this.lastClickTime = now;
+
+            if (isDoubleClick) {
+                selectWordAt(clickedCursor);
+                this.dragSelecting = false;
+                this.selectionAnchor = this.getSelectionStart();
+                return true;
+            }
+
             this.dragSelecting = true;
-            this.selectionAnchor = this.getCursorPosition();
+            this.selectionAnchor = clickedCursor;
             if (!Screen.hasShiftDown()) {
                 this.setHighlightPos(this.selectionAnchor);
             }
@@ -83,6 +100,47 @@ public class SelectableEditBox extends EditBox {
 
         String before = this.customFont.plainSubstrByWidth(visible, relativeX);
         return Math.max(0, Math.min(value.length(), displayPos + before.length()));
+    }
+
+    private void selectWordAt(int cursor) {
+        String value = this.getValue();
+        if (value.isEmpty()) {
+            this.setCursorPosition(0);
+            this.setHighlightPos(0);
+            return;
+        }
+
+        int len = value.length();
+        int index = Math.max(0, Math.min(cursor, len));
+        if (index == len && index > 0) {
+            index--;
+        }
+
+        if (index < 0 || index >= len || isSeparator(value.charAt(index))) {
+            this.setCursorPosition(cursor);
+            this.setHighlightPos(cursor);
+            return;
+        }
+
+        int start = index;
+        int end = index + 1;
+
+        while (start > 0 && !isSeparator(value.charAt(start - 1))) {
+            start--;
+        }
+        while (end < len && !isSeparator(value.charAt(end))) {
+            end++;
+        }
+
+        this.setCursorPosition(end);
+        this.setHighlightPos(start);
+    }
+
+    private static boolean isSeparator(char c) {
+        if (Character.isWhitespace(c)) {
+            return true;
+        }
+        return !(Character.isLetterOrDigit(c) || c == '_' || c == '-' || c == ':' || c == '/');
     }
 
     private static int getDisplayPosFromField(EditBox editBox) {

@@ -1,14 +1,13 @@
 package com.gabri.serverfixes.client.gui;
 
 import com.gabri.serverfixes.client.gui.editor.AbstractEditorScreen;
+import com.gabri.serverfixes.client.gui.editor.PreciseMultiLineEditBox;
 import com.gabri.serverfixes.network.NetworkHandler;
 import com.gabri.serverfixes.network.SaveItemEditorPacket;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.MultiLineEditBox;
 import net.minecraft.client.gui.components.Tooltip;
-import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.SnbtPrinterTagVisitor;
 import net.minecraft.nbt.Tag;
@@ -30,11 +29,10 @@ public class NbtEditorScreen extends AbstractEditorScreen {
     private static final int BUTTON_HEIGHT = 20;
     private static final int FOOTER_HEIGHT = 24;
     private static final int MAX_LENGTH = 32767;
-    private static final double DRAG_SELECTION_THRESHOLD = 2.0D;
     private static final ResourceLocation INDENT_ICON = ResourceLocation.fromNamespaceAndPath("serverfixes", "textures/gui/indent-solid.png");
 
     private final CompoundTag originalTag;
-    private MultiLineEditBox snbtInput;
+    private PreciseMultiLineEditBox snbtInput;
     private Button saveButton;
     private Button indentButton;
     private Button openItemEditorButton;
@@ -43,9 +41,6 @@ public class NbtEditorScreen extends AbstractEditorScreen {
     private Button reloadFromHandButton;
     private Component statusMessage = Component.empty();
     private boolean syntaxValid = true;
-    private boolean awaitingClickDragDecision;
-    private double clickStartX;
-    private double clickStartY;
     private int frameX;
     private int frameY;
     private int frameW;
@@ -84,7 +79,7 @@ public class NbtEditorScreen extends AbstractEditorScreen {
         this.editorW = Math.max(120, this.frameW - INNER_MARGIN * 2);
         this.editorH = Math.max(90, this.statusY - this.editorY - 8);
 
-        this.snbtInput = new MultiLineEditBox(this.font, this.editorX, this.editorY, this.editorW, this.editorH,
+        this.snbtInput = new PreciseMultiLineEditBox(this.font, this.editorX, this.editorY, this.editorW, this.editorH,
                 Component.literal("SNBT"), Component.empty());
         this.snbtInput.setCharacterLimit(MAX_LENGTH);
         this.snbtInput.setValue(getFormattedSnbt(this.originalTag));
@@ -295,85 +290,6 @@ public class NbtEditorScreen extends AbstractEditorScreen {
     @Override
     public boolean isPauseScreen() {
         return false;
-    }
-
-    @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        boolean insideInput = isInsideInput(mouseX, mouseY);
-        if (button == 0 && insideInput) {
-            this.awaitingClickDragDecision = true;
-            this.clickStartX = mouseX;
-            this.clickStartY = mouseY;
-        }
-
-        boolean res = super.mouseClicked(mouseX, mouseY, button);
-        // Match IBE-like UX: plain click moves caret and clears selection unless Shift is held.
-        if (button == 0 && insideInput && !Screen.hasShiftDown()) {
-            collapseSelectionToCaret();
-        }
-        return res;
-    }
-
-    @Override
-    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
-        boolean res = super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
-
-        if (button == 0 && this.awaitingClickDragDecision && !Screen.hasShiftDown() && isInsideInput(mouseX, mouseY)) {
-            double movedX = Math.abs(mouseX - this.clickStartX);
-            double movedY = Math.abs(mouseY - this.clickStartY);
-            if (movedX <= DRAG_SELECTION_THRESHOLD && movedY <= DRAG_SELECTION_THRESHOLD) {
-                // Ignore tiny jitter during click; keep caret behavior.
-                collapseSelectionToCaret();
-            } else {
-                // Real drag should keep native selection behavior.
-                this.awaitingClickDragDecision = false;
-            }
-        }
-
-        return res;
-    }
-
-    @Override
-    public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        this.awaitingClickDragDecision = false;
-        return super.mouseReleased(mouseX, mouseY, button);
-    }
-
-    private boolean isInsideInput(double mouseX, double mouseY) {
-        if (this.snbtInput == null) {
-            return false;
-        }
-        int x = this.snbtInput.getX();
-        int y = this.snbtInput.getY();
-        int w = this.snbtInput.getWidth();
-        int h = this.snbtInput.getHeight();
-        return mouseX >= x && mouseX <= x + w && mouseY >= y && mouseY <= y + h;
-    }
-
-    @SuppressWarnings({"rawtypes", "unchecked"})
-    private void collapseSelectionToCaret() {
-        if (this.snbtInput == null) {
-            return;
-        }
-
-        try {
-            var textFieldField = MultiLineEditBox.class.getDeclaredField("textField");
-            textFieldField.setAccessible(true);
-            Object textField = textFieldField.get(this.snbtInput);
-            Class<?> textFieldClass = textField.getClass();
-
-            var setSelecting = textFieldClass.getMethod("setSelecting", boolean.class);
-            var cursorGetter = textFieldClass.getMethod("cursor");
-
-            Class<?> whenceClass = Class.forName("net.minecraft.client.gui.components.Whence");
-            Object absolute = Enum.valueOf((Class<? extends Enum>) whenceClass.asSubclass(Enum.class), "ABSOLUTE");
-            var seekCursor = textFieldClass.getMethod("seekCursor", whenceClass, int.class);
-
-            int cursor = (Integer) cursorGetter.invoke(textField);
-            setSelecting.invoke(textField, false);
-            seekCursor.invoke(textField, absolute, cursor);
-        } catch (Exception ignored) {
-        }
     }
 
     private void formatInput() {
