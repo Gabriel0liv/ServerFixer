@@ -7,44 +7,88 @@ import net.minecraft.util.Mth;
 import net.minecraftforge.registries.ForgeRegistries;
 
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.Collections;
+import java.util.Deque;
+import java.util.ArrayDeque;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.TreeSet;
 
 @SuppressWarnings("null")
 public class SyntaxNbtEditBox extends PreciseMultiLineEditBox {
-    private static final Pattern TOKEN_PATTERN = Pattern.compile("\"(?:\\\\.|[^\\\"])*\"|'(?:\\\\.|[^'])*'|[-+]?\\d+(?:\\.\\d+)?[bBsSlLfFdD]?|[{}\\[\\],:]|[A-Za-z0-9_:+./-]+");
-    private static final Pattern NUMBER_PATTERN = Pattern.compile("[-+]?\\d+(?:\\.\\d+)?[bBsSlLfFdD]?");
-
-    private static final int COLOR_DEFAULT = 0xE0E0E0;
-    private static final int COLOR_KEY = 0xFFAA00;
-    private static final int COLOR_STRING = 0x55FF55;
-    private static final int COLOR_NUMBER = 0xFF55FF;
-    private static final int COLOR_BRACKET = 0xAAAAAA;
-
     private static final int SUGGESTION_BG = 0xE01A1A1A;
     private static final int SUGGESTION_BORDER = 0xFF4E6B8D;
     private static final int SUGGESTION_SELECTED = 0x663A84D8;
     private static final int MAX_SUGGESTIONS = 8;
 
-    private static final List<String> ROOT_TAG_SUGGESTIONS = List.of(
+    private static final List<String> ITEM_ROOT_KEYS = List.of(
+        "id",
+        "Count",
+        "tag"
+    );
+
+    private static final List<String> ROOT_TAG_KEYS = List.of(
         "SF_ItemEffects",
         "AttributeModifiers",
+        "CurioAttributeModifiers",
         "IsCurio",
         "BackupModifiers",
+        "Enchantments",
+        "StoredEnchantments",
+        "CustomPotionEffects",
+        "Potion",
+        "display",
+        "Unbreakable",
+        "CustomModelData",
         "HideFlags",
         "SF_HideEffectFlags"
+    );
+
+    private static final List<String> ATTRIBUTE_ENTRY_KEYS = List.of(
+        "AttributeName",
+        "Name",
+        "Amount",
+        "Operation",
+        "UUID",
+        "Slot"
+    );
+
+    private static final List<String> ENCHANT_ENTRY_KEYS = List.of(
+        "id",
+        "lvl"
+    );
+
+    private static final List<String> CUSTOM_EFFECT_ENTRY_KEYS = List.of(
+        "Id",
+        "IdString",
+        "Duration",
+        "Amplifier",
+        "Ambient",
+        "ShowParticles",
+        "ShowIcon"
+    );
+
+    private static final List<String> SF_EFFECT_ENTRY_KEYS = List.of(
+        "id",
+        "duration",
+        "amplifier",
+        "chance",
+        "self",
+        "Slot",
+        "Ambient",
+        "ShowParticles",
+        "ShowIcon"
     );
 
     private static final List<String> SF_ITEM_EFFECTS_KEYS = List.of(
         "on_use",
         "on_hit",
         "on_hurt",
-        "on_equip"
+        "on_equip",
+        "on_use_color",
+        "on_use_potion_mirror"
     );
 
     private static final List<String> SLOT_SUGGESTIONS = List.of(
@@ -65,7 +109,12 @@ public class SyntaxNbtEditBox extends PreciseMultiLineEditBox {
         "hands"
     );
 
-    private final List<String> registryKeys = new ArrayList<>();
+    private static final Object CACHE_LOCK = new Object();
+    private static volatile List<String> cachedAttributeIds = Collections.emptyList();
+    private static volatile List<String> cachedEnchantmentIds = Collections.emptyList();
+    private static volatile List<String> cachedEffectIds = Collections.emptyList();
+    private static volatile boolean cacheReady;
+
     private final List<String> suggestions = new ArrayList<>();
     private boolean suggestionsVisible;
     private int selectedSuggestion;
@@ -74,7 +123,7 @@ public class SyntaxNbtEditBox extends PreciseMultiLineEditBox {
 
     public SyntaxNbtEditBox(net.minecraft.client.gui.Font font, int x, int y, int width, int height, Component message, Component placeholder) {
         super(font, x, y, width, height, message, placeholder);
-        loadRegistryKeys();
+        ensureRegistryCacheLoaded();
     }
 
     @Override
@@ -128,12 +177,6 @@ public class SyntaxNbtEditBox extends PreciseMultiLineEditBox {
         return handled;
     }
 
-    @Override
-    protected void renderContents(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        super.renderContents(graphics, mouseX, mouseY, partialTick);
-        renderSyntaxOverlay(graphics);
-    }
-
     public void renderSuggestionOverlay(GuiGraphics graphics) {
         if (!this.suggestionsVisible || this.suggestions.isEmpty()) {
             return;
@@ -177,98 +220,13 @@ public class SyntaxNbtEditBox extends PreciseMultiLineEditBox {
         updateSuggestions();
     }
 
-    private void renderSyntaxOverlay(GuiGraphics graphics) {
-        List<LineView> lines = getDisplayLines();
-        if (lines.isEmpty()) {
-            return;
-        }
-
-        String value = this.getValue();
-        int contentX = this.getX() + this.innerPadding();
-        int contentY = this.getY() + this.innerPadding() - (int) this.scrollAmount();
-        int lineH = lineHeight();
-
-        int clipX1 = this.getX() + this.innerPadding();
-        int clipY1 = this.getY() + this.innerPadding();
-        int clipX2 = this.getX() + this.getWidth() - this.innerPadding();
-        int clipY2 = this.getY() + this.getHeight() - this.innerPadding();
-        graphics.enableScissor(clipX1, clipY1, clipX2, clipY2);
-
-        for (int i = 0; i < lines.size(); i++) {
-            int drawY = contentY + i * lineH;
-            if (drawY + lineH < clipY1 || drawY > clipY2) {
-                continue;
-            }
-
-            LineView line = lines.get(i);
-            int begin = Mth.clamp(line.beginIndex(), 0, value.length());
-            int end = Mth.clamp(line.endIndex(), begin, value.length());
-            if (begin == end) {
-                continue;
-            }
-
-            String text = value.substring(begin, end);
-            int x = contentX;
-            Matcher matcher = TOKEN_PATTERN.matcher(text);
-            int cursor = 0;
-            while (matcher.find()) {
-                if (matcher.start() > cursor) {
-                    String gap = text.substring(cursor, matcher.start());
-                    graphics.drawString(font(), gap, x, drawY, COLOR_DEFAULT);
-                    x += font().width(gap);
-                }
-
-                String token = matcher.group();
-                int color = colorForToken(text, token, matcher.end());
-                graphics.drawString(font(), token, x, drawY, color);
-                x += font().width(token);
-                cursor = matcher.end();
-            }
-
-            if (cursor < text.length()) {
-                String tail = text.substring(cursor);
-                graphics.drawString(font(), tail, x, drawY, COLOR_DEFAULT);
-            }
-        }
-
-        graphics.disableScissor();
-    }
-
-    private int colorForToken(String line, String token, int tokenEnd) {
-        if (token.length() == 1 && "{}[],:".indexOf(token.charAt(0)) >= 0) {
-            return COLOR_BRACKET;
-        }
-        if ((token.startsWith("\"") && token.endsWith("\"")) || (token.startsWith("'") && token.endsWith("'"))) {
-            if (isKeyToken(line, tokenEnd)) {
-                return COLOR_KEY;
-            }
-            return COLOR_STRING;
-        }
-        if (NUMBER_PATTERN.matcher(token).matches()) {
-            return COLOR_NUMBER;
-        }
-        if (isKeyToken(line, tokenEnd)) {
-            return COLOR_KEY;
-        }
-        return COLOR_DEFAULT;
-    }
-
-    private boolean isKeyToken(String line, int tokenEnd) {
-        for (int i = tokenEnd; i < line.length(); i++) {
-            char c = line.charAt(i);
-            if (Character.isWhitespace(c)) {
-                continue;
-            }
-            return c == ':';
-        }
-        return false;
-    }
-
     private void updateSuggestions() {
+        ensureRegistryCacheLoaded();
+
         String value = this.getValue();
         int cursor = clampToValueRange(cursorIndex());
 
-        if (cursor <= 0 || cursor > value.length()) {
+        if (cursor < 0 || cursor > value.length()) {
             hideSuggestions();
             return;
         }
@@ -287,23 +245,55 @@ public class SyntaxNbtEditBox extends PreciseMultiLineEditBox {
             end++;
         }
 
+        String prefix = value.substring(0, start);
+        ContextSnapshot context = ContextSnapshot.scan(prefix);
         String token = value.substring(start, cursor).toLowerCase(Locale.ROOT);
-        if (token.length() < 2) {
+        if (token.isEmpty() && !context.allowEmptyTokenSuggestions()) {
             hideSuggestions();
             return;
         }
 
         LinkedHashSet<String> merged = new LinkedHashSet<>();
-        if (isRootContext(value, cursor)) {
-            addMatches(merged, ROOT_TAG_SUGGESTIONS, token);
+
+        if (context.isExpectingKey()) {
+            if (context.isTopLevelObject()) {
+                addMatches(merged, ITEM_ROOT_KEYS, token);
+            } else if (context.isInsideDirectTagObject()) {
+                addMatches(merged, ROOT_TAG_KEYS, token);
+            }
+            if (context.isInsideSfItemEffectsRoot()) {
+                addMatches(merged, SF_ITEM_EFFECTS_KEYS, token);
+            }
+            if (context.isInsideAttributeEntry()) {
+                addMatches(merged, ATTRIBUTE_ENTRY_KEYS, token);
+            }
+            if (context.isInsideEnchantmentEntry()) {
+                addMatches(merged, ENCHANT_ENTRY_KEYS, token);
+            }
+            if (context.isInsideCustomPotionEntry()) {
+                addMatches(merged, CUSTOM_EFFECT_ENTRY_KEYS, token);
+            }
+            if (context.isInsideSfEffectEntry()) {
+                addMatches(merged, SF_EFFECT_ENTRY_KEYS, token);
+            }
         }
-        if (isInsideSfItemEffects(value, cursor)) {
+
+        if (context.isInsideSfItemEffectsRoot()) {
             addMatches(merged, SF_ITEM_EFFECTS_KEYS, token);
         }
-        if (isSlotContext(value, start)) {
+
+        if (context.isAttributeIdValueContext()) {
+            addMatches(merged, cachedAttributeIds, token);
+        }
+        if (context.isEnchantmentIdValueContext()) {
+            addMatches(merged, cachedEnchantmentIds, token);
+        }
+        if (context.isEffectIdValueContext()) {
+            addMatches(merged, cachedEffectIds, token);
+        }
+        if (context.isSlotValueContext()) {
             addMatches(merged, SLOT_SUGGESTIONS, token);
         }
-        addMatches(merged, this.registryKeys, token);
 
         this.suggestions.clear();
         for (String candidate : merged) {
@@ -339,6 +329,8 @@ public class SyntaxNbtEditBox extends PreciseMultiLineEditBox {
         this.suggestionsVisible = false;
         this.suggestions.clear();
         this.selectedSuggestion = 0;
+        this.tokenStart = 0;
+        this.tokenEnd = 0;
     }
 
     private boolean isTokenChar(char c) {
@@ -354,79 +346,315 @@ public class SyntaxNbtEditBox extends PreciseMultiLineEditBox {
         }
     }
 
-    private boolean isRootContext(String value, int cursor) {
-        return braceDepth(value, cursor) <= 1;
-    }
-
-    private boolean isInsideSfItemEffects(String value, int cursor) {
-        int keyPos = value.lastIndexOf("SF_ItemEffects", Math.max(0, cursor - 1));
-        if (keyPos < 0) {
-            return false;
+    private void ensureRegistryCacheLoaded() {
+        if (cacheReady) {
+            return;
         }
-        int objectStart = value.indexOf('{', keyPos);
-        if (objectStart < 0 || objectStart >= cursor) {
-            return false;
-        }
-        return braceDepth(value, cursor) > braceDepth(value, objectStart);
-    }
 
-    private boolean isSlotContext(String value, int tokenStart) {
-        int from = Math.max(0, tokenStart - 64);
-        String ctx = value.substring(from, Math.min(value.length(), tokenStart)).toLowerCase(Locale.ROOT);
-        return ctx.contains("slot") || ctx.contains("curio") || ctx.contains("equip");
-    }
-
-    private int braceDepth(String text, int endExclusive) {
-        int depth = 0;
-        boolean inString = false;
-        char quote = 0;
-        boolean escaped = false;
-
-        int max = Math.min(endExclusive, text.length());
-        for (int i = 0; i < max; i++) {
-            char c = text.charAt(i);
-            if (inString) {
-                if (escaped) {
-                    escaped = false;
-                    continue;
-                }
-                if (c == '\\') {
-                    escaped = true;
-                    continue;
-                }
-                if (c == quote) {
-                    inString = false;
-                }
-                continue;
+        synchronized (CACHE_LOCK) {
+            if (cacheReady) {
+                return;
             }
 
-            if (c == '\"' || c == '\'') {
-                inString = true;
-                quote = c;
-                continue;
+            List<String> attributes = collectRegistryKeys(ForgeRegistries.ATTRIBUTES.getKeys());
+            List<String> enchantments = collectRegistryKeys(ForgeRegistries.ENCHANTMENTS.getKeys());
+            List<String> effects = collectRegistryKeys(ForgeRegistries.MOB_EFFECTS.getKeys());
+
+            if (attributes.isEmpty() && enchantments.isEmpty() && effects.isEmpty()) {
+                return;
             }
-            if (c == '{') {
-                depth++;
-            } else if (c == '}') {
-                depth = Math.max(0, depth - 1);
-            }
+
+            cachedAttributeIds = attributes;
+            cachedEnchantmentIds = enchantments;
+            cachedEffectIds = effects;
+            cacheReady = true;
         }
-        return depth;
     }
 
-    private void loadRegistryKeys() {
-        Set<String> unique = new HashSet<>();
-        addRegistryKeys(unique, ForgeRegistries.MOB_EFFECTS.getKeys());
-        addRegistryKeys(unique, ForgeRegistries.ENCHANTMENTS.getKeys());
-        addRegistryKeys(unique, ForgeRegistries.ATTRIBUTES.getKeys());
-        addRegistryKeys(unique, ForgeRegistries.ITEMS.getKeys());
-        this.registryKeys.addAll(unique);
-        this.registryKeys.sort(String::compareTo);
-    }
-
-    private void addRegistryKeys(Set<String> out, Iterable<ResourceLocation> keys) {
+    private List<String> collectRegistryKeys(Iterable<ResourceLocation> keys) {
+        TreeSet<String> unique = new TreeSet<>();
         for (ResourceLocation key : keys) {
-            out.add(key.toString().toLowerCase(Locale.ROOT));
+            unique.add(key.toString().toLowerCase(Locale.ROOT));
+        }
+        return List.copyOf(unique);
+    }
+
+    private static String normalizeKeyToken(String token) {
+        if (token == null) {
+            return "";
+        }
+        String trimmed = token.trim();
+        if (trimmed.length() >= 2) {
+            char first = trimmed.charAt(0);
+            char last = trimmed.charAt(trimmed.length() - 1);
+            if ((first == '"' && last == '"') || (first == '\'' && last == '\'')) {
+                return trimmed.substring(1, trimmed.length() - 1);
+            }
+        }
+        return trimmed;
+    }
+
+    private static String asLower(String value) {
+        return value == null ? "" : value.toLowerCase(Locale.ROOT);
+    }
+
+    private static final class ContextSnapshot {
+        private final List<String> path;
+        private final boolean expectingKey;
+        private final String activeValueKey;
+
+        private ContextSnapshot(List<String> path, boolean expectingKey, String activeValueKey) {
+            this.path = path;
+            this.expectingKey = expectingKey;
+            this.activeValueKey = activeValueKey;
+        }
+
+        static ContextSnapshot scan(String prefix) {
+            Deque<ContextFrame> stack = new ArrayDeque<>();
+
+            int i = 0;
+            while (i < prefix.length()) {
+                char c = prefix.charAt(i);
+
+                if (Character.isWhitespace(c)) {
+                    i++;
+                    continue;
+                }
+
+                if (c == '"' || c == '\'') {
+                    int end = i + 1;
+                    boolean escaped = false;
+                    StringBuilder sb = new StringBuilder();
+                    while (end < prefix.length()) {
+                        char ch = prefix.charAt(end);
+                        if (escaped) {
+                            sb.append(ch);
+                            escaped = false;
+                            end++;
+                            continue;
+                        }
+                        if (ch == '\\') {
+                            escaped = true;
+                            end++;
+                            continue;
+                        }
+                        if (ch == c) {
+                            break;
+                        }
+                        sb.append(ch);
+                        end++;
+                    }
+                    consumeToken(stack, sb.toString());
+                    i = Math.min(end + 1, prefix.length());
+                    continue;
+                }
+
+                if (c == '{') {
+                    openContainer(stack, true);
+                    i++;
+                    continue;
+                }
+
+                if (c == '[') {
+                    openContainer(stack, false);
+                    i++;
+                    continue;
+                }
+
+                if (c == '}' || c == ']') {
+                    if (!stack.isEmpty()) {
+                        stack.pop();
+                    }
+                    i++;
+                    continue;
+                }
+
+                if (c == ':') {
+                    onColon(stack);
+                    i++;
+                    continue;
+                }
+
+                if (c == ',') {
+                    onComma(stack);
+                    i++;
+                    continue;
+                }
+
+                if (isDelimiter(c)) {
+                    i++;
+                    continue;
+                }
+
+                int start = i;
+                while (i < prefix.length() && !isDelimiter(prefix.charAt(i))) {
+                    i++;
+                }
+                consumeToken(stack, prefix.substring(start, i));
+            }
+
+            if (stack.isEmpty()) {
+                return new ContextSnapshot(List.of(), true, null);
+            }
+
+            ContextFrame top = stack.peek();
+            List<String> path = new ArrayList<>();
+            for (ContextFrame frame : stack) {
+                if (frame.keyFromParent != null && !frame.keyFromParent.isBlank()) {
+                    path.add(frame.keyFromParent);
+                }
+            }
+            Collections.reverse(path);
+            return new ContextSnapshot(path, top.object && top.expectingKey, top.object ? top.activeValueKey : null);
+        }
+
+        boolean isExpectingKey() {
+            return this.expectingKey;
+        }
+
+        boolean allowEmptyTokenSuggestions() {
+            return this.expectingKey || this.activeValueKey != null;
+        }
+
+        boolean isTopLevelObject() {
+            return this.path.isEmpty();
+        }
+
+        boolean isInsideDirectTagObject() {
+            return this.path.size() == 1 && "tag".equals(this.path.get(0));
+        }
+
+        boolean isInsideSfItemEffectsRoot() {
+            return this.path.contains("SF_ItemEffects");
+        }
+
+        boolean isInsideAttributeEntry() {
+            return this.path.contains("AttributeModifiers")
+                || this.path.contains("CurioAttributeModifiers")
+                || this.path.contains("BackupModifiers");
+        }
+
+        boolean isInsideEnchantmentEntry() {
+            return this.path.contains("Enchantments") || this.path.contains("StoredEnchantments");
+        }
+
+        boolean isInsideCustomPotionEntry() {
+            return this.path.contains("CustomPotionEffects");
+        }
+
+        boolean isInsideSfEffectEntry() {
+            return this.path.contains("on_use")
+                || this.path.contains("on_hit")
+                || this.path.contains("on_hurt")
+                || this.path.contains("on_equip");
+        }
+
+        boolean isAttributeIdValueContext() {
+            String key = asLower(this.activeValueKey);
+            if (!("attributename".equals(key) || "name".equals(key))) {
+                return false;
+            }
+            return isInsideAttributeEntry();
+        }
+
+        boolean isEnchantmentIdValueContext() {
+            String key = asLower(this.activeValueKey);
+            return "id".equals(key) && isInsideEnchantmentEntry();
+        }
+
+        boolean isEffectIdValueContext() {
+            String key = asLower(this.activeValueKey);
+            if (!("id".equals(key) || "idstring".equals(key))) {
+                return false;
+            }
+            return isInsideSfEffectEntry() || isInsideCustomPotionEntry();
+        }
+
+        boolean isSlotValueContext() {
+            String key = asLower(this.activeValueKey);
+            return "slot".equals(key) || "equipslot".equals(key);
+        }
+
+        private static boolean isDelimiter(char c) {
+            return Character.isWhitespace(c)
+                || c == '{' || c == '}' || c == '[' || c == ']'
+                || c == ':' || c == ',' || c == '"' || c == '\'';
+        }
+
+        private static void openContainer(Deque<ContextFrame> stack, boolean object) {
+            String keyFromParent = null;
+            if (!stack.isEmpty()) {
+                ContextFrame parent = stack.peek();
+                if (parent.object && parent.activeValueKey != null) {
+                    keyFromParent = parent.activeValueKey;
+                    parent.activeValueKey = null;
+                }
+            }
+            stack.push(new ContextFrame(object, keyFromParent));
+        }
+
+        private static void onColon(Deque<ContextFrame> stack) {
+            if (stack.isEmpty()) {
+                return;
+            }
+            ContextFrame top = stack.peek();
+            if (!top.object || top.pendingKey == null) {
+                return;
+            }
+            top.activeValueKey = top.pendingKey;
+            top.pendingKey = null;
+        }
+
+        private static void onComma(Deque<ContextFrame> stack) {
+            if (stack.isEmpty()) {
+                return;
+            }
+            ContextFrame top = stack.peek();
+            if (!top.object) {
+                return;
+            }
+            top.expectingKey = true;
+            top.pendingKey = null;
+            top.activeValueKey = null;
+        }
+
+        private static void consumeToken(Deque<ContextFrame> stack, String token) {
+            if (token == null || token.isBlank()) {
+                return;
+            }
+
+            if (stack.isEmpty()) {
+                stack.push(new ContextFrame(true, null));
+            }
+
+            ContextFrame top = stack.peek();
+            if (!top.object) {
+                return;
+            }
+
+            if (top.expectingKey) {
+                top.pendingKey = normalizeKeyToken(token);
+                top.expectingKey = false;
+                return;
+            }
+
+            if (top.activeValueKey != null) {
+                top.activeValueKey = null;
+            }
+        }
+    }
+
+    private static final class ContextFrame {
+        private final boolean object;
+        private final String keyFromParent;
+        private boolean expectingKey;
+        private String pendingKey;
+        private String activeValueKey;
+
+        private ContextFrame(boolean object, String keyFromParent) {
+            this.object = object;
+            this.keyFromParent = keyFromParent;
+            this.expectingKey = object;
         }
     }
 }

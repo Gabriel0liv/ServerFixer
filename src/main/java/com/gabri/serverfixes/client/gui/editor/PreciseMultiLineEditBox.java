@@ -7,12 +7,14 @@ import net.minecraft.client.gui.components.MultilineTextField;
 import net.minecraft.client.gui.components.Whence;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.FormattedCharSequence;
 import net.minecraft.util.Mth;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Function;
 
 @SuppressWarnings("null")
 public class PreciseMultiLineEditBox extends MultiLineEditBox {
@@ -23,6 +25,7 @@ public class PreciseMultiLineEditBox extends MultiLineEditBox {
     private MultilineTextField cachedTextField;
     private Method beginIndexMethod;
     private Method endIndexMethod;
+    private Function<String, FormattedCharSequence> lineFormatter;
     private boolean draggingSelection;
     private int dragAnchorIndex;
     private long lastClickTime;
@@ -32,6 +35,13 @@ public class PreciseMultiLineEditBox extends MultiLineEditBox {
         super(font, x, y, width, height, message, placeholder);
         this.textFont = font;
         this.lastClickIndex = -1;
+        this.lineFormatter = line -> Component.literal(line).getVisualOrderText();
+    }
+
+    public void setLineFormatter(Function<String, FormattedCharSequence> formatter) {
+        if (formatter != null) {
+            this.lineFormatter = formatter;
+        }
     }
 
     @Override
@@ -81,6 +91,75 @@ public class PreciseMultiLineEditBox extends MultiLineEditBox {
             this.draggingSelection = false;
         }
         return super.mouseReleased(mouseX, mouseY, button);
+    }
+
+    @Override
+    protected void renderContents(net.minecraft.client.gui.GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        MultilineTextField textField = textField();
+        if (textField == null) {
+            return;
+        }
+
+        String value = this.getValue();
+        List<LineView> lines = getDisplayLines(textField);
+        if (lines.isEmpty()) {
+            lines = List.of(new LineView(0, 0));
+        }
+
+        int contentX = this.getX() + this.innerPadding();
+        int contentY = this.getY() + this.innerPadding() - (int) this.scrollAmount();
+        int lineH = lineHeight();
+
+        int clipX1 = this.getX() + this.innerPadding();
+        int clipY1 = this.getY() + this.innerPadding();
+        int clipX2 = this.getX() + this.getWidth() - this.innerPadding();
+        int clipY2 = this.getY() + this.getHeight() - this.innerPadding();
+        graphics.enableScissor(clipX1, clipY1, clipX2, clipY2);
+
+        LineView selection = textField.hasSelection() ? toLineView(textField.getSelected()) : null;
+        int selStart = selection != null ? Math.min(selection.beginIndex(), selection.endIndex()) : -1;
+        int selEnd = selection != null ? Math.max(selection.beginIndex(), selection.endIndex()) : -1;
+
+        for (int i = 0; i < lines.size(); i++) {
+            LineView line = lines.get(i);
+            int drawY = contentY + i * lineH;
+            if (drawY + lineH < clipY1 || drawY > clipY2) {
+                continue;
+            }
+
+            int begin = Mth.clamp(line.beginIndex(), 0, value.length());
+            int end = Mth.clamp(line.endIndex(), begin, value.length());
+            String lineText = value.substring(begin, end);
+
+            if (selection != null && selEnd > begin && selStart < end) {
+                int rangeStart = Mth.clamp(selStart, begin, end);
+                int rangeEnd = Mth.clamp(selEnd, begin, end);
+                if (rangeEnd > rangeStart) {
+                    int sx1 = contentX + this.textFont.width(lineText.substring(0, rangeStart - begin));
+                    int sx2 = contentX + this.textFont.width(lineText.substring(0, rangeEnd - begin));
+                    graphics.fill(sx1, drawY, sx2, drawY + lineH, 0x663A84D8);
+                }
+            }
+
+            FormattedCharSequence formatted = this.lineFormatter.apply(lineText);
+            graphics.drawString(this.textFont, formatted != null ? formatted : Component.literal(lineText).getVisualOrderText(), contentX, drawY, 0xFFFFFFFF);
+        }
+
+        if (this.isFocused() && (Util.getMillis() / 500L) % 2L == 0L) {
+            int cursor = clampToValueRange(textField.cursor());
+            int lineIndex = textField.getLineAtCursor();
+            LineView cursorLine = toLineView(textField.getLineView(lineIndex));
+            if (cursorLine != null) {
+                int begin = Mth.clamp(cursorLine.beginIndex(), 0, value.length());
+                int colEnd = Mth.clamp(cursor, begin, value.length());
+                String linePrefix = value.substring(begin, colEnd);
+                int cx = contentX + this.textFont.width(linePrefix);
+                int cy = contentY + lineIndex * lineH;
+                graphics.fill(cx, cy, cx + 1, cy + lineH, 0xFFD0D0D0);
+            }
+        }
+
+        graphics.disableScissor();
     }
 
     protected int indexFromMouse(double mouseX, double mouseY) {

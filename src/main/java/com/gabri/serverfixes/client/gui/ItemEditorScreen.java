@@ -68,9 +68,11 @@ public class ItemEditorScreen extends Screen {
     private String rawNbtText = "{}";
     private String rawNbtError;
     private String rawNbtStatusMessage = "Use os ícones para formatar, resetar ou aplicar.";
+    private ItemStack rawWorkingItem = ItemStack.EMPTY;
+    private CompoundTag rawOriginalFullItemNbt = new CompoundTag();
     private ScrollTarget draggingScrollTarget = ScrollTarget.NONE;
     private int draggingThumbOffsetY = 0;
-    private final boolean editingEnchantedBook;
+    private boolean editingEnchantedBook;
 
     private static final int SIDEBAR_WIDTH = 150;
     private static final int CONTENT_PADDING = 12;
@@ -121,13 +123,18 @@ public class ItemEditorScreen extends Screen {
 
     public ItemEditorScreen(CompoundTag itemTag) {
         super(Component.literal("Item Editor"));
-        this.currentTag = itemTag.copy();
-        this.rawNbtText = this.currentTag.toString();
-        this.editingEnchantedBook = detectEnchantedBookContext(itemTag);
+        this.currentTag = itemTag != null ? itemTag.copy() : new CompoundTag();
+        this.rawWorkingItem = resolveInitialWorkingItem(this.currentTag);
+        this.rawOriginalFullItemNbt = buildFullItemNbt(this.rawWorkingItem, this.currentTag);
+        this.rawNbtText = this.rawOriginalFullItemNbt.toString();
+        this.editingEnchantedBook = detectEnchantedBookContext(this.currentTag, this.rawWorkingItem);
         this.displayForm = DisplayEditorFormModel.fromTag(this.currentTag);
     }
 
-    private static boolean detectEnchantedBookContext(CompoundTag itemTag) {
+    private static boolean detectEnchantedBookContext(CompoundTag itemTag, ItemStack sourceStack) {
+        if (sourceStack != null && !sourceStack.isEmpty() && sourceStack.is(Items.ENCHANTED_BOOK)) {
+            return true;
+        }
         if (itemTag != null && itemTag.contains("StoredEnchantments", Tag.TAG_LIST)) {
             return true;
         }
@@ -141,6 +148,38 @@ public class ItemEditorScreen extends Screen {
             return !mainHand.isEmpty() && mainHand.is(Items.ENCHANTED_BOOK);
         }
         return false;
+    }
+
+    private static ItemStack resolveInitialWorkingItem(CompoundTag currentTag) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft != null && minecraft.player != null) {
+            ItemStack mainHand = minecraft.player.getMainHandItem();
+            if (!mainHand.isEmpty()) {
+                ItemStack copy = mainHand.copy();
+                if (currentTag != null && !currentTag.isEmpty()) {
+                    copy.setTag(currentTag.copy());
+                } else {
+                    copy.setTag(null);
+                }
+                return copy;
+            }
+        }
+        return ItemStack.EMPTY;
+    }
+
+    private static CompoundTag buildFullItemNbt(ItemStack sourceStack, CompoundTag fallbackTag) {
+        if (sourceStack != null && !sourceStack.isEmpty()) {
+            ItemStack copy = sourceStack.copy();
+            if (fallbackTag != null && !fallbackTag.isEmpty()) {
+                copy.setTag(fallbackTag.copy());
+            } else {
+                copy.setTag(null);
+            }
+            CompoundTag full = new CompoundTag();
+            copy.save(full);
+            return full;
+        }
+        return fallbackTag != null ? fallbackTag.copy() : new CompoundTag();
     }
 
     @Override
@@ -172,7 +211,7 @@ public class ItemEditorScreen extends Screen {
                 }
                 this.currentCategory = cat;
                 if (cat == Category.RAW_NBT) {
-                    this.rawNbtText = this.currentTag.toString();
+                    this.rawNbtText = buildFullItemNbt(this.rawWorkingItem, this.currentTag).toString();
                     this.rawNbtError = null;
                     this.rawNbtStatusMessage = "Use os ícones para formatar, resetar ou aplicar.";
                 }
@@ -406,7 +445,7 @@ public class ItemEditorScreen extends Screen {
         this.rawNbtBox = new SyntaxNbtEditBox(this.font, editorX, editorY, editorWidth, editorHeight,
             Component.literal("Raw NBT"), Component.empty());
         this.rawNbtBox.setCharacterLimit(32767);
-        this.rawNbtBox.setValue(this.rawNbtText != null ? this.rawNbtText : this.currentTag.toString());
+        this.rawNbtBox.setValue(this.rawNbtText != null ? this.rawNbtText : buildFullItemNbt(this.rawWorkingItem, this.currentTag).toString());
         this.rawNbtBox.setValueListener(value -> {
             this.rawNbtText = value != null ? value : "{}";
             this.rawNbtError = null;
@@ -1062,7 +1101,7 @@ public class ItemEditorScreen extends Screen {
     private void formatRawNbtText() {
         String raw = this.rawNbtBox != null ? this.rawNbtBox.getValue() : this.rawNbtText;
         if (raw == null || raw.isBlank()) {
-            raw = "{}";
+            raw = buildFullItemNbt(this.rawWorkingItem, this.currentTag).toString();
         }
 
         try {
@@ -1081,14 +1120,16 @@ public class ItemEditorScreen extends Screen {
     }
 
     private void resetRawNbtText() {
-        String reset = this.currentTag.toString();
+        String reset = this.rawOriginalFullItemNbt != null && !this.rawOriginalFullItemNbt.isEmpty()
+            ? this.rawOriginalFullItemNbt.toString()
+            : buildFullItemNbt(this.rawWorkingItem, this.currentTag).toString();
         this.rawNbtText = reset;
         if (this.rawNbtBox != null) {
             this.rawNbtBox.setValue(reset);
             this.rawNbtBox.refreshSuggestionsNow();
         }
         this.rawNbtError = null;
-        this.rawNbtStatusMessage = "SNBT resetado para a versão atual do item.";
+        this.rawNbtStatusMessage = "SNBT resetado para o item original.";
     }
 
     private void applyRawNbtFromToolbar() {
@@ -1102,13 +1143,30 @@ public class ItemEditorScreen extends Screen {
     private boolean applyRawNbtIfValid() {
         String raw = this.rawNbtBox != null ? this.rawNbtBox.getValue() : this.rawNbtText;
         if (raw == null || raw.isBlank()) {
-            raw = "{}";
+            raw = buildFullItemNbt(this.rawWorkingItem, this.currentTag).toString();
         }
 
         try {
             CompoundTag parsed = TagParser.parseTag(raw);
-            this.currentTag = parsed;
-            this.rawNbtText = raw;
+            ItemStack rebuilt = ItemStack.of(parsed);
+            if (rebuilt.isEmpty()) {
+                this.rawNbtError = "SNBT não representa um ItemStack válido (id/Count/tag).";
+                this.rawNbtText = raw;
+                return false;
+            }
+
+            this.rawWorkingItem = rebuilt.copy();
+            CompoundTag innerTag = rebuilt.getTag();
+            this.currentTag = innerTag != null ? innerTag.copy() : new CompoundTag();
+            this.editingEnchantedBook = detectEnchantedBookContext(this.currentTag, this.rawWorkingItem);
+
+            CompoundTag normalizedFull = new CompoundTag();
+            this.rawWorkingItem.save(normalizedFull);
+            this.rawNbtText = normalizedFull.toString();
+            if (this.rawNbtBox != null) {
+                this.rawNbtBox.setValue(this.rawNbtText);
+                this.rawNbtBox.refreshSuggestionsNow();
+            }
             this.rawNbtError = null;
             return true;
         } catch (CommandSyntaxException e) {
