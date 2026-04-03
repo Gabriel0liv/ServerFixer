@@ -23,7 +23,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
-import java.util.function.Function;
 import java.util.function.IntConsumer;
 import java.util.function.DoubleConsumer;
 
@@ -480,20 +479,22 @@ public class ParticleStudioScreen extends Screen {
 
         TextureAtlasSprite animatedSprite = resolveAnimatedPreviewSprite();
         if (animatedSprite == null) {
-            graphics.drawCenteredString(this.font, "Preview nao suportada", boxX + (boxW / 2), boxY + (boxH / 2) - 4, 0xFFFF7D7D);
+            graphics.drawCenteredString(this.font, "Preview nao suportada (Hardcoded)", boxX + (boxW / 2), boxY + (boxH / 2) - 4, 0xFFFF7D7D);
             return;
         }
 
         float scale = 4.0F;
-        int spriteSize = 16;
-        int scaledSize = (int) (spriteSize * scale);
-        int drawX = boxX + (boxW - scaledSize) / 2;
-        int drawY = boxY + (boxH - scaledSize) / 2;
+        int spriteW = Math.max(1, animatedSprite.contents().width());
+        int spriteH = Math.max(1, animatedSprite.contents().height());
+        int scaledW = (int) (spriteW * scale);
+        int scaledH = (int) (spriteH * scale);
+        int drawX = boxX + (boxW - scaledW) / 2;
+        int drawY = boxY + (boxH - scaledH) / 2;
 
         graphics.pose().pushPose();
         graphics.pose().translate(drawX, drawY, 0.0F);
         graphics.pose().scale(scale, scale, 1.0F);
-        graphics.blit(0, 0, 0, 16, 16, animatedSprite);
+        graphics.blit(0, 0, 0, spriteW, spriteH, animatedSprite);
         graphics.pose().popPose();
 
         if (this.selectedPreviewSpriteId != null) {
@@ -510,28 +511,29 @@ public class ParticleStudioScreen extends Screen {
         }
 
         try {
-            Function<ResourceLocation, TextureAtlasSprite> atlasFn = this.minecraft.getTextureAtlas(TextureAtlas.LOCATION_PARTICLES);
-            if (atlasFn == null) {
+            var texture = this.minecraft.getTextureManager().getTexture(TextureAtlas.LOCATION_PARTICLES);
+            if (!(texture instanceof TextureAtlas particleAtlas)) {
                 this.previewSupported = false;
                 return null;
             }
 
-            TextureAtlasSprite missing = atlasFn.apply(MissingTextureAtlasSprite.getLocation());
+            TextureAtlasSprite missing = particleAtlas.getSprite(MissingTextureAtlasSprite.getLocation());
             String namespace = this.selectedParticleId.getNamespace();
             String path = this.selectedParticleId.getPath();
             int frame = (int) ((Util.getMillis() / 100L) % 8L);
 
-            List<ResourceLocation> candidates = new ArrayList<>();
-            candidates.add(ResourceLocation.fromNamespaceAndPath(namespace, "particle/" + path + "_" + frame));
-            candidates.add(ResourceLocation.fromNamespaceAndPath(namespace, "particle/" + path + "_0"));
-            candidates.add(ResourceLocation.fromNamespaceAndPath(namespace, path + "_" + frame));
-            candidates.add(ResourceLocation.fromNamespaceAndPath(namespace, path + "_0"));
-            candidates.add(ResourceLocation.fromNamespaceAndPath(namespace, "particle/" + path));
-            candidates.add(this.selectedParticleId);
+            List<ResourceLocation> attempts = List.of(
+                ResourceLocation.fromNamespaceAndPath(namespace, "particle/" + path + "_" + frame),
+                ResourceLocation.fromNamespaceAndPath(namespace, "particle/" + path + "_0"),
+                ResourceLocation.fromNamespaceAndPath(namespace, "particle/" + path),
+                ResourceLocation.fromNamespaceAndPath(namespace, path + "_" + frame),
+                ResourceLocation.fromNamespaceAndPath(namespace, path + "_0"),
+                ResourceLocation.fromNamespaceAndPath(namespace, path)
+            );
 
-            for (ResourceLocation candidate : candidates) {
-                TextureAtlasSprite sprite = atlasFn.apply(candidate);
-                if (sprite != null && sprite != missing) {
+            for (ResourceLocation candidate : attempts) {
+                TextureAtlasSprite sprite = particleAtlas.getSprite(candidate);
+                if (!isMissingSprite(sprite, missing)) {
                     this.previewSupported = true;
                     this.selectedPreviewSprite = sprite;
                     this.selectedPreviewSpriteId = candidate;
@@ -546,6 +548,17 @@ public class ParticleStudioScreen extends Screen {
         this.selectedPreviewSprite = null;
         this.selectedPreviewSpriteId = null;
         return null;
+    }
+
+    private boolean isMissingSprite(TextureAtlasSprite sprite, TextureAtlasSprite missing) {
+        if (sprite == null) {
+            return true;
+        }
+        if (missing != null && sprite == missing) {
+            return true;
+        }
+        String path = sprite.contents().name().getPath();
+        return path != null && path.contains("missingno");
     }
 
     private boolean isInsideListArea(double mouseX, double mouseY) {
