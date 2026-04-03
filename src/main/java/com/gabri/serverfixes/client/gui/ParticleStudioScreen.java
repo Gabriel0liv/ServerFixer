@@ -181,7 +181,8 @@ public class ParticleStudioScreen extends Screen {
         updateLayout();
         // Right panel will be recalculated after widgets are created
 
-        this.searchBox = new SelectableEditBox(this.font, this.leftX + 8, this.leftY + 24, this.leftW - 16, 18, Component.literal("Pesquisar particula"));
+        // Use `listAreaW` so the search box aligns with the constrained list width.
+        this.searchBox = new SelectableEditBox(this.font, this.leftX + 8, this.leftY + 24, this.listAreaW, 18, Component.literal("Pesquisar particula"));
         this.searchBox.setMaxLength(80);
         this.searchBox.setResponder(value -> applySearchFilter());
         this.addRenderableWidget(this.searchBox);
@@ -296,7 +297,7 @@ public class ParticleStudioScreen extends Screen {
         int contentY = 20;
         int contentH = this.height - 28;
 
-        int desiredLeft = Math.max(100, this.width / 4) + 16;
+        int desiredLeft = Math.max(100, this.width / 4) + 24;
         int desiredRight = Math.max(130, this.width / 4);
         int minCenter = 120;
         int panelGap = 4;
@@ -333,7 +334,8 @@ public class ParticleStudioScreen extends Screen {
         int searchH = 18;
         this.listAreaX = this.leftX + 8;
         this.listAreaY = searchY + searchH + 8;
-        this.listAreaW = this.leftW - 16;
+        // Reserve additional right margin for the scrollbar thumb inside the left panel
+        this.listAreaW = this.leftW - 26;
         this.listAreaH = this.leftH - (this.listAreaY - this.leftY) - 8;
     }
 
@@ -386,7 +388,8 @@ public class ParticleStudioScreen extends Screen {
         this.leftScrollAmount = 0.0D;
 
         int buttonX = this.leftX + 8;
-        int buttonW = this.leftW - 15;
+        // Make button width fit the reduced inner list area and leave a small right padding
+        int buttonW = Math.max(10, this.listAreaW - 2);
         int buttonH = 20;
         int currentLeftY = this.listAreaY + 1;
 
@@ -819,8 +822,15 @@ public class ParticleStudioScreen extends Screen {
     }
 
     private boolean isInsideLeftScrollbar(double mouseX, double mouseY) {
-        int barX = this.leftX + this.leftW - 6;
-        return mouseX >= barX && mouseX < barX + 6
+        // Position the scrollbar track inside the reserved right margin of the left panel
+        int listRight = this.listAreaX + this.listAreaW;
+        int rightEdge = this.leftX + this.leftW;
+        int reserved = Math.max(0, rightEdge - listRight);
+        int trackWidth = 6;
+        if (reserved >= 10) trackWidth = Math.min(10, reserved - 2);
+        int barX = listRight + (reserved - trackWidth) / 2;
+
+        return mouseX >= barX && mouseX < barX + trackWidth
             && mouseY >= this.listAreaY && mouseY < this.listAreaY + this.listAreaH;
     }
 
@@ -930,16 +940,23 @@ public class ParticleStudioScreen extends Screen {
         if (this.maxLeftScroll <= 0) {
             return;
         }
-        int barX = this.leftX + this.leftW - 6;
+        // Compute track inside reserved right margin next to the list area
+        int listRight = this.listAreaX + this.listAreaW;
+        int rightEdge = this.leftX + this.leftW;
+        int reserved = Math.max(0, rightEdge - listRight);
+        int trackWidth = 6;
+        if (reserved >= 10) trackWidth = Math.min(10, reserved - 2);
+        int barX = listRight + (reserved - trackWidth) / 2;
+
         int top = this.listAreaY;
         int bottom = this.listAreaY + this.listAreaH;
         int trackHeight = bottom - top;
 
-        graphics.fill(barX, top, barX + 6, bottom, 0xFF000000);
+        graphics.fill(barX, top, barX + trackWidth, bottom, 0xFF000000);
 
         int thumbHeight = getLeftScrollbarThumbHeight(trackHeight);
         int thumbY = getLeftScrollbarThumbY(top, trackHeight, thumbHeight);
-        graphics.fill(barX + 1, thumbY, barX + 5, thumbY + thumbHeight, 0xFF888888);
+        graphics.fill(barX + 1, thumbY, barX + trackWidth - 1, thumbY + thumbHeight, 0xFF888888);
     }
 
     private int getLeftScrollbarThumbHeight(int trackHeight) {
