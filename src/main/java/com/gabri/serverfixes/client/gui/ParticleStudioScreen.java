@@ -6,6 +6,7 @@ import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractSliderButton;
+import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.screens.Screen;
@@ -19,6 +20,7 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -31,6 +33,16 @@ public class ParticleStudioScreen extends Screen {
     private static final int OUTER_MARGIN = 10;
     private static final int PANEL_GAP = 4;
     private static final int ROW_HEIGHT = 18;
+    private static final Map<ResourceLocation, float[]> PARTICLE_TINTS = Map.ofEntries(
+        Map.entry(ResourceLocation.fromNamespaceAndPath("minecraft", "totem_of_undying"), tint(0x63D46A)),
+        Map.entry(ResourceLocation.fromNamespaceAndPath("minecraft", "dripping_water"), tint(0x3F76E4)),
+        Map.entry(ResourceLocation.fromNamespaceAndPath("minecraft", "falling_water"), tint(0x3F76E4)),
+        Map.entry(ResourceLocation.fromNamespaceAndPath("minecraft", "landing_water"), tint(0x3F76E4)),
+        Map.entry(ResourceLocation.fromNamespaceAndPath("minecraft", "effect"), tint(0xA353FF)),
+        Map.entry(ResourceLocation.fromNamespaceAndPath("minecraft", "ambient_entity_effect"), tint(0xA353FF)),
+        Map.entry(ResourceLocation.fromNamespaceAndPath("minecraft", "entity_effect"), tint(0xA353FF)),
+        Map.entry(ResourceLocation.fromNamespaceAndPath("minecraft", "instant_effect"), tint(0xB67CFF))
+    );
 
     private final List<ResourceLocation> allParticles = new ArrayList<>();
     private final List<ResourceLocation> filteredParticles = new ArrayList<>();
@@ -53,6 +65,11 @@ public class ParticleStudioScreen extends Screen {
     private ResourceLocation selectedPreviewSpriteId;
     private boolean previewSupported;
     private boolean previewHardcoded;
+
+    private double rightScrollAmount = 0.0D;
+    private int maxRightScroll = 0;
+    private final List<AbstractWidget> rightPanelWidgets = new ArrayList<>();
+    private final Map<AbstractWidget, Integer> widgetOriginalY = new HashMap<>();
 
     private int scrollOffset = 0;
 
@@ -109,6 +126,10 @@ public class ParticleStudioScreen extends Screen {
             return;
         }
         this.clearWidgets();
+        this.rightPanelWidgets.clear();
+        this.widgetOriginalY.clear();
+        this.rightScrollAmount = 0.0D;
+        this.maxRightScroll = 0;
         updateLayout();
 
         this.searchBox = new SelectableEditBox(this.font, this.leftX + 8, this.leftY + 24, this.leftW - 16, 18, Component.literal("Pesquisar particula"));
@@ -121,50 +142,50 @@ public class ParticleStudioScreen extends Screen {
         int sliderW = this.rightW - 10;
         int sliderY = this.rightY + 28;
 
-        this.deltaXSlider = new DoubleParameterSlider(sliderX, sliderY, sliderW, 18, "Delta X", 0.0D, 5.0D, this.deltaX, 2, value -> {
+        this.deltaXSlider = registerRightPanelWidget(new DoubleParameterSlider(sliderX, sliderY, sliderW, 18, "Delta X", 0.0D, 5.0D, this.deltaX, 2, value -> {
             this.deltaX = value;
             updateCommandString();
-        });
+        }));
         sliderY += 24;
 
-        this.deltaYSlider = new DoubleParameterSlider(sliderX, sliderY, sliderW, 18, "Delta Y", 0.0D, 5.0D, this.deltaY, 2, value -> {
+        this.deltaYSlider = registerRightPanelWidget(new DoubleParameterSlider(sliderX, sliderY, sliderW, 18, "Delta Y", 0.0D, 5.0D, this.deltaY, 2, value -> {
             this.deltaY = value;
             updateCommandString();
-        });
+        }));
         sliderY += 24;
 
-        this.deltaZSlider = new DoubleParameterSlider(sliderX, sliderY, sliderW, 18, "Delta Z", 0.0D, 5.0D, this.deltaZ, 2, value -> {
+        this.deltaZSlider = registerRightPanelWidget(new DoubleParameterSlider(sliderX, sliderY, sliderW, 18, "Delta Z", 0.0D, 5.0D, this.deltaZ, 2, value -> {
             this.deltaZ = value;
             updateCommandString();
-        });
+        }));
         sliderY += 24;
 
-        this.speedSlider = new DoubleParameterSlider(sliderX, sliderY, sliderW, 18, "Speed", 0.0D, 1.0D, this.speed, 2, value -> {
+        this.speedSlider = registerRightPanelWidget(new DoubleParameterSlider(sliderX, sliderY, sliderW, 18, "Speed", 0.0D, 1.0D, this.speed, 2, value -> {
             this.speed = value;
             updateCommandString();
-        });
+        }));
         sliderY += 24;
 
-        this.countSlider = new IntParameterSlider(sliderX, sliderY, sliderW, 18, "Count", 1, 1000, this.count, value -> {
+        this.countSlider = registerRightPanelWidget(new IntParameterSlider(sliderX, sliderY, sliderW, 18, "Count", 1, 1000, this.count, value -> {
             this.count = value;
             updateCommandString();
-        });
+        }));
         sliderY += 28;
 
-        this.forceToggle = CycleButton.builder((Boolean value) -> Component.literal(value ? "FORCE" : "NORMAL"))
+        this.forceToggle = registerRightPanelWidget(CycleButton.builder((Boolean value) -> Component.literal(value ? "FORCE" : "NORMAL"))
             .withValues(false, true)
             .withInitialValue(this.force)
             .displayOnlyValue()
             .create(sliderX, sliderY, sliderW, 18, Component.literal("Modo"), (btn, value) -> {
                 this.force = value;
                 updateCommandString();
-            });
+            }));
         sliderY += 24;
 
         this.commandOutputBox = new SelectableEditBox(this.font, sliderX, sliderY, sliderW, 18, Component.literal("Comando"));
         this.commandOutputBox.setEditable(false);
         this.commandOutputBox.setCanLoseFocus(true);
-        this.addRenderableWidget(this.commandOutputBox);
+        registerRightPanelWidget(this.commandOutputBox);
         sliderY += 26;
 
         this.testButton = Button.builder(Component.literal("Testar"), btn -> testCurrentCommand())
@@ -174,14 +195,13 @@ public class ParticleStudioScreen extends Screen {
             .bounds(sliderX + ((sliderW - 4) / 2) + 4, sliderY, (sliderW - 4) / 2, 20)
             .build();
 
-        this.addRenderableWidget(this.deltaXSlider);
-        this.addRenderableWidget(this.deltaYSlider);
-        this.addRenderableWidget(this.deltaZSlider);
-        this.addRenderableWidget(this.speedSlider);
-        this.addRenderableWidget(this.countSlider);
-        this.addRenderableWidget(this.forceToggle);
-        this.addRenderableWidget(this.testButton);
-        this.addRenderableWidget(this.copyButton);
+        registerRightPanelWidget(this.testButton);
+        registerRightPanelWidget(this.copyButton);
+
+        int currentY = sliderY + 22;
+        this.maxRightScroll = Math.max(0, currentY - this.height + 10);
+        this.rightScrollAmount = Mth.clamp(this.rightScrollAmount, 0.0D, this.maxRightScroll);
+        applyRightScroll();
 
         this.addRenderableWidget(Button.builder(Component.literal("Fechar"), btn -> onClose())
             .bounds(this.rightX + this.rightW - 69, this.rightY + this.rightH - 24, 64, 18)
@@ -337,6 +357,12 @@ public class ParticleStudioScreen extends Screen {
             this.scrollOffset = Mth.clamp(next, 0, maxOffset);
             return true;
         }
+        if (mouseX >= this.rightX && this.maxRightScroll > 0) {
+            this.rightScrollAmount -= scrollY * 15.0D;
+            this.rightScrollAmount = Mth.clamp(this.rightScrollAmount, 0.0D, this.maxRightScroll);
+            applyRightScroll();
+            return true;
+        }
         return super.mouseScrolled(mouseX, mouseY, scrollY);
     }
 
@@ -366,7 +392,27 @@ public class ParticleStudioScreen extends Screen {
         renderParticleList(graphics, mouseX, mouseY);
         renderPreviewPanel(graphics);
 
+        boolean clipRightPanel = !this.rightPanelWidgets.isEmpty();
+        if (clipRightPanel) {
+            for (AbstractWidget widget : this.rightPanelWidgets) {
+                widget.visible = false;
+            }
+        }
+
         super.render(graphics, mouseX, mouseY, partialTick);
+
+        if (clipRightPanel) {
+            for (AbstractWidget widget : this.rightPanelWidgets) {
+                widget.visible = true;
+            }
+            graphics.enableScissor(this.rightX, 0, this.width, this.height);
+            for (AbstractWidget widget : this.rightPanelWidgets) {
+                widget.render(graphics, mouseX, mouseY, partialTick);
+            }
+            graphics.disableScissor();
+        }
+
+        renderRightScrollbar(graphics);
     }
 
     private void renderParticleList(GuiGraphics graphics, int mouseX, int mouseY) {
@@ -452,7 +498,14 @@ public class ParticleStudioScreen extends Screen {
         graphics.pose().pushPose();
         graphics.pose().translate(drawX, drawY, 0.0F);
         graphics.pose().scale(scale, scale, 1.0F);
+        float[] tint = this.selectedParticleId != null ? PARTICLE_TINTS.get(this.selectedParticleId) : null;
+        if (tint != null) {
+            graphics.setColor(tint[0], tint[1], tint[2], 1.0F);
+        }
         graphics.blit(0, 0, 0, spriteW, spriteH, animatedSprite);
+        if (tint != null) {
+            graphics.setColor(1.0F, 1.0F, 1.0F, 1.0F);
+        }
         graphics.pose().popPose();
 
         if (this.selectedPreviewSpriteId != null) {
@@ -530,6 +583,41 @@ public class ParticleStudioScreen extends Screen {
     private boolean isInsideListArea(double mouseX, double mouseY) {
         return mouseX >= this.listAreaX && mouseX < this.listAreaX + this.listAreaW
             && mouseY >= this.listAreaY && mouseY < this.listAreaY + this.listAreaH;
+    }
+
+    private void applyRightScroll() {
+        for (AbstractWidget widget : this.rightPanelWidgets) {
+            Integer baseY = this.widgetOriginalY.get(widget);
+            if (baseY != null) {
+                widget.setY(baseY - (int) this.rightScrollAmount);
+            }
+        }
+    }
+
+    private <T extends AbstractWidget> T registerRightPanelWidget(T widget) {
+        this.rightPanelWidgets.add(widget);
+        this.widgetOriginalY.put(widget, widget.getY());
+        this.addRenderableWidget(widget);
+        return widget;
+    }
+
+    private void renderRightScrollbar(GuiGraphics graphics) {
+        if (this.maxRightScroll <= 0) {
+            return;
+        }
+        graphics.fill(this.width - 6, 0, this.width, this.height, 0xFF000000);
+
+        int thumbHeight = Math.max(20, (int) ((this.height / (float) (this.height + this.maxRightScroll)) * this.height));
+        int thumbY = (int) ((this.rightScrollAmount / this.maxRightScroll) * (this.height - thumbHeight));
+        graphics.fill(this.width - 5, thumbY, this.width - 1, thumbY + thumbHeight, 0xFF888888);
+    }
+
+    private static float[] tint(int rgb) {
+        return new float[] {
+            ((rgb >> 16) & 0xFF) / 255.0F,
+            ((rgb >> 8) & 0xFF) / 255.0F,
+            (rgb & 0xFF) / 255.0F
+        };
     }
 
     @Override
