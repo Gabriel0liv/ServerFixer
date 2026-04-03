@@ -1,6 +1,7 @@
 package com.gabri.serverfixes.client.gui;
 
 import com.gabri.serverfixes.client.gui.editor.SelectableEditBox;
+import com.gabri.serverfixes.mixin.ParticleEngineAccessor;
 import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -8,9 +9,7 @@ import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.client.renderer.texture.AbstractTexture;
-import net.minecraft.client.renderer.texture.MissingTextureAtlasSprite;
-import net.minecraft.client.renderer.texture.TextureAtlas;
+import net.minecraft.client.particle.SpriteSet;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -22,6 +21,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.IntConsumer;
 import java.util.function.DoubleConsumer;
@@ -52,6 +52,7 @@ public class ParticleStudioScreen extends Screen {
     private TextureAtlasSprite selectedPreviewSprite;
     private ResourceLocation selectedPreviewSpriteId;
     private boolean previewSupported;
+    private boolean previewHardcoded;
 
     private int scrollOffset = 0;
 
@@ -262,57 +263,11 @@ public class ParticleStudioScreen extends Screen {
         updateCommandString();
     }
 
-    private void refreshSelectedSprite() {
+    private void refreshSelectedSpriteSafe() {
         this.previewSupported = false;
+        this.previewHardcoded = false;
         this.selectedPreviewSprite = null;
         this.selectedPreviewSpriteId = null;
-
-        if (this.selectedParticleId == null) {
-            return;
-        }
-
-        TextureAtlas atlas = getParticleAtlasSafe();
-        if (atlas == null) {
-            return;
-        }
-        TextureAtlasSprite missingSprite = atlas.getSprite(MissingTextureAtlasSprite.getLocation());
-
-        List<ResourceLocation> candidates = new ArrayList<>();
-        candidates.add(this.selectedParticleId);
-        candidates.add(ResourceLocation.fromNamespaceAndPath(this.selectedParticleId.getNamespace(), "particle/" + this.selectedParticleId.getPath()));
-        candidates.add(ResourceLocation.fromNamespaceAndPath(this.selectedParticleId.getNamespace(), this.selectedParticleId.getPath() + "_0"));
-        candidates.add(ResourceLocation.fromNamespaceAndPath(this.selectedParticleId.getNamespace(), "particle/" + this.selectedParticleId.getPath() + "_0"));
-
-        for (ResourceLocation candidate : candidates) {
-            if (candidate == null) {
-                continue;
-            }
-            TextureAtlasSprite sprite = atlas.getSprite(candidate);
-            if (sprite != null && sprite != missingSprite) {
-                this.selectedPreviewSprite = sprite;
-                this.selectedPreviewSpriteId = candidate;
-                this.previewSupported = true;
-                return;
-            }
-        }
-    }
-
-    private void refreshSelectedSpriteSafe() {
-        try {
-            refreshSelectedSprite();
-        } catch (Exception e) {
-            this.previewSupported = false;
-            this.selectedPreviewSprite = null;
-            this.selectedPreviewSpriteId = null;
-        }
-    }
-
-    private TextureAtlas getParticleAtlasSafe() {
-        if (this.minecraft == null || this.minecraft.getTextureManager() == null) {
-            return null;
-        }
-        AbstractTexture texture = this.minecraft.getTextureManager().getTexture(TextureAtlas.LOCATION_PARTICLES);
-        return texture instanceof TextureAtlas atlas ? atlas : null;
     }
 
     private void updateCommandString() {
@@ -479,7 +434,10 @@ public class ParticleStudioScreen extends Screen {
 
         TextureAtlasSprite animatedSprite = resolveAnimatedPreviewSprite();
         if (animatedSprite == null) {
-            graphics.drawCenteredString(this.font, "Preview nao suportada (Hardcoded)", boxX + (boxW / 2), boxY + (boxH / 2) - 4, 0xFFFF7D7D);
+            String message = this.previewHardcoded
+                ? "Preview dinamica/codigo (Sem sprite fixo)"
+                : "Preview nao suportada";
+            graphics.drawCenteredString(this.font, message, boxX + (boxW / 2), boxY + (boxH / 2) - 4, 0xFFFF7D7D);
             return;
         }
 
@@ -505,60 +463,68 @@ public class ParticleStudioScreen extends Screen {
     private TextureAtlasSprite resolveAnimatedPreviewSprite() {
         if (this.selectedParticleId == null || this.minecraft == null) {
             this.previewSupported = false;
+            this.previewHardcoded = false;
             this.selectedPreviewSprite = null;
             this.selectedPreviewSpriteId = null;
             return null;
         }
 
         try {
-            var texture = this.minecraft.getTextureManager().getTexture(TextureAtlas.LOCATION_PARTICLES);
-            if (!(texture instanceof TextureAtlas particleAtlas)) {
+            if (this.minecraft.particleEngine == null) {
                 this.previewSupported = false;
+                this.previewHardcoded = true;
                 return null;
             }
 
-            TextureAtlasSprite missing = particleAtlas.getSprite(MissingTextureAtlasSprite.getLocation());
-            String namespace = this.selectedParticleId.getNamespace();
-            String path = this.selectedParticleId.getPath();
-            int frame = (int) ((Util.getMillis() / 100L) % 8L);
-
-            List<ResourceLocation> attempts = List.of(
-                ResourceLocation.fromNamespaceAndPath(namespace, "particle/" + path + "_" + frame),
-                ResourceLocation.fromNamespaceAndPath(namespace, "particle/" + path + "_0"),
-                ResourceLocation.fromNamespaceAndPath(namespace, "particle/" + path),
-                ResourceLocation.fromNamespaceAndPath(namespace, path + "_" + frame),
-                ResourceLocation.fromNamespaceAndPath(namespace, path + "_0"),
-                ResourceLocation.fromNamespaceAndPath(namespace, path)
-            );
-
-            for (ResourceLocation candidate : attempts) {
-                TextureAtlasSprite sprite = particleAtlas.getSprite(candidate);
-                if (!isMissingSprite(sprite, missing)) {
-                    this.previewSupported = true;
-                    this.selectedPreviewSprite = sprite;
-                    this.selectedPreviewSpriteId = candidate;
-                    return sprite;
-                }
+            Map<ResourceLocation, SpriteSet> spriteSets = ((ParticleEngineAccessor) this.minecraft.particleEngine).getSpriteSets();
+            if (spriteSets == null) {
+                this.previewSupported = false;
+                this.previewHardcoded = true;
+                return null;
             }
+
+            SpriteSet spriteSet = spriteSets.get(this.selectedParticleId);
+            if (spriteSet == null) {
+                this.previewSupported = false;
+                this.previewHardcoded = true;
+                return null;
+            }
+
+            int maxFrames = 8;
+            int currentFrame = (int) ((Util.getMillis() / 100L) % maxFrames);
+            TextureAtlasSprite sprite = spriteSet.get(currentFrame, maxFrames);
+            if (isMissingSprite(sprite)) {
+                this.previewSupported = false;
+                this.previewHardcoded = false;
+                return null;
+            }
+
+            this.previewSupported = true;
+            this.previewHardcoded = false;
+            this.selectedPreviewSprite = sprite;
+            this.selectedPreviewSpriteId = this.selectedParticleId;
+            return sprite;
         } catch (Exception ignored) {
             // Keep UI alive even if a specific particle has no atlas sprite mapping.
         }
 
         this.previewSupported = false;
+        this.previewHardcoded = false;
         this.selectedPreviewSprite = null;
         this.selectedPreviewSpriteId = null;
         return null;
     }
 
-    private boolean isMissingSprite(TextureAtlasSprite sprite, TextureAtlasSprite missing) {
+    private boolean isMissingSprite(TextureAtlasSprite sprite) {
         if (sprite == null) {
             return true;
         }
-        if (missing != null && sprite == missing) {
-            return true;
+        try {
+            String path = sprite.contents().name().getPath();
+            return path != null && path.contains("missingno");
+        } catch (Exception ignored) {
+            return false;
         }
-        String path = sprite.contents().name().getPath();
-        return path != null && path.contains("missingno");
     }
 
     private boolean isInsideListArea(double mouseX, double mouseY) {
