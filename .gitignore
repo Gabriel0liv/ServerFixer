@@ -46,5 +46,9 @@ dev/
 Thumbs.db
 desktop.ini
 
+# Agent-specific
+.github/
+.github/agents/
+
 # Files from Forge MDK
 forge*changelog.txt
