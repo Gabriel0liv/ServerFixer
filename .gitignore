@@ -1,4 +1,4 @@
-# eclipse
+# Eclipse
 bin/
 *.launch
 .settings/
@@ -6,27 +6,45 @@ bin/
 .classpath
 .project
 
-# idea
+# IntelliJ IDEA
 out/
 *.ipr
 *.iws
 *.iml
 .idea/
 
-# gradle
+# Visual Studio Code
+.vscode/
+
+# Gradle
 build/
 .gradle/
+gradle-app.setting
+gradle_out.txt
+*.out
 
-# forge/java
+# Forge / Minecraft Run Directories
 run/
+run-data/
+run-server/
+run-client/
+run-gameTestServer/
 *.log
+*.lck
 local.properties
 .data/
 
-# custom
+# Custom / Development
 referencia mods/
 build.log
 reproduction/
+dev/
+*.jar
+
+# OS-specific
+.DS_Store
+Thumbs.db
+desktop.ini
 
 # Files from Forge MDK
 forge*changelog.txt
