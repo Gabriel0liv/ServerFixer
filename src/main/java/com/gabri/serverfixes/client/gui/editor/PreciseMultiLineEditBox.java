@@ -110,11 +110,9 @@ public class PreciseMultiLineEditBox extends MultiLineEditBox {
         int contentY = this.getY() + this.innerPadding() - (int) this.scrollAmount();
         int lineH = lineHeight();
 
-        int clipX1 = this.getX();
         int clipY1 = this.getY();
-        int clipX2 = this.getX() + this.getWidth();
         int clipY2 = this.getY() + this.getHeight();
-        graphics.enableScissor(clipX1, clipY1, clipX2, clipY2);
+        graphics.enableScissor(this.getX(), this.getY(), this.getX() + this.getWidth(), this.getY() + this.getHeight());
 
         LineView selection = textField.hasSelection() ? toLineView(textField.getSelected()) : null;
         int selStart = selection != null ? Math.min(selection.beginIndex(), selection.endIndex()) : -1;
@@ -174,10 +172,15 @@ public class PreciseMultiLineEditBox extends MultiLineEditBox {
             return 0;
         }
 
-        // Convert click coordinates into logical text-space coordinates, including vertical scroll.
-        double yRel = mouseY - this.getY() - this.innerPadding() + this.scrollAmount();
-        int lineHeight = Math.max(1, this.textFont.lineHeight);
-        int lineIndex = Mth.clamp((int) Math.floor(yRel / lineHeight), 0, lines.size() - 1);
+        // Step A: Y relative to widget top.
+        double relativeY = mouseY - this.getY();
+        // Step B: subtract top padding.
+        relativeY -= this.innerPadding();
+        // Step C: include current scroll offset.
+        relativeY += this.scrollAmount();
+        // Step D/E: convert to clicked line and clamp to valid visible line range.
+        int clickedLineIndex = (int) Math.floor(relativeY / Math.max(1, this.textFont.lineHeight));
+        int lineIndex = Mth.clamp(clickedLineIndex, 0, lines.size() - 1);
 
         LineView line = lines.get(lineIndex);
         int begin = Mth.clamp(line.beginIndex(), 0, value.length());
