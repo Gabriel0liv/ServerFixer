@@ -642,6 +642,8 @@ public class ParticleStudioScreen extends Screen {
             this.listWidth = width;
             this.x0 = leftX;
             this.x1 = leftX + width;
+            this.setRenderBackground(false);
+            this.setRenderTopAndBottom(false);
         }
 
         private void add(ParticleEntry entry) {
@@ -684,6 +686,11 @@ public class ParticleStudioScreen extends Screen {
         @Override
         public int getRowWidth() {
             return this.listWidth - 15;
+        }
+
+        @Override
+        protected void renderBackground(@NotNull GuiGraphics graphics) {
+            // Intentionally empty: the parent screen draws the panel background.
         }
     }
 
