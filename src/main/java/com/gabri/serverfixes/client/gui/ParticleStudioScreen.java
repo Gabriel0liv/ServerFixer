@@ -144,73 +144,53 @@ public class ParticleStudioScreen extends Screen {
 
         int sliderX = this.rightX + 5;
         int sliderW = this.rightW - 10;
-        int currentY = this.rightY + 28;
 
-        registerRightPanelWidget(new DoubleParameterSlider(sliderX, currentY, sliderW, 18, "Delta X", 0.0D, 5.0D, this.deltaX, 2, value -> {
+        GuiLayoutUtils.VerticalLayoutBuilder rightBuilder = new GuiLayoutUtils.VerticalLayoutBuilder(sliderX, this.rightY + 28, sliderW, 5);
+
+        registerRightPanelWidget(rightBuilder.add(new DoubleParameterSlider(sliderX, 0, sliderW, 18, "Delta X", 0.0D, 5.0D, this.deltaX, 2, value -> {
             this.deltaX = value;
             updateCommandString();
-        }));
-        currentY += 24;
+        })));
 
-        registerRightPanelWidget(new DoubleParameterSlider(sliderX, currentY, sliderW, 18, "Delta Y", 0.0D, 5.0D, this.deltaY, 2, value -> {
+        registerRightPanelWidget(rightBuilder.add(new DoubleParameterSlider(sliderX, 0, sliderW, 18, "Delta Y", 0.0D, 5.0D, this.deltaY, 2, value -> {
             this.deltaY = value;
             updateCommandString();
-        }));
-        currentY += 24;
+        })));
 
-        registerRightPanelWidget(new DoubleParameterSlider(sliderX, currentY, sliderW, 18, "Delta Z", 0.0D, 5.0D, this.deltaZ, 2, value -> {
+        registerRightPanelWidget(rightBuilder.add(new DoubleParameterSlider(sliderX, 0, sliderW, 18, "Delta Z", 0.0D, 5.0D, this.deltaZ, 2, value -> {
             this.deltaZ = value;
             updateCommandString();
-        }));
-        currentY += 24;
+        })));
 
-        registerRightPanelWidget(new DoubleParameterSlider(sliderX, currentY, sliderW, 18, "Speed", 0.0D, 1.0D, this.speed, 2, value -> {
+        registerRightPanelWidget(rightBuilder.add(new DoubleParameterSlider(sliderX, 0, sliderW, 18, "Speed", 0.0D, 1.0D, this.speed, 2, value -> {
             this.speed = value;
             updateCommandString();
-        }));
-        currentY += 24;
+        })));
 
-        registerRightPanelWidget(new IntParameterSlider(sliderX, currentY, sliderW, 18, "Count", 1, 1000, this.count, value -> {
+        registerRightPanelWidget(rightBuilder.add(new IntParameterSlider(sliderX, 0, sliderW, 18, "Count", 1, 1000, this.count, value -> {
             this.count = value;
             updateCommandString();
-        }));
-        currentY += 28;
+        })));
 
-        registerRightPanelWidget(CycleButton.builder((Boolean value) -> Component.literal(value ? "FORCE" : "NORMAL"))
+        registerRightPanelWidget(rightBuilder.add(CycleButton.builder((Boolean value) -> Component.literal(value ? "FORCE" : "NORMAL"))
             .withValues(false, true)
             .withInitialValue(this.force)
             .displayOnlyValue()
-            .create(sliderX, currentY, sliderW, 18, Component.literal("Modo"), (btn, value) -> {
+            .create(sliderX, 0, sliderW, 18, Component.literal("Modo"), (btn, value) -> {
                 this.force = value;
                 updateCommandString();
-            }));
-        currentY += 24;
+            })));
 
-        this.commandOutputBox = new SelectableEditBox(this.font, sliderX, currentY, sliderW, 18, Component.literal("Comando"));
-        this.commandOutputBox.setEditable(false);
-        this.commandOutputBox.setCanLoseFocus(true);
-        registerRightPanelWidget(this.commandOutputBox);
-        currentY += 26;
-
-        this.testButton = Button.builder(Component.literal("Testar"), btn -> testCurrentCommand())
-            .bounds(sliderX, currentY, (sliderW - 4) / 2, 20)
-            .build();
-        this.copyButton = Button.builder(Component.literal("Copiar"), btn -> copyCurrentCommand())
-            .bounds(sliderX + ((sliderW - 4) / 2) + 4, currentY, (sliderW - 4) / 2, 20)
-            .build();
-
-        registerRightPanelWidget(this.testButton);
-        registerRightPanelWidget(this.copyButton);
-        // Extra Args box and Color button (disabled by default). Keep strict right-column math.
-        this.extraArgsBox = new SelectableEditBox(this.font, sliderX, currentY, sliderW, 18, Component.literal("Parâmetros Extras"));
+        // Extra Args box and Color button (disabled and invisible by default).
+        this.extraArgsBox = rightBuilder.add(new SelectableEditBox(this.font, 0, 0, sliderW, 18, Component.literal("Parâmetros Extras")));
         this.extraArgsBox.setMaxLength(200);
         this.extraArgsBox.setResponder(value -> updateCommandString());
         this.extraArgsBox.setEditable(false);
         this.extraArgsBox.active = false;
+        this.extraArgsBox.visible = false;
         registerRightPanelWidget(this.extraArgsBox);
-        currentY += 25;
 
-        this.colorButton = Button.builder(Component.literal("Definir Cor..."), btn -> {
+        this.colorButton = rightBuilder.add(Button.builder(Component.literal("Definir Cor..."), btn -> {
             String initialHex = "#ffffff";
             this.minecraft.setScreen(new HexColorPickerScreen(this, initialHex, (selectedHex) -> {
                 try {
@@ -226,13 +206,23 @@ public class ParticleStudioScreen extends Screen {
                 }
                 this.minecraft.setScreen(this);
             }));
-        }).bounds(sliderX, currentY, sliderW, 18).build();
+        }).build());
         this.colorButton.active = false;
+        this.colorButton.visible = false;
         registerRightPanelWidget(this.colorButton);
-        currentY += 25;
 
-        currentY += 24;
-        this.maxRightScroll = Math.max(0, currentY - this.height + 10);
+        this.commandOutputBox = rightBuilder.add(new SelectableEditBox(this.font, 0, 0, sliderW, 18, Component.literal("Comando")));
+        this.commandOutputBox.setEditable(false);
+        this.commandOutputBox.setCanLoseFocus(true);
+        registerRightPanelWidget(this.commandOutputBox);
+
+        this.testButton = rightBuilder.add(Button.builder(Component.literal("Testar"), btn -> testCurrentCommand()).build());
+        registerRightPanelWidget(this.testButton);
+
+        this.copyButton = rightBuilder.add(Button.builder(Component.literal("Copiar"), btn -> copyCurrentCommand()).build());
+        registerRightPanelWidget(this.copyButton);
+
+        this.maxRightScroll = Math.max(0, rightBuilder.getCurrentY() - this.height + 10);
         this.rightScrollAmount = Mth.clamp(this.rightScrollAmount, 0.0D, this.maxRightScroll);
         applyRightScroll();
 
@@ -242,6 +232,7 @@ public class ParticleStudioScreen extends Screen {
 
         refreshSelectedSpriteSafe();
         updateCommandString();
+        updateExtraArgsAvailability();
     }
 
     private void updateLayout() {
@@ -425,16 +416,17 @@ public class ParticleStudioScreen extends Screen {
             ParticleType<?> type = ForgeRegistries.PARTICLE_TYPES.getValue(this.selectedParticleId);
             requiresExtraArgs = type != null && !(type instanceof SimpleParticleType);
         }
-
         this.extraArgsBox.setEditable(requiresExtraArgs);
         this.extraArgsBox.active = requiresExtraArgs;
+        this.extraArgsBox.visible = requiresExtraArgs;
         this.colorButton.active = requiresExtraArgs;
+        this.colorButton.visible = requiresExtraArgs;
 
         if (!requiresExtraArgs) {
             this.extraArgsBox.setValue("");
             try {
                 Method m = this.extraArgsBox.getClass().getMethod("setSuggestion", String.class);
-                if (m != null) m.invoke(this.extraArgsBox, "Não exige extras");
+                if (m != null) m.invoke(this.extraArgsBox, "");
             } catch (Exception ignored) {
             }
         } else {
