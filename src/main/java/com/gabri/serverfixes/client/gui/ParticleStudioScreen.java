@@ -33,7 +33,24 @@ import java.util.function.DoubleConsumer;
 import java.util.function.IntConsumer;
 
 @SuppressWarnings("null")
+/**
+ * Tela de edição e construção de partículas dentro do jogo.
+ *
+ * Layout:
+ * - Coluna esquerda ("Particulas"): lista pesquisável de tipos de partículas registradas.
+ * - Centro ("Preview 2D"): preview do sprite/estado da partícula selecionada.
+ * - Direita ("Command Builder"): controles (sliders, campos e botões) para montar o
+ *   comando `/particle` e testar/copiá-lo.
+ *
+ * Comportamento importante:
+ * - A coluna esquerda implementa scroll manual (arraste do thumb + roda do mouse).
+ * - A coluna direita calcula dinamicamente a posição vertical dos widgets visíveis
+ *   e mantém `maxRightScroll`/`rightScrollAmount` para navegação por scroll.
+ * - A visibilidade e disponibilidade de `extraArgsBox` e `colorButton` são
+ *   decididas por `updateExtraArgsAvailability()` de acordo com o tipo de partícula.
+ */
 public class ParticleStudioScreen extends Screen {
+    // Mapa de tint (RGB) para partículas específicas que precisam de coloração no preview.
     private static final Map<ResourceLocation, float[]> PARTICLE_TINTS = Map.ofEntries(
         Map.entry(ResourceLocation.fromNamespaceAndPath("minecraft", "totem_of_undying"), tint(0x63D46A)),
         Map.entry(ResourceLocation.fromNamespaceAndPath("minecraft", "dripping_water"), tint(0x3F76E4)),
@@ -45,20 +62,25 @@ public class ParticleStudioScreen extends Screen {
         Map.entry(ResourceLocation.fromNamespaceAndPath("minecraft", "instant_effect"), tint(0xB67CFF))
     );
 
+    // Todas as partículas conhecidas (do registry) e a lista filtrada pela busca.
     private final List<ResourceLocation> allParticles = new ArrayList<>();
     private final List<ResourceLocation> filteredParticles = new ArrayList<>();
 
-    private SelectableEditBox searchBox;
-    private SelectableEditBox commandOutputBox;
+    // Caixas de texto usadas pela UI.
+    private SelectableEditBox searchBox;      // caixa de busca (editável)
+    private SelectableEditBox commandOutputBox; // campo somente-leitura com o comando gerado
 
+    // Estado do scroll na coluna esquerda ("Particulas").
+    // leftScrollAmount: deslocamento atual (pixels). maxLeftScroll: limite máximo.
     private double leftScrollAmount = 0.0D;
     private int maxLeftScroll = 0;
     private final List<ParticleButton> particleButtons = new ArrayList<>();
-    private final Map<ParticleButton, Integer> buttonOriginalY = new HashMap<>();
+    private final Map<ParticleButton, Integer> buttonOriginalY = new HashMap<>(); // posição Y original (sem scroll)
     private int selectedParticleIndex = 0;
     private boolean leftScrollbarDragging = false;
     private double leftScrollbarDragOffset = 0.0D;
 
+    // Widgets e controles da coluna direita (Command Builder)
     private Button testButton;
     private Button copyButton;
     private SelectableEditBox extraArgsBox;
@@ -70,15 +92,18 @@ public class ParticleStudioScreen extends Screen {
     private IntParameterSlider countSlider;
     private CycleButton<Boolean> forceToggle;
 
-    private ResourceLocation selectedParticleId;
-    private ResourceLocation selectedPreviewSpriteId;
-    private boolean previewHardcoded;
+    // Seleção e preview
+    private ResourceLocation selectedParticleId;      // ID da partícula selecionada
+    private ResourceLocation selectedPreviewSpriteId; // ID do sprite usado no preview (se houver)
+    private boolean previewHardcoded;                 // true se o preview não usa atlas
 
+    // Estado do scroll na coluna direita (widgets dinamicamente posicionados)
     private double rightScrollAmount = 0.0D;
     private int maxRightScroll = 0;
     private final List<AbstractWidget> rightPanelWidgets = new ArrayList<>();
     private final Map<AbstractWidget, Integer> widgetOriginalY = new HashMap<>();
 
+    // Posições e dimensões de cada painel; calculadas por updateLayout()
     private int leftX;
     private int leftY;
     private int leftW;
@@ -99,6 +124,7 @@ public class ParticleStudioScreen extends Screen {
     private int listAreaW;
     private int listAreaH;
 
+    // Parâmetros usados para montar o comando /particle
     private double deltaX = 0.5D;
     private double deltaY = 0.5D;
     private double deltaZ = 0.5D;
@@ -106,10 +132,15 @@ public class ParticleStudioScreen extends Screen {
     private int count = 25;
     private boolean force = false;
 
+    // Comando gerado pela UI (exibido em `commandOutputBox`)
     private String commandString = "";
 
     public ParticleStudioScreen() {
         super(Component.literal("Particle Studio"));
+        /**
+         * Construtor — recupera IDs de partículas do registro e ordena a lista.
+         * Observação: não cria widgets; `init()` é responsável por construir a UI.
+         */
         if (ForgeRegistries.PARTICLE_TYPES != null && ForgeRegistries.PARTICLE_TYPES.getKeys() != null) {
             this.allParticles.addAll(ForgeRegistries.PARTICLE_TYPES.getKeys());
         }
@@ -126,6 +157,13 @@ public class ParticleStudioScreen extends Screen {
 
     @Override
     protected void init() {
+        /**
+         * Inicializa/reconstrói todos os widgets da tela.
+         * - Limpa estados anteriores
+         * - Calcula layout via `updateLayout()`
+         * - Cria widgets da coluna direita e registra-os
+         * - Aplica filtro de busca e atualiza disponibilidade de campos extras
+         */
         super.init();
         if (this.minecraft == null || this.font == null) {
             return;
@@ -249,10 +287,16 @@ public class ParticleStudioScreen extends Screen {
     }
 
     private void updateLayout() {
+        /**
+         * Calcula as posições (X, Y) e larguras (W, H) dos painéis left/center/right.
+         * Regras principais:
+         * - `desiredLeft` e `desiredRight` têm limites mínimos para garantir usabilidade.
+         * - Se a soma dos painéis exceder a largura da tela, reduz-se left e/ou right.
+         */
         int contentY = 20;
         int contentH = this.height - 28;
 
-        int desiredLeft = Math.max(100, this.width / 4) + 8;
+        int desiredLeft = Math.max(100, this.width / 4) + 16;
         int desiredRight = Math.max(130, this.width / 4);
         int minCenter = 120;
         int panelGap = 4;
@@ -294,6 +338,10 @@ public class ParticleStudioScreen extends Screen {
     }
 
     private void applySearchFilter() {
+        /**
+         * Aplica o texto de `searchBox` sobre `allParticles`, montando `filteredParticles`.
+         * Reconstrói os botões (`rebuildParticleButtons`) e preserva seleção quando possível.
+         */
         String query = this.searchBox != null ? this.searchBox.getValue().trim().toLowerCase(Locale.ROOT) : "";
         this.filteredParticles.clear();
 
@@ -328,6 +376,11 @@ public class ParticleStudioScreen extends Screen {
     }
 
     private void rebuildParticleButtons() {
+        /**
+         * (Re)cria `ParticleButton` para cada entrada de `filteredParticles`.
+         * Cada botão registra sua posição original (antes do scroll) em `buttonOriginalY`.
+         * Ao final calcula `maxLeftScroll` e aplica o deslocamento atual (`applyLeftScroll`).
+         */
         this.particleButtons.clear();
         this.buttonOriginalY.clear();
         this.leftScrollAmount = 0.0D;
@@ -383,6 +436,12 @@ public class ParticleStudioScreen extends Screen {
     }
 
     private void updateCommandString() {
+        /**
+         * Monta a string do comando `/particle` com base na partícula selecionada,
+         * parâmetros (deltaX/deltaY/deltaZ/speed/count/force) e em `extraArgsBox`
+         * quando ele estiver ativo. Atualiza `commandOutputBox` e habilita/desabilita
+         * os botões de testar/copiar conforme apropriado.
+         */
         if (this.selectedParticleId == null) {
             this.commandString = "";
         } else {
@@ -420,6 +479,11 @@ public class ParticleStudioScreen extends Screen {
     }
 
     private void updateExtraArgsAvailability() {
+        /**
+         * Decide se a partícula selecionada necessita de parâmetros extras.
+         * Exemplos: dust (RGB + size), block/item (id), vibration (pos + ticks).
+         * Ajusta `extraArgsBox` e `colorButton` (visível/ativo) e sugere texto.
+         */
         if (this.extraArgsBox == null || this.colorButton == null) {
             return;
         }
@@ -796,6 +860,12 @@ public class ParticleStudioScreen extends Screen {
         }
     }
 
+    /**
+     * Reposiciona verticalmente os widgets ativos da coluna direita.
+     * Atualiza `widgetOriginalY` com as posições base (sem scroll) e recalcula
+     * `maxRightScroll` conforme a altura total necessária. Em seguida aplica o
+     * deslocamento atual (`rightScrollAmount`) chamando `applyRightScroll()`.
+     */
     private void recalculateRightPanel() {
         int currentY = this.rightY + 28;
         int gap = 5;
@@ -837,6 +907,10 @@ public class ParticleStudioScreen extends Screen {
     }
 
     private void renderRightScrollbar(GuiGraphics graphics) {
+        /**
+         * Desenha o track e o thumb (polegar) do scrollbar da coluna direita.
+         * O thumb só é desenhado se `maxRightScroll > 0` (conteúdo maior que a área).
+         */
         if (this.maxRightScroll <= 0) {
             return;
         }
@@ -849,6 +923,10 @@ public class ParticleStudioScreen extends Screen {
     }
 
     private void renderLeftScrollbar(GuiGraphics graphics) {
+        /**
+         * Desenha o scrollbar da coluna esquerda (lista de partículas).
+         * O track ocupa `barX .. barX+6` e o thumb é desenhado com altura proporcional.
+         */
         if (this.maxLeftScroll <= 0) {
             return;
         }
