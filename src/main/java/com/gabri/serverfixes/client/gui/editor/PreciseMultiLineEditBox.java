@@ -107,12 +107,11 @@ public class PreciseMultiLineEditBox extends MultiLineEditBox {
         }
 
         int contentX = this.getX() + this.innerPadding();
-        int contentY = this.getY() + this.innerPadding() - (int) this.scrollAmount();
+        int contentY = this.getY() + this.innerPadding();
         int lineH = lineHeight();
 
-        int clipY1 = this.getY();
-        int clipY2 = this.getY() + this.getHeight();
-        graphics.enableScissor(this.getX(), this.getY(), this.getX() + this.getWidth(), this.getY() + this.getHeight());
+        int logicalClipY1 = this.getY() + (int) this.scrollAmount();
+        int logicalClipY2 = logicalClipY1 + this.getHeight();
 
         LineView selection = textField.hasSelection() ? toLineView(textField.getSelected()) : null;
         int selStart = selection != null ? Math.min(selection.beginIndex(), selection.endIndex()) : -1;
@@ -121,7 +120,7 @@ public class PreciseMultiLineEditBox extends MultiLineEditBox {
         for (int i = 0; i < lines.size(); i++) {
             LineView line = lines.get(i);
             int drawY = contentY + i * lineH;
-            if (drawY + lineH < clipY1 || drawY > clipY2) {
+            if (drawY + lineH < logicalClipY1 || drawY > logicalClipY2) {
                 continue;
             }
 
@@ -156,8 +155,6 @@ public class PreciseMultiLineEditBox extends MultiLineEditBox {
                 graphics.fill(cx, cy, cx + 1, cy + lineH, 0xFFD0D0D0);
             }
         }
-
-        graphics.disableScissor();
     }
 
     protected int indexFromMouse(double mouseX, double mouseY) {
