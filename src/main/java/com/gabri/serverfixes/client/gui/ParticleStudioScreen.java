@@ -63,6 +63,12 @@ public class ParticleStudioScreen extends Screen {
     private Button copyButton;
     private SelectableEditBox extraArgsBox;
     private Button colorButton;
+    private DoubleParameterSlider dxSlider;
+    private DoubleParameterSlider dySlider;
+    private DoubleParameterSlider dzSlider;
+    private DoubleParameterSlider speedSlider;
+    private IntParameterSlider countSlider;
+    private CycleButton<Boolean> forceToggle;
 
     private ResourceLocation selectedParticleId;
     private ResourceLocation selectedPreviewSpriteId;
@@ -135,6 +141,7 @@ public class ParticleStudioScreen extends Screen {
         this.rightScrollAmount = 0.0D;
         this.maxRightScroll = 0;
         updateLayout();
+        // Right panel will be recalculated after widgets are created
 
         this.searchBox = new SelectableEditBox(this.font, this.leftX + 8, this.leftY + 24, this.leftW - 16, 18, Component.literal("Pesquisar particula"));
         this.searchBox.setMaxLength(80);
@@ -147,39 +154,45 @@ public class ParticleStudioScreen extends Screen {
 
         GuiLayoutUtils.VerticalLayoutBuilder rightBuilder = new GuiLayoutUtils.VerticalLayoutBuilder(sliderX, this.rightY + 28, sliderW, 5);
 
-        registerRightPanelWidget(rightBuilder.add(new DoubleParameterSlider(sliderX, 0, sliderW, 18, "Delta X", 0.0D, 5.0D, this.deltaX, 2, value -> {
+        this.dxSlider = rightBuilder.add(new DoubleParameterSlider(sliderX, 0, sliderW, 18, "Delta X", 0.0D, 5.0D, this.deltaX, 2, value -> {
             this.deltaX = value;
             updateCommandString();
-        })));
+        }));
+        registerRightPanelWidget(this.dxSlider);
 
-        registerRightPanelWidget(rightBuilder.add(new DoubleParameterSlider(sliderX, 0, sliderW, 18, "Delta Y", 0.0D, 5.0D, this.deltaY, 2, value -> {
+        this.dySlider = rightBuilder.add(new DoubleParameterSlider(sliderX, 0, sliderW, 18, "Delta Y", 0.0D, 5.0D, this.deltaY, 2, value -> {
             this.deltaY = value;
             updateCommandString();
-        })));
+        }));
+        registerRightPanelWidget(this.dySlider);
 
-        registerRightPanelWidget(rightBuilder.add(new DoubleParameterSlider(sliderX, 0, sliderW, 18, "Delta Z", 0.0D, 5.0D, this.deltaZ, 2, value -> {
+        this.dzSlider = rightBuilder.add(new DoubleParameterSlider(sliderX, 0, sliderW, 18, "Delta Z", 0.0D, 5.0D, this.deltaZ, 2, value -> {
             this.deltaZ = value;
             updateCommandString();
-        })));
+        }));
+        registerRightPanelWidget(this.dzSlider);
 
-        registerRightPanelWidget(rightBuilder.add(new DoubleParameterSlider(sliderX, 0, sliderW, 18, "Speed", 0.0D, 1.0D, this.speed, 2, value -> {
+        this.speedSlider = rightBuilder.add(new DoubleParameterSlider(sliderX, 0, sliderW, 18, "Speed", 0.0D, 1.0D, this.speed, 2, value -> {
             this.speed = value;
             updateCommandString();
-        })));
+        }));
+        registerRightPanelWidget(this.speedSlider);
 
-        registerRightPanelWidget(rightBuilder.add(new IntParameterSlider(sliderX, 0, sliderW, 18, "Count", 1, 1000, this.count, value -> {
+        this.countSlider = rightBuilder.add(new IntParameterSlider(sliderX, 0, sliderW, 18, "Count", 1, 1000, this.count, value -> {
             this.count = value;
             updateCommandString();
-        })));
+        }));
+        registerRightPanelWidget(this.countSlider);
 
-        registerRightPanelWidget(rightBuilder.add(CycleButton.builder((Boolean value) -> Component.literal(value ? "FORCE" : "NORMAL"))
+        this.forceToggle = rightBuilder.add(CycleButton.builder((Boolean value) -> Component.literal(value ? "FORCE" : "NORMAL"))
             .withValues(false, true)
             .withInitialValue(this.force)
             .displayOnlyValue()
             .create(sliderX, 0, sliderW, 18, Component.literal("Modo"), (btn, value) -> {
                 this.force = value;
                 updateCommandString();
-            })));
+            }));
+        registerRightPanelWidget(this.forceToggle);
 
         // Extra Args box and Color button (disabled and invisible by default).
         this.extraArgsBox = rightBuilder.add(new SelectableEditBox(this.font, 0, 0, sliderW, 18, Component.literal("Parâmetros Extras")));
@@ -436,6 +449,9 @@ public class ParticleStudioScreen extends Screen {
             } catch (Exception ignored) {
             }
         }
+        // Recalculate the layout to immediately reflect visibility changes
+        recalculateRightPanel();
+        updateCommandString();
     }
 
     private void testCurrentCommand() {
@@ -780,6 +796,39 @@ public class ParticleStudioScreen extends Screen {
         }
     }
 
+    private void recalculateRightPanel() {
+        int currentY = this.rightY + 28;
+        int gap = 5;
+
+        java.util.List<net.minecraft.client.gui.components.AbstractWidget> order = new java.util.ArrayList<>();
+        if (this.dxSlider != null) order.add(this.dxSlider);
+        if (this.dySlider != null) order.add(this.dySlider);
+        if (this.dzSlider != null) order.add(this.dzSlider);
+        if (this.speedSlider != null) order.add(this.speedSlider);
+        if (this.countSlider != null) order.add(this.countSlider);
+        if (this.forceToggle != null) order.add(this.forceToggle);
+        if (this.extraArgsBox != null) order.add(this.extraArgsBox);
+        if (this.colorButton != null) order.add(this.colorButton);
+        if (this.commandOutputBox != null) order.add(this.commandOutputBox);
+        if (this.testButton != null) order.add(this.testButton);
+        if (this.copyButton != null) order.add(this.copyButton);
+
+        for (var widget : order) {
+            if (widget != null && widget.visible) {
+                widget.setX(this.rightX + 5);
+                try { widget.setWidth(this.rightW - 10); } catch (Exception ignored) {}
+                widget.setY(currentY);
+                this.widgetOriginalY.put(widget, currentY);
+                currentY += widget.getHeight() + gap;
+            }
+        }
+
+        this.maxRightScroll = Math.max(0, currentY - this.height + 10);
+        this.rightScrollAmount = Mth.clamp(this.rightScrollAmount, 0.0D, this.maxRightScroll);
+
+        applyRightScroll();
+    }
+
     private <T extends AbstractWidget> T registerRightPanelWidget(T widget) {
         this.rightPanelWidgets.add(widget);
         this.widgetOriginalY.put(widget, widget.getY());
@@ -791,11 +840,12 @@ public class ParticleStudioScreen extends Screen {
         if (this.maxRightScroll <= 0) {
             return;
         }
-        graphics.fill(this.width - 6, 0, this.width, this.height, 0xFF000000);
+        // Draw track slightly inset from the absolute right edge
+        graphics.fill(this.width - 8, 0, this.width - 2, this.height, 0xFF000000);
 
         int thumbHeight = Math.max(20, (int) ((this.height / (float) (this.height + this.maxRightScroll)) * this.height));
-        int thumbY = (int) ((this.rightScrollAmount / this.maxRightScroll) * (this.height - thumbHeight));
-        graphics.fill(this.width - 5, thumbY, this.width - 1, thumbY + thumbHeight, 0xFF888888);
+        int thumbY = (int) ((this.rightScrollAmount / Math.max(1, this.maxRightScroll)) * (this.height - thumbHeight));
+        graphics.fill(this.width - 7, thumbY, this.width - 3, thumbY + thumbHeight, 0xFF888888);
     }
 
     private void renderLeftScrollbar(GuiGraphics graphics) {
