@@ -53,6 +53,8 @@ public class ParticleStudioScreen extends Screen {
     private final List<ParticleButton> particleButtons = new ArrayList<>();
     private final Map<ParticleButton, Integer> buttonOriginalY = new HashMap<>();
     private int selectedParticleIndex = 0;
+    private boolean leftScrollbarDragging = false;
+    private double leftScrollbarDragOffset = 0.0D;
 
     private Button testButton;
     private Button copyButton;
@@ -212,7 +214,7 @@ public class ParticleStudioScreen extends Screen {
         int contentY = 20;
         int contentH = this.height - 28;
 
-        int desiredLeft = Math.max(100, this.width / 4);
+        int desiredLeft = Math.max(100, this.width / 4) + 8;
         int desiredRight = Math.max(130, this.width / 4);
         int minCenter = 120;
         int panelGap = 4;
@@ -389,6 +391,10 @@ public class ParticleStudioScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (this.maxLeftScroll > 0 && isInsideLeftScrollbar(mouseX, mouseY)) {
+            startLeftScrollbarDrag(mouseY);
+            return true;
+        }
         if (isInsideLeftList(mouseX, mouseY)) {
             for (ParticleButton particleButton : this.particleButtons) {
                 if (particleButton.mouseClicked(mouseX, mouseY, button)) {
@@ -397,6 +403,24 @@ public class ParticleStudioScreen extends Screen {
             }
         }
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+        if (this.leftScrollbarDragging) {
+            updateLeftScrollbarDrag(mouseY);
+            return true;
+        }
+        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
+    }
+
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (this.leftScrollbarDragging) {
+            this.leftScrollbarDragging = false;
+            return true;
+        }
+        return super.mouseReleased(mouseX, mouseY, button);
     }
 
     @Override
@@ -649,6 +673,39 @@ public class ParticleStudioScreen extends Screen {
             && mouseY >= this.listAreaY && mouseY < this.listAreaY + this.listAreaH;
     }
 
+    private boolean isInsideLeftScrollbar(double mouseX, double mouseY) {
+        int barX = this.leftX + this.leftW - 6;
+        return mouseX >= barX && mouseX < barX + 6
+            && mouseY >= this.listAreaY && mouseY < this.listAreaY + this.listAreaH;
+    }
+
+    private void startLeftScrollbarDrag(double mouseY) {
+        int trackTop = this.listAreaY;
+        int trackHeight = this.listAreaH;
+        int thumbHeight = getLeftScrollbarThumbHeight(trackHeight);
+        int thumbY = getLeftScrollbarThumbY(trackTop, trackHeight, thumbHeight);
+
+        if (mouseY >= thumbY && mouseY <= thumbY + thumbHeight) {
+            this.leftScrollbarDragOffset = mouseY - thumbY;
+        } else {
+            this.leftScrollbarDragOffset = thumbHeight / 2.0D;
+        }
+
+        this.leftScrollbarDragging = true;
+        updateLeftScrollbarDrag(mouseY);
+    }
+
+    private void updateLeftScrollbarDrag(double mouseY) {
+        if (this.maxLeftScroll <= 0) {
+            return;
+        }
+        int trackTop = this.listAreaY;
+        int trackHeight = this.listAreaH;
+        int thumbHeight = getLeftScrollbarThumbHeight(trackHeight);
+        int thumbY = (int) Math.round(mouseY - this.leftScrollbarDragOffset);
+        setLeftScrollFromThumbY(thumbY, trackTop, trackHeight, thumbHeight);
+    }
+
     private void applyRightScroll() {
         for (AbstractWidget widget : this.rightPanelWidgets) {
             Integer baseY = this.widgetOriginalY.get(widget);
@@ -680,16 +737,40 @@ public class ParticleStudioScreen extends Screen {
         if (this.maxLeftScroll <= 0) {
             return;
         }
-        int barX = this.leftW - 6;
+        int barX = this.leftX + this.leftW - 6;
         int top = this.listAreaY;
         int bottom = this.listAreaY + this.listAreaH;
         int trackHeight = bottom - top;
 
         graphics.fill(barX, top, barX + 6, bottom, 0xFF000000);
 
-        int thumbHeight = Math.max(20, (int) ((trackHeight / (float) (trackHeight + this.maxLeftScroll)) * trackHeight));
-        int thumbY = top + (int) ((this.leftScrollAmount / this.maxLeftScroll) * (trackHeight - thumbHeight));
+        int thumbHeight = getLeftScrollbarThumbHeight(trackHeight);
+        int thumbY = getLeftScrollbarThumbY(top, trackHeight, thumbHeight);
         graphics.fill(barX + 1, thumbY, barX + 5, thumbY + thumbHeight, 0xFF888888);
+    }
+
+    private int getLeftScrollbarThumbHeight(int trackHeight) {
+        return Math.max(20, (int) ((trackHeight / (float) (trackHeight + this.maxLeftScroll)) * trackHeight));
+    }
+
+    private int getLeftScrollbarThumbY(int trackTop, int trackHeight, int thumbHeight) {
+        if (this.maxLeftScroll <= 0) {
+            return trackTop;
+        }
+        int available = Math.max(1, trackHeight - thumbHeight);
+        return trackTop + (int) ((this.leftScrollAmount / this.maxLeftScroll) * available);
+    }
+
+    private void setLeftScrollFromThumbY(int thumbY, int trackTop, int trackHeight, int thumbHeight) {
+        if (this.maxLeftScroll <= 0) {
+            return;
+        }
+        int available = Math.max(1, trackHeight - thumbHeight);
+        int clamped = Mth.clamp(thumbY, trackTop, trackTop + available);
+        double ratio = (clamped - trackTop) / (double) available;
+        this.leftScrollAmount = ratio * this.maxLeftScroll;
+        this.leftScrollAmount = Mth.clamp(this.leftScrollAmount, 0.0D, this.maxLeftScroll);
+        applyLeftScroll();
     }
 
     private static float[] tint(int rgb) {
