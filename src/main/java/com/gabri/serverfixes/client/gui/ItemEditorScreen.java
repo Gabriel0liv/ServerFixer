@@ -35,6 +35,7 @@ import net.minecraft.world.item.alchemy.PotionUtils;
 import net.minecraft.world.item.alchemy.Potions;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraftforge.registries.ForgeRegistries;
 import org.jetbrains.annotations.NotNull;
@@ -73,16 +74,26 @@ public class ItemEditorScreen extends Screen {
     private ItemStack rawWorkingItem = ItemStack.EMPTY;
     private CompoundTag rawOriginalFullItemNbt = new CompoundTag();
     private String spawnEggStatusMessage = "Edite a EntityTag para customizar o mob do ovo.";
-    private int spawnEggScrollOffset = 0;
-    private SpawnEggSection spawnEggSection = SpawnEggSection.MAIN;
+    private SpawnEggTab currentEggTab = SpawnEggTab.PROPERTIES;
     private final SelectableEditBox[] spawnEquipmentItemBoxes = new SelectableEditBox[SpawnEggEquipmentSlot.ORDERED.length];
     private final SelectableEditBox[] spawnEquipmentChanceBoxes = new SelectableEditBox[SpawnEggEquipmentSlot.ORDERED.length];
     private final List<AbstractWidget> spawnEggWidgets = new ArrayList<>();
+    private SelectableEditBox spawnDeathLootTableBox;
     private SelectableEditBox spawnAttributeIdBox;
     private SelectableEditBox spawnAttributeBaseBox;
     private SelectableEditBox spawnEffectIdBox;
     private SelectableEditBox spawnEffectDurationBox;
     private SelectableEditBox spawnEffectAmplifierBox;
+    private String spawnPendingDeathLootTable = "";
+    private String spawnPendingAttributeId = "minecraft:generic.max_health";
+    private String spawnPendingAttributeBase = "40.0";
+    private String spawnPendingEffectId = "minecraft:speed";
+    private String spawnPendingEffectDuration = "600";
+    private String spawnPendingEffectAmplifier = "0";
+    private int spawnEggAttributeScrollOffset = 0;
+    private int spawnEggEffectScrollOffset = 0;
+    private int spawnEggEditingAttributeIndex = -1;
+    private int spawnEggEditingEffectIndex = -1;
     private ScrollTarget draggingScrollTarget = ScrollTarget.NONE;
     private int draggingThumbOffsetY = 0;
     private boolean editingEnchantedBook;
@@ -1063,58 +1074,45 @@ public class ItemEditorScreen extends Screen {
             return;
         }
 
-        this.spawnEggScrollOffset = Mth.clamp(this.spawnEggScrollOffset, 0, getSpawnEggMaxScrollOffset());
-
         int left = contentStartX + 10;
         int width = Math.max(280, contentWidth - 20);
-        int top = 44 - this.spawnEggScrollOffset;
-        int toggleRows = (SpawnEggToggle.ORDERED.length + 1) / 2;
-        int togglesTop = top + 16;
-        int navTop = togglesTop + (toggleRows * 20) + 10;
-        int sectionTop = navTop + 72;
+        int tabsTop = 44;
+        int sectionTop = tabsTop + 28;
+        int listStartY = getSpawnEggListStartY(sectionTop);
 
-        int toggleGap = 8;
-        int toggleButtonWidth = (width - toggleGap) / 2;
-        for (int i = 0; i < SpawnEggToggle.ORDERED.length; i++) {
-            SpawnEggToggle toggle = SpawnEggToggle.ORDERED[i];
-            int col = i % 2;
-            int row = i / 2;
-            int x = left + col * (toggleButtonWidth + toggleGap);
-            int y = togglesTop + (row * 20);
-            boolean enabled = isSpawnEggToggleEnabled(toggle);
-            String marker = enabled ? "[ X ] " : "[   ] ";
-            String color = enabled ? "§f" : "§7";
-            addSpawnEggWidget(Button.builder(Component.literal(color + marker + toggle.label()), btn -> {
-                toggleSpawnEggFlag(toggle);
-                this.init();
-            }).bounds(x, y, toggleButtonWidth, 18).build());
-        }
-
-        int navWidth = Math.min(280, width - 16);
-        int navX = left + (width - navWidth) / 2;
-        addSpawnEggWidget(Button.builder(Component.literal((this.spawnEggSection == SpawnEggSection.EQUIPMENT ? "§6" : "§7") + "Editar Equipamentos & Drops"), btn -> {
-            this.spawnEggSection = SpawnEggSection.EQUIPMENT;
-            this.spawnEggScrollOffset = 0;
-            this.init();
-        }).bounds(navX, navTop, navWidth, 18).build());
-        addSpawnEggWidget(Button.builder(Component.literal((this.spawnEggSection == SpawnEggSection.ATTRIBUTES ? "§6" : "§7") + "Editar Atributos"), btn -> {
-            this.spawnEggSection = SpawnEggSection.ATTRIBUTES;
-            this.spawnEggScrollOffset = 0;
-            this.init();
-        }).bounds(navX, navTop + 22, navWidth, 18).build());
-        addSpawnEggWidget(Button.builder(Component.literal((this.spawnEggSection == SpawnEggSection.EFFECTS ? "§6" : "§7") + "Editar Efeitos"), btn -> {
-            this.spawnEggSection = SpawnEggSection.EFFECTS;
-            this.spawnEggScrollOffset = 0;
-            this.init();
-        }).bounds(navX, navTop + 44, navWidth, 18).build());
+        initSpawnEggTabButtons(left, width, tabsTop);
 
         CompoundTag entityTag = getSpawnEggEntityTagCopy();
-        if (this.spawnEggSection == SpawnEggSection.EQUIPMENT) {
-            initSpawnEggEquipmentSection(entityTag, left, width, sectionTop);
-        } else if (this.spawnEggSection == SpawnEggSection.ATTRIBUTES) {
-            initSpawnEggAttributesSection(entityTag, left, width, sectionTop);
-        } else if (this.spawnEggSection == SpawnEggSection.EFFECTS) {
-            initSpawnEggEffectsSection(entityTag, left, width, sectionTop);
+        switch (this.currentEggTab) {
+            case PROPERTIES -> initSpawnEggPropertiesSection(left, width, sectionTop);
+            case EQUIPMENT -> initSpawnEggEquipmentSection(entityTag, left, width, sectionTop);
+            case DROPS -> initSpawnEggDropsSection(entityTag, left, width, sectionTop);
+            case ATTRIBUTES -> initSpawnEggAttributesSection(entityTag, contentStartX, contentWidth, left, width, sectionTop, listStartY);
+            case EFFECTS -> initSpawnEggEffectsSection(entityTag, contentStartX, contentWidth, left, width, sectionTop, listStartY);
+        }
+    }
+
+    private int getSpawnEggListStartY(int sectionTop) {
+        return sectionTop + 30;
+    }
+
+    private int getSpawnEggListStartY() {
+        return getSpawnEggListStartY(44 + 28);
+    }
+
+    private void initSpawnEggTabButtons(int left, int width, int tabsTop) {
+        int gap = 4;
+        int count = SpawnEggTab.ORDERED.length;
+        int tabWidth = Math.max(72, (width - gap * (count - 1)) / count);
+        for (int i = 0; i < count; i++) {
+            SpawnEggTab tab = SpawnEggTab.ORDERED[i];
+            int x = left + i * (tabWidth + gap);
+            addSpawnEggWidget(Button.builder(Component.literal((this.currentEggTab == tab ? "§6" : "§7") + tab.label()), btn -> {
+                this.currentEggTab = tab;
+                this.spawnEggEditingAttributeIndex = -1;
+                this.spawnEggEditingEffectIndex = -1;
+                this.init();
+            }).bounds(x, tabsTop, tabWidth, 18).build());
         }
     }
 
@@ -1140,38 +1138,27 @@ public class ItemEditorScreen extends Screen {
 
         int left = contentStartX + 10;
         int width = Math.max(280, contentWidth - 20);
-        int top = 44 - this.spawnEggScrollOffset;
-        int toggleRows = (SpawnEggToggle.ORDERED.length + 1) / 2;
-        int togglesTop = top + 16;
-        int navTop = togglesTop + (toggleRows * 20) + 10;
-        int sectionTop = navTop + 72;
+        int tabsTop = 44;
+        int sectionTop = tabsTop + 28;
+        int listStartY = getSpawnEggListStartY(sectionTop);
         int clipTop = 40;
         int clipBottom = this.height - 54;
         int statusY = this.height - 46;
 
         CompoundTag entityTag = getSpawnEggEntityTagCopy();
         graphics.enableScissor(left - 6, clipTop, left + width + 6, clipBottom);
-        GuiLayoutUtils.drawPanel(graphics, left - 6, top - 10, width + 12, 74, 0xCC1C2532, 0xFF4E6B8D);
-        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Propriedades do Mob", left + 4, top - 3, 0xFFF1F1F1);
+        GuiLayoutUtils.drawPanel(graphics, left - 6, tabsTop - 8, width + 12, 28, 0xCC1C2532, 0xFF4E6B8D);
 
-        GuiLayoutUtils.drawPanel(graphics, left - 6, navTop - 8, width + 12, 72, 0xCC1C2532, 0xFF4E6B8D);
-        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Seções", left + 4, navTop - 2, 0xFFF1F1F1);
-
-        if (this.spawnEggSection == SpawnEggSection.EQUIPMENT) {
-            renderSpawnEggEquipmentSection(graphics, entityTag, left, width, sectionTop);
-        } else if (this.spawnEggSection == SpawnEggSection.ATTRIBUTES) {
-            renderSpawnEggAttributesSection(graphics, entityTag, left, width, sectionTop);
-        } else if (this.spawnEggSection == SpawnEggSection.EFFECTS) {
-            renderSpawnEggEffectsSection(graphics, entityTag, left, width, sectionTop);
+        switch (this.currentEggTab) {
+            case PROPERTIES -> renderSpawnEggPropertiesSection(graphics, left, width, sectionTop);
+            case EQUIPMENT -> renderSpawnEggEquipmentSection(graphics, entityTag, left, width, sectionTop);
+            case DROPS -> renderSpawnEggDropsSection(graphics, left, width, sectionTop);
+            case ATTRIBUTES -> renderSpawnEggAttributesSection(graphics, entityTag, contentStartX, contentWidth, listStartY);
+            case EFFECTS -> renderSpawnEggEffectsSection(graphics, entityTag, contentStartX, contentWidth, listStartY);
         }
         graphics.disableScissor();
 
         updateSpawnEggWidgetVisibility(clipTop, clipBottom);
-
-        int maxOffset = getSpawnEggMaxScrollOffset();
-        if (maxOffset > 0) {
-            graphics.drawString(this.font, "§7Scroll: " + this.spawnEggScrollOffset + "/" + maxOffset, left + width - 120, statusY, 0xFF99A8BD);
-        }
 
         graphics.drawString(this.font, "§a" + this.spawnEggStatusMessage, left, statusY, 0xFF88FF88);
     }
@@ -1187,10 +1174,35 @@ public class ItemEditorScreen extends Screen {
         }
     }
 
+    private void initSpawnEggPropertiesSection(int left, int width, int sectionTop) {
+        int toggleGap = 8;
+        int toggleButtonWidth = (width - toggleGap) / 2;
+        for (int i = 0; i < SpawnEggToggle.ORDERED.length; i++) {
+            SpawnEggToggle toggle = SpawnEggToggle.ORDERED[i];
+            int col = i % 2;
+            int row = i / 2;
+            int x = left + col * (toggleButtonWidth + toggleGap);
+            int y = sectionTop + 14 + (row * 20);
+            boolean enabled = isSpawnEggToggleEnabled(toggle);
+            String marker = enabled ? "[ X ] " : "[   ] ";
+            String color = enabled ? "§f" : "§7";
+            addSpawnEggWidget(Button.builder(Component.literal(color + marker + toggle.label()), btn -> {
+                toggleSpawnEggFlag(toggle);
+                this.init();
+            }).bounds(x, y, toggleButtonWidth, 18).build());
+        }
+    }
+
+    private void renderSpawnEggPropertiesSection(GuiGraphics graphics, int left, int width, int sectionTop) {
+        int toggleRows = (SpawnEggToggle.ORDERED.length + 1) / 2;
+        int panelHeight = 22 + toggleRows * 20 + 8;
+        GuiLayoutUtils.drawPanel(graphics, left - 6, sectionTop - 8, width + 12, panelHeight, 0xCC1C2532, 0xFF4E6B8D);
+        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Propriedades do Mob", left + 4, sectionTop - 2, 0xFFF1F1F1);
+    }
+
     private void initSpawnEggEquipmentSection(CompoundTag entityTag, int left, int width, int sectionTop) {
         int slotRowsHeight = SpawnEggEquipmentSlot.ORDERED.length * 22;
         int applyButtonY = sectionTop + 16 + slotRowsHeight + 6;
-        int dropsToggleY = applyButtonY + 24;
 
         for (int i = 0; i < SpawnEggEquipmentSlot.ORDERED.length; i++) {
             SpawnEggEquipmentSlot slot = SpawnEggEquipmentSlot.ORDERED[i];
@@ -1199,52 +1211,125 @@ public class ItemEditorScreen extends Screen {
             this.spawnEquipmentChanceBoxes[i] = createSpawnEggTextBox(left + width - 60, rowY, 54, formatDropChance(getSpawnEggEquipmentChance(entityTag, slot)));
         }
 
-        addSpawnEggWidget(Button.builder(Component.literal("Aplicar Equipamentos & Drops"), btn -> {
+        addSpawnEggWidget(Button.builder(Component.literal("Aplicar Equipamentos"), btn -> {
             applySpawnEggEquipmentFromInputs();
             this.init();
         }).bounds(left + width - 184, applyButtonY, 178, 18).build());
-
-        boolean disabledVanillaLoot = isSpawnEggDefaultLootDisabled();
-        String marker = disabledVanillaLoot ? "§a[ X ] " : "§7[   ] ";
-        addSpawnEggWidget(Button.builder(Component.literal(marker + "Remover Drops Padrões"), btn -> {
-            toggleSpawnEggDefaultLoot();
-            this.init();
-        }).bounds(left + 6, dropsToggleY, 210, 18).build());
     }
 
-    private void initSpawnEggAttributesSection(CompoundTag entityTag, int left, int width, int sectionTop) {
+    private void initSpawnEggDropsSection(CompoundTag entityTag, int left, int width, int sectionTop) {
+        if (this.spawnPendingDeathLootTable.isBlank()) {
+            this.spawnPendingDeathLootTable = getSpawnEggLootTableValue(entityTag);
+        }
+
+        this.spawnDeathLootTableBox = createSpawnEggTextBox(left + 6, sectionTop + 22, width - 112, this.spawnPendingDeathLootTable);
+        this.spawnDeathLootTableBox.setResponder(value -> this.spawnPendingDeathLootTable = value != null ? value.trim() : "");
+
+        addSpawnEggWidget(Button.builder(Component.literal("Aplicar"), btn -> {
+            applySpawnEggLootTableFromInput(false);
+            this.init();
+        }).bounds(left + width - 100, sectionTop + 22, 94, 18).build());
+
+        addSpawnEggWidget(Button.builder(Component.literal("Zerar Drops"), btn -> {
+            applySpawnEggLootTableFromInput(true);
+            this.init();
+        }).bounds(left + width - 100, sectionTop + 46, 94, 18).build());
+    }
+
+    private void renderSpawnEggDropsSection(GuiGraphics graphics, int left, int width, int sectionTop) {
+        GuiLayoutUtils.drawPanel(graphics, left - 6, sectionTop - 8, width + 12, 86, 0xCC1C2532, 0xFF4E6B8D);
+        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Loot Table (EntityTag.DeathLootTable)", left + 4, sectionTop - 2, 0xFFF1F1F1);
+    }
+
+    private void initSpawnEggAttributesSection(CompoundTag entityTag, int contentStartX, int contentWidth, int left, int width, int sectionTop, int listStartY) {
         ListTag attributes = entityTag.getList("Attributes", Tag.TAG_COMPOUND);
-        this.spawnAttributeIdBox = createSpawnEggTextBox(left + 4, sectionTop + 20, width - 152, "minecraft:generic.max_health");
-        this.spawnAttributeBaseBox = createSpawnEggTextBox(left + width - 140, sectionTop + 20, 66, "40.0");
-        addSpawnEggWidget(Button.builder(Component.literal("+ Atributo"), btn -> {
+        int controlsY = sectionTop + 4;
+
+        this.spawnAttributeIdBox = createSpawnEggTextBox(left + 4, controlsY, width - 196, this.spawnPendingAttributeId);
+        this.spawnAttributeIdBox.setResponder(value -> this.spawnPendingAttributeId = value != null ? value.trim() : "");
+
+        addSpawnEggWidget(Button.builder(Component.literal("..."), btn -> {
+            this.spawnPendingAttributeId = this.spawnAttributeIdBox != null ? this.spawnAttributeIdBox.getValue().trim() : this.spawnPendingAttributeId;
+            this.minecraft.setScreen(new AttributeSelectionScreen(this, id -> {
+                this.spawnPendingAttributeId = id;
+                this.init();
+            }));
+        }).bounds(left + width - 188, controlsY, 22, 16).build());
+
+        this.spawnAttributeBaseBox = createSpawnEggTextBox(left + width - 162, controlsY, 74, this.spawnPendingAttributeBase);
+        this.spawnAttributeBaseBox.setResponder(value -> this.spawnPendingAttributeBase = value != null ? value.trim() : "");
+
+        String addLabel = this.spawnEggEditingAttributeIndex >= 0 ? "Salvar" : "+ Atributo";
+        addSpawnEggWidget(Button.builder(Component.literal(addLabel), btn -> {
             addSpawnEggAttributeFromInputs();
             this.init();
-        }).bounds(left + width - 70, sectionTop + 20, 64, 18).build());
+        }).bounds(left + width - 84, controlsY, 78, 18).build());
 
-        for (int i = 0; i < Math.min(4, attributes.size()); i++) {
-            final int idx = i;
-            int rowY = sectionTop + 44 + (i * 18);
-            addSpawnEggWidget(createDeleteActionButton(left + width - 24, rowY, 18, 16, btn -> {
+        AttributeTableLayout layout = computeAttributeTableLayout(contentStartX, contentWidth);
+        int total = attributes.size();
+        int firstRowY = listStartY + layout.headerHeight;
+        int visibleSlots = computeVisibleRows(firstRowY);
+        this.spawnEggAttributeScrollOffset = clampScrollOffset(this.spawnEggAttributeScrollOffset, total, visibleSlots);
+        int visible = Math.min(visibleSlots, Math.max(0, total - this.spawnEggAttributeScrollOffset));
+
+        for (int i = 0; i < visible; i++) {
+            final int idx = this.spawnEggAttributeScrollOffset + i;
+            int rowY = listStartY + layout.headerHeight + (i * ROW_HEIGHT);
+            addSpawnEggWidget(createEditActionButton(layout.editButtonX, rowY + 2, 18, 16, btn -> {
+                editSpawnEggAttribute(idx);
+                this.init();
+            }, "Editar"));
+
+            addSpawnEggWidget(createDeleteActionButton(layout.deleteButtonX, rowY + 2, 18, 16, btn -> {
                 removeSpawnEggAttribute(idx);
                 this.init();
             }, "Remover atributo"));
         }
     }
 
-    private void initSpawnEggEffectsSection(CompoundTag entityTag, int left, int width, int sectionTop) {
+    private void initSpawnEggEffectsSection(CompoundTag entityTag, int contentStartX, int contentWidth, int left, int width, int sectionTop, int listStartY) {
         ListTag effects = entityTag.getList("ActiveEffects", Tag.TAG_COMPOUND);
-        this.spawnEffectIdBox = createSpawnEggTextBox(left + 4, sectionTop + 20, width - 188, "minecraft:speed");
-        this.spawnEffectDurationBox = createSpawnEggTextBox(left + width - 178, sectionTop + 20, 68, "600");
-        this.spawnEffectAmplifierBox = createSpawnEggTextBox(left + width - 106, sectionTop + 20, 42, "0");
-        addSpawnEggWidget(Button.builder(Component.literal("+ Efeito"), btn -> {
+        int controlsY = sectionTop + 4;
+
+        this.spawnEffectIdBox = createSpawnEggTextBox(left + 4, controlsY, width - 238, this.spawnPendingEffectId);
+        this.spawnEffectIdBox.setResponder(value -> this.spawnPendingEffectId = value != null ? value.trim() : "");
+
+        addSpawnEggWidget(Button.builder(Component.literal("..."), btn -> {
+            this.spawnPendingEffectId = this.spawnEffectIdBox != null ? this.spawnEffectIdBox.getValue().trim() : this.spawnPendingEffectId;
+            this.minecraft.setScreen(new EffectSelectionScreen(this, id -> {
+                this.spawnPendingEffectId = id;
+                this.init();
+            }));
+        }).bounds(left + width - 230, controlsY, 22, 16).build());
+
+        this.spawnEffectDurationBox = createSpawnEggTextBox(left + width - 204, controlsY, 68, this.spawnPendingEffectDuration);
+        this.spawnEffectDurationBox.setResponder(value -> this.spawnPendingEffectDuration = value != null ? value.trim() : "");
+
+        this.spawnEffectAmplifierBox = createSpawnEggTextBox(left + width - 132, controlsY, 42, this.spawnPendingEffectAmplifier);
+        this.spawnEffectAmplifierBox.setResponder(value -> this.spawnPendingEffectAmplifier = value != null ? value.trim() : "");
+
+        String addLabel = this.spawnEggEditingEffectIndex >= 0 ? "Salvar" : "+ Efeito";
+        addSpawnEggWidget(Button.builder(Component.literal(addLabel), btn -> {
             addSpawnEggEffectFromInputs();
             this.init();
-        }).bounds(left + width - 60, sectionTop + 20, 54, 18).build());
+        }).bounds(left + width - 84, controlsY, 78, 18).build());
 
-        for (int i = 0; i < Math.min(4, effects.size()); i++) {
-            final int idx = i;
-            int rowY = sectionTop + 44 + (i * 18);
-            addSpawnEggWidget(createDeleteActionButton(left + width - 24, rowY, 18, 16, btn -> {
+        EffectTableLayout layout = computeEffectTableLayout(contentStartX, contentWidth);
+        int total = effects.size();
+        int firstRowY = listStartY + layout.headerHeight;
+        int visibleSlots = computeVisibleRows(firstRowY);
+        this.spawnEggEffectScrollOffset = clampScrollOffset(this.spawnEggEffectScrollOffset, total, visibleSlots);
+        int visible = Math.min(visibleSlots, Math.max(0, total - this.spawnEggEffectScrollOffset));
+
+        for (int i = 0; i < visible; i++) {
+            final int idx = this.spawnEggEffectScrollOffset + i;
+            int rowY = listStartY + layout.headerHeight + (i * ROW_HEIGHT);
+            addSpawnEggWidget(createEditActionButton(layout.editButtonX, rowY + 2, 18, 16, btn -> {
+                editSpawnEggEffect(idx);
+                this.init();
+            }, "Editar"));
+
+            addSpawnEggWidget(createDeleteActionButton(layout.deleteButtonX, rowY + 2, 18, 16, btn -> {
                 removeSpawnEggEffect(idx);
                 this.init();
             }, "Remover efeito"));
@@ -1253,75 +1338,131 @@ public class ItemEditorScreen extends Screen {
 
     private void renderSpawnEggEquipmentSection(GuiGraphics graphics, CompoundTag entityTag, int left, int width, int sectionTop) {
         int slotRowsHeight = SpawnEggEquipmentSlot.ORDERED.length * 22;
-        int panelHeight = 18 + slotRowsHeight + 56;
+        int panelHeight = 18 + slotRowsHeight + 30;
         GuiLayoutUtils.drawPanel(graphics, left - 6, sectionTop - 8, width + 12, panelHeight, 0xCC1C2532, 0xFF4E6B8D);
-        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Equipamentos & Chances de Drop (Vanilla)", left + 4, sectionTop - 2, 0xFFF1F1F1);
+        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Equipamentos", left + 4, sectionTop - 2, 0xFFF1F1F1);
+
+        graphics.drawString(this.font, "Slot", left + 6, sectionTop + 2, 0xFFCCD9F1);
+        graphics.drawString(this.font, "Item", left + 112, sectionTop + 2, 0xFFCCD9F1);
+        graphics.drawString(this.font, "Chance", left + width - 52, sectionTop + 2, 0xFFCCD9F1);
 
         for (int i = 0; i < SpawnEggEquipmentSlot.ORDERED.length; i++) {
             int rowY = sectionTop + 20 + i * 22;
             SpawnEggEquipmentSlot slot = SpawnEggEquipmentSlot.ORDERED[i];
             graphics.drawString(this.font, slot.label(), left + 6, rowY + 4, 0xFFCCD9F1);
-
-            String preview = compactEquipmentPreview(getSpawnEggEquipmentItemSnbt(entityTag, slot), 18);
-            graphics.drawString(this.font, "§7" + preview, left + 112, rowY + 4, 0xFFA9B8CD);
         }
-        graphics.drawString(this.font, "Chance", left + width - 52, sectionTop + 2, 0xFFCCD9F1);
-        graphics.drawString(this.font, "Drops Vanilla", left + 6, sectionTop + 18 + slotRowsHeight + 28, 0xFFF1F1F1);
-        graphics.drawString(this.font, "DeathLootTable = minecraft:empty remove os drops padrão.", left + 124, sectionTop + 18 + slotRowsHeight + 31, 0xFF9FB0C5);
     }
 
-    private void renderSpawnEggAttributesSection(GuiGraphics graphics, CompoundTag entityTag, int left, int width, int sectionTop) {
+    private void renderSpawnEggAttributesSection(GuiGraphics graphics, CompoundTag entityTag, int contentStartX, int contentWidth, int listStartY) {
         ListTag attributes = entityTag.getList("Attributes", Tag.TAG_COMPOUND);
-        int panelHeight = 132;
-        GuiLayoutUtils.drawPanel(graphics, left - 6, sectionTop - 8, width + 12, panelHeight, 0xCC1C2532, 0xFF4E6B8D);
-        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Atributos (EntityTag.Attributes)", left + 4, sectionTop - 2, 0xFFF1F1F1);
-        graphics.drawString(this.font, "Id", left + 6, sectionTop + 8, 0xFFCCD9F1);
-        graphics.drawString(this.font, "Base", left + width - 138, sectionTop + 8, 0xFFCCD9F1);
+        AttributeTableLayout layout = computeAttributeTableLayout(contentStartX, contentWidth);
+        int total = attributes.size();
+        int firstRowY = listStartY + layout.headerHeight;
+        int visibleSlots = computeVisibleRows(firstRowY);
+        this.spawnEggAttributeScrollOffset = clampScrollOffset(this.spawnEggAttributeScrollOffset, total, visibleSlots);
+        int rows = Math.min(visibleSlots, Math.max(0, total - this.spawnEggAttributeScrollOffset));
+        int panelRows = Math.max(rows, 2);
+        int panelHeight = Math.min(panelRows * ROW_HEIGHT + 46, this.height - listStartY - 40);
 
-        for (int i = 0; i < Math.min(4, attributes.size()); i++) {
-            CompoundTag entry = attributes.getCompound(i);
+        GuiLayoutUtils.drawPanel(graphics, layout.listX - 6, listStartY - 10, layout.tableWidth + 12, panelHeight + 16, 0xCC1C2532, 0xFF4E6B8D);
+        graphics.fill(layout.listX, listStartY - 8, layout.listX + layout.tableWidth, listStartY + layout.headerHeight - 8, 0x33FFFFFF);
+
+        int headerY = listStartY - 6;
+        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Atributo", layout.nameX, headerY + 4, 0xFFF1F1F1);
+        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Valor", layout.valueX, headerY + 4, 0xFFF1F1F1);
+        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Slot", layout.slotX, headerY + 4, 0xFFF1F1F1);
+        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Ações", layout.actionsX + 3, headerY + 4, 0xFFF1F1F1);
+
+        if (total == 0) {
+            graphics.drawString(this.font, "§7Nenhum atributo registrado", layout.listX + 12, headerY + layout.headerHeight + 4, 0xAAAACCFF);
+            return;
+        }
+
+        int clipTop = firstRowY - 2;
+        int clipBottom = clipTop + (rows * ROW_HEIGHT);
+        graphics.enableScissor(layout.listX, clipTop, layout.listX + layout.tableWidth, clipBottom);
+        for (int i = 0; i < rows; i++) {
+            CompoundTag entry = attributes.getCompound(this.spawnEggAttributeScrollOffset + i);
+            int rowY = listStartY + layout.headerHeight + (i * ROW_HEIGHT);
+            if (i % 2 == 0) {
+                graphics.fill(layout.listX, rowY - 2, layout.listX + layout.tableWidth, rowY + ROW_HEIGHT - 4, 0x17FFFFFF);
+            }
             String id = entry.getString("Name");
-            String shortId = compactEquipmentPreview(id, 30);
-            double base = entry.getDouble("Base");
-            int rowY = sectionTop + 46 + (i * 18);
-            graphics.drawString(this.font, shortId + " = " + String.format(Locale.US, "%.2f", base), left + 6, rowY + 3, 0xFFE3EDF9);
+            ResourceLocation rl = ResourceLocation.tryParse(id);
+            String display = id;
+            if (rl != null) {
+                Attribute attribute = ForgeRegistries.ATTRIBUTES.getValue(rl);
+                if (attribute != null) {
+                    display = Component.translatable(attribute.getDescriptionId()).getString();
+                }
+            }
+            if (display.length() > 30) {
+                display = display.substring(0, 30) + "...";
+            }
+            graphics.drawString(this.font, display, layout.nameX, rowY + 4, 0xDDFFFFFF);
+            graphics.drawString(this.font, String.format(Locale.US, "%.2f", entry.getDouble("Base")), layout.valueX, rowY + 4, 0xFF90EEFF);
+            graphics.drawString(this.font, "-", layout.slotX, rowY + 4, 0xFFB2CEFF);
         }
-        graphics.drawString(this.font, "§7Total: " + attributes.size(), left + 6, sectionTop + panelHeight - 14, 0xFF9FB0C5);
+        graphics.disableScissor();
+
+        if (total > visibleSlots) {
+            drawVanillaLikeScrollbar(graphics, layout.listX + layout.tableWidth - SCROLLBAR_WIDTH, firstRowY, rows, total, this.spawnEggAttributeScrollOffset);
+        }
     }
 
-    private void renderSpawnEggEffectsSection(GuiGraphics graphics, CompoundTag entityTag, int left, int width, int sectionTop) {
+    private void renderSpawnEggEffectsSection(GuiGraphics graphics, CompoundTag entityTag, int contentStartX, int contentWidth, int listStartY) {
         ListTag effects = entityTag.getList("ActiveEffects", Tag.TAG_COMPOUND);
-        int panelHeight = 132;
-        GuiLayoutUtils.drawPanel(graphics, left - 6, sectionTop - 8, width + 12, panelHeight, 0xCC1C2532, 0xFF4E6B8D);
-        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Efeitos (EntityTag.ActiveEffects)", left + 4, sectionTop - 2, 0xFFF1F1F1);
-        graphics.drawString(this.font, "Id / Duração / Nível", left + 6, sectionTop + 8, 0xFFCCD9F1);
+        EffectTableLayout layout = computeEffectTableLayout(contentStartX, contentWidth);
+        int total = effects.size();
+        int firstRowY = listStartY + layout.headerHeight;
+        int visibleSlots = computeVisibleRows(firstRowY);
+        this.spawnEggEffectScrollOffset = clampScrollOffset(this.spawnEggEffectScrollOffset, total, visibleSlots);
+        int rows = Math.min(visibleSlots, Math.max(0, total - this.spawnEggEffectScrollOffset));
+        int panelRows = Math.max(rows, 2);
+        int panelHeight = Math.min(panelRows * ROW_HEIGHT + 46, this.height - listStartY - 40);
 
-        for (int i = 0; i < Math.min(4, effects.size()); i++) {
-            CompoundTag entry = effects.getCompound(i);
-            String id = entry.contains("IdString", Tag.TAG_STRING) ? entry.getString("IdString") : Integer.toString(entry.getInt("Id"));
-            int duration = entry.getInt("Duration");
-            int amp = entry.getInt("Amplifier");
-            int rowY = sectionTop + 46 + (i * 18);
-            graphics.drawString(this.font, compactEquipmentPreview(id, 24) + " d=" + duration + " a=" + amp, left + 6, rowY + 3, 0xFFE3EDF9);
+        GuiLayoutUtils.drawPanel(graphics, layout.listX - 6, listStartY - 10, layout.tableWidth + 12, panelHeight + 16, 0xCC1C2532, 0xFF4E6B8D);
+        graphics.fill(layout.listX, listStartY - 8, layout.listX + layout.tableWidth, listStartY + layout.headerHeight - 8, 0x33FFFFFF);
+
+        int headerY = listStartY - 6;
+        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Efeito", layout.effectX, headerY + 4, 0xFFF1F1F1);
+        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Duração", layout.durationX, headerY + 4, 0xFFF1F1F1);
+        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Nível", layout.amplifierX, headerY + 4, 0xFFF1F1F1);
+        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Extras", layout.extrasX, headerY + 4, 0xFFF1F1F1);
+        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Ações", layout.actionsX + 3, headerY + 4, 0xFFF1F1F1);
+
+        if (total == 0) {
+            graphics.drawString(this.font, "§7Nenhum efeito registrado", layout.listX + 12, headerY + layout.headerHeight + 4, 0xAAAACCFF);
+            return;
         }
-        graphics.drawString(this.font, "§7Total: " + effects.size(), left + 6, sectionTop + panelHeight - 14, 0xFF9FB0C5);
-    }
 
-    private int getSpawnEggMaxScrollOffset() {
-        int viewportHeight = Math.max(120, this.height - 92);
-        int contentHeight = estimateSpawnEggContentHeight();
-        return Math.max(0, contentHeight - viewportHeight);
-    }
+        int clipTop = firstRowY - 2;
+        int clipBottom = clipTop + (rows * ROW_HEIGHT);
+        graphics.enableScissor(layout.listX, clipTop, layout.listX + layout.tableWidth, clipBottom);
+        for (int i = 0; i < rows; i++) {
+            CompoundTag entry = effects.getCompound(this.spawnEggEffectScrollOffset + i);
+            int rowY = listStartY + layout.headerHeight + (i * ROW_HEIGHT);
+            if (i % 2 == 0) {
+                graphics.fill(layout.listX, rowY - 2, layout.listX + layout.tableWidth, rowY + ROW_HEIGHT - 4, 0x17FFFFFF);
+            }
 
-    private int estimateSpawnEggContentHeight() {
-        int toggleRows = (SpawnEggToggle.ORDERED.length + 1) / 2;
-        int base = 16 + toggleRows * 20 + 10 + 72;
-        int section = switch (this.spawnEggSection) {
-            case EQUIPMENT -> 18 + SpawnEggEquipmentSlot.ORDERED.length * 22 + 56;
-            case ATTRIBUTES, EFFECTS -> 132;
-            default -> 40;
-        };
-        return base + section + 16;
+            String effectId = resolvePotionEffectId(entry).replace("minecraft:", "");
+            if (effectId.length() > 22) {
+                effectId = effectId.substring(0, 22) + "...";
+            }
+            int durationTicks = entry.contains("Duration", Tag.TAG_ANY_NUMERIC) ? entry.getInt("Duration") : 0;
+            int amplifier = (entry.contains("Amplifier", Tag.TAG_ANY_NUMERIC) ? entry.getInt("Amplifier") : 0) + 1;
+
+            graphics.drawString(this.font, effectId, layout.effectX, rowY + 4, 0xDDFFFFFF);
+            graphics.drawString(this.font, formatEffectDuration(durationTicks), layout.durationX, rowY + 4, 0xFF90EEFF);
+            graphics.drawString(this.font, "Lvl " + amplifier, layout.amplifierX, rowY + 4, 0xFFB2CEFF);
+            graphics.drawString(this.font, formatPotionExtras(entry), layout.extrasX, rowY + 4, 0xFFC8D7EA);
+        }
+        graphics.disableScissor();
+
+        if (total > visibleSlots) {
+            drawVanillaLikeScrollbar(graphics, layout.listX + layout.tableWidth - SCROLLBAR_WIDTH, firstRowY, rows, total, this.spawnEggEffectScrollOffset);
+        }
     }
 
     private CompoundTag getSpawnEggEntityTagCopy() {
@@ -1338,22 +1479,44 @@ public class ItemEditorScreen extends Screen {
         }
     }
 
-    private boolean isSpawnEggDefaultLootDisabled() {
-        CompoundTag entityTag = getSpawnEggEntityTagCopy();
-        return entityTag.contains("DeathLootTable", Tag.TAG_STRING)
-            && "minecraft:empty".equals(entityTag.getString("DeathLootTable"));
+    private String getSpawnEggLootTableValue(CompoundTag entityTag) {
+        if (entityTag.contains("DeathLootTable", Tag.TAG_STRING)) {
+            return entityTag.getString("DeathLootTable");
+        }
+        return resolveSpawnEggDefaultLootTable();
     }
 
-    private void toggleSpawnEggDefaultLoot() {
-        CompoundTag entityTag = getSpawnEggEntityTagCopy();
-        if (isSpawnEggDefaultLootDisabled()) {
-            entityTag.remove("DeathLootTable");
-            this.spawnEggStatusMessage = "Drops padrão reativados (DeathLootTable removida).";
-        } else {
-            entityTag.putString("DeathLootTable", "minecraft:empty");
-            this.spawnEggStatusMessage = "Drops padrão removidos com DeathLootTable=minecraft:empty.";
+    private String resolveSpawnEggDefaultLootTable() {
+        if (!(this.rawWorkingItem.getItem() instanceof SpawnEggItem spawnEggItem)) {
+            return "minecraft:empty";
         }
+        try {
+            EntityType<?> entityType = spawnEggItem.getType(this.currentTag);
+            ResourceLocation lootTable = entityType.getDefaultLootTable();
+            return lootTable != null ? lootTable.toString() : "minecraft:empty";
+        } catch (Exception ignored) {
+            return "minecraft:empty";
+        }
+    }
+
+    private void applySpawnEggLootTableFromInput(boolean forceEmpty) {
+        CompoundTag entityTag = getSpawnEggEntityTagCopy();
+        String value;
+        if (forceEmpty) {
+            value = "minecraft:empty";
+        } else {
+            value = this.spawnDeathLootTableBox != null
+                ? this.spawnDeathLootTableBox.getValue().trim()
+                : this.spawnPendingDeathLootTable;
+            if (value == null || value.isBlank()) {
+                value = "minecraft:empty";
+            }
+        }
+
+        this.spawnPendingDeathLootTable = value;
+        entityTag.putString("DeathLootTable", value);
         putSpawnEggEntityTag(entityTag);
+        this.spawnEggStatusMessage = "DeathLootTable atualizada para " + value + ".";
     }
 
     private boolean isSpawnEggToggleEnabled(SpawnEggToggle toggle) {
@@ -1373,22 +1536,6 @@ public class ItemEditorScreen extends Screen {
         this.spawnEggStatusMessage = "Propriedade '" + toggle.label() + "' atualizada.";
     }
 
-    private static String listTagToSnbt(CompoundTag source, String key) {
-        Tag raw = source.get(key);
-        return raw instanceof ListTag list ? list.toString() : "[]";
-    }
-
-    private static String compactEquipmentPreview(String text, int maxChars) {
-        if (text == null || text.isBlank()) {
-            return "vazio";
-        }
-        String value = text.replace('\n', ' ').trim();
-        if (value.length() <= maxChars) {
-            return value;
-        }
-        return value.substring(0, maxChars) + "...";
-    }
-
     private Tag parseAnyTag(String text) throws CommandSyntaxException {
         String trimmed = text != null ? text.trim() : "";
         if (trimmed.isBlank()) {
@@ -1396,17 +1543,6 @@ public class ItemEditorScreen extends Screen {
         }
         CompoundTag wrapped = TagParser.parseTag("{v:" + trimmed + "}");
         return wrapped.get("v");
-    }
-
-    private ListTag parseListInput(String text, String fieldName) throws CommandSyntaxException {
-        Tag parsed = parseAnyTag(text);
-        if (parsed == null) {
-            return new ListTag();
-        }
-        if (!(parsed instanceof ListTag list)) {
-            throw CommandSyntaxException.BUILT_IN_EXCEPTIONS.dispatcherParseException().create("Campo " + fieldName + " deve ser uma lista SNBT.");
-        }
-        return list;
     }
 
     private void applySpawnEggEquipmentFromInputs() {
@@ -1509,6 +1645,18 @@ public class ItemEditorScreen extends Screen {
         return String.format(Locale.US, "%.2f", Mth.clamp(chance, 0.0F, 1.0F));
     }
 
+    private void editSpawnEggAttribute(int index) {
+        CompoundTag entityTag = getSpawnEggEntityTagCopy();
+        ListTag list = entityTag.getList("Attributes", Tag.TAG_COMPOUND);
+        if (index < 0 || index >= list.size()) {
+            return;
+        }
+        CompoundTag entry = list.getCompound(index);
+        this.spawnEggEditingAttributeIndex = index;
+        this.spawnPendingAttributeId = entry.getString("Name");
+        this.spawnPendingAttributeBase = String.format(Locale.US, "%.2f", entry.getDouble("Base"));
+    }
+
     private void addSpawnEggAttributeFromInputs() {
         try {
             String idText = this.spawnAttributeIdBox != null ? this.spawnAttributeIdBox.getValue().trim().toLowerCase(Locale.ROOT) : "";
@@ -1524,16 +1672,24 @@ public class ItemEditorScreen extends Screen {
             }
 
             double base = Double.parseDouble(this.spawnAttributeBaseBox != null ? this.spawnAttributeBaseBox.getValue().trim() : "0");
+            this.spawnPendingAttributeId = idText;
+            this.spawnPendingAttributeBase = String.format(Locale.US, "%.2f", base);
 
             CompoundTag entityTag = getSpawnEggEntityTagCopy();
             ListTag list = entityTag.getList("Attributes", Tag.TAG_COMPOUND);
             CompoundTag entry = new CompoundTag();
             entry.putString("Name", idText);
             entry.putDouble("Base", base);
-            list.add(entry);
+            if (this.spawnEggEditingAttributeIndex >= 0 && this.spawnEggEditingAttributeIndex < list.size()) {
+                list.set(this.spawnEggEditingAttributeIndex, entry);
+                this.spawnEggStatusMessage = "Atributo atualizado em EntityTag.Attributes.";
+            } else {
+                list.add(entry);
+                this.spawnEggStatusMessage = "Atributo adicionado em EntityTag.Attributes.";
+            }
+            this.spawnEggEditingAttributeIndex = -1;
             entityTag.put("Attributes", list);
             putSpawnEggEntityTag(entityTag);
-            this.spawnEggStatusMessage = "Atributo adicionado em EntityTag.Attributes.";
         } catch (Exception e) {
             this.spawnEggStatusMessage = "§cErro ao adicionar atributo: " + e.getMessage();
         }
@@ -1548,7 +1704,27 @@ public class ItemEditorScreen extends Screen {
         if (list.isEmpty()) entityTag.remove("Attributes");
         else entityTag.put("Attributes", list);
         putSpawnEggEntityTag(entityTag);
+        if (this.spawnEggEditingAttributeIndex == index) {
+            this.spawnEggEditingAttributeIndex = -1;
+        } else if (this.spawnEggEditingAttributeIndex > index) {
+            this.spawnEggEditingAttributeIndex--;
+        }
+        this.spawnEggAttributeScrollOffset = clampScrollOffset(this.spawnEggAttributeScrollOffset, list.size(), computeVisibleRows(getSpawnEggListStartY() + 20));
         this.spawnEggStatusMessage = "Atributo removido.";
+    }
+
+    private void editSpawnEggEffect(int index) {
+        CompoundTag entityTag = getSpawnEggEntityTagCopy();
+        ListTag list = entityTag.getList("ActiveEffects", Tag.TAG_COMPOUND);
+        if (index < 0 || index >= list.size()) {
+            return;
+        }
+
+        CompoundTag entry = list.getCompound(index);
+        this.spawnEggEditingEffectIndex = index;
+        this.spawnPendingEffectId = resolvePotionEffectId(entry);
+        this.spawnPendingEffectDuration = Integer.toString(Math.max(1, entry.getInt("Duration")));
+        this.spawnPendingEffectAmplifier = Integer.toString(Math.max(0, entry.getInt("Amplifier")));
     }
 
     private void addSpawnEggEffectFromInputs() {
@@ -1571,22 +1747,41 @@ public class ItemEditorScreen extends Screen {
             if (duration < 1) duration = 1;
             if (amplifier < 0) amplifier = 0;
 
+            this.spawnPendingEffectId = idText;
+            this.spawnPendingEffectDuration = Integer.toString(duration);
+            this.spawnPendingEffectAmplifier = Integer.toString(amplifier);
+
             CompoundTag entityTag = getSpawnEggEntityTagCopy();
             ListTag list = entityTag.getList("ActiveEffects", Tag.TAG_COMPOUND);
 
-            CompoundTag entry = new CompoundTag();
+            CompoundTag entry = (this.spawnEggEditingEffectIndex >= 0 && this.spawnEggEditingEffectIndex < list.size())
+                ? list.getCompound(this.spawnEggEditingEffectIndex).copy()
+                : new CompoundTag();
             entry.putInt("Id", MobEffect.getId(effect));
             entry.putString("IdString", idText);
             entry.putInt("Duration", duration);
             entry.putInt("Amplifier", amplifier);
-            entry.putBoolean("Ambient", false);
-            entry.putBoolean("ShowParticles", true);
-            entry.putBoolean("ShowIcon", true);
-            list.add(entry);
+            if (!entry.contains("Ambient", Tag.TAG_BYTE)) {
+                entry.putBoolean("Ambient", false);
+            }
+            if (!entry.contains("ShowParticles", Tag.TAG_BYTE)) {
+                entry.putBoolean("ShowParticles", true);
+            }
+            if (!entry.contains("ShowIcon", Tag.TAG_BYTE)) {
+                entry.putBoolean("ShowIcon", true);
+            }
+
+            if (this.spawnEggEditingEffectIndex >= 0 && this.spawnEggEditingEffectIndex < list.size()) {
+                list.set(this.spawnEggEditingEffectIndex, entry);
+                this.spawnEggStatusMessage = "Efeito atualizado em EntityTag.ActiveEffects.";
+            } else {
+                list.add(entry);
+                this.spawnEggStatusMessage = "Efeito adicionado em EntityTag.ActiveEffects.";
+            }
+            this.spawnEggEditingEffectIndex = -1;
 
             entityTag.put("ActiveEffects", list);
             putSpawnEggEntityTag(entityTag);
-            this.spawnEggStatusMessage = "Efeito adicionado em EntityTag.ActiveEffects.";
         } catch (Exception e) {
             this.spawnEggStatusMessage = "§cErro ao adicionar efeito: " + e.getMessage();
         }
@@ -1601,6 +1796,12 @@ public class ItemEditorScreen extends Screen {
         if (list.isEmpty()) entityTag.remove("ActiveEffects");
         else entityTag.put("ActiveEffects", list);
         putSpawnEggEntityTag(entityTag);
+        if (this.spawnEggEditingEffectIndex == index) {
+            this.spawnEggEditingEffectIndex = -1;
+        } else if (this.spawnEggEditingEffectIndex > index) {
+            this.spawnEggEditingEffectIndex--;
+        }
+        this.spawnEggEffectScrollOffset = clampScrollOffset(this.spawnEggEffectScrollOffset, list.size(), computeVisibleRows(getSpawnEggListStartY() + 20));
         this.spawnEggStatusMessage = "Efeito removido.";
     }
 
@@ -2157,7 +2358,9 @@ public class ItemEditorScreen extends Screen {
         LORE,
         ATTRIBUTES,
         ENCHANTMENTS,
-        EFFECTS
+        EFFECTS,
+        SPAWN_EGG_ATTRIBUTES,
+        SPAWN_EGG_EFFECTS
     }
 
     private record ScrollbarGeometry(int x, int y, int width, int height, int thumbY, int thumbHeight, int maxOffset) {
@@ -2508,6 +2711,34 @@ public class ItemEditorScreen extends Screen {
         return buildScrollbarGeometry(barX, firstRowY, visible, total, this.effectScrollOffset);
     }
 
+    private ScrollbarGeometry getSpawnEggAttributeScrollbarGeometry() {
+        if (this.currentCategory != Category.SPAWN_EGG || !isEditingSpawnEgg() || this.currentEggTab != SpawnEggTab.ATTRIBUTES) {
+            return null;
+        }
+        int contentStartX = SIDEBAR_WIDTH + CONTENT_PADDING;
+        int contentWidth = this.width - contentStartX - CONTENT_PADDING;
+        AttributeTableLayout layout = computeAttributeTableLayout(contentStartX, contentWidth);
+        int total = getSpawnEggEntityTagCopy().getList("Attributes", Tag.TAG_COMPOUND).size();
+        int firstRowY = getSpawnEggListStartY() + layout.headerHeight;
+        int visible = computeVisibleRows(firstRowY);
+        int barX = layout.listX + layout.tableWidth - SCROLLBAR_WIDTH;
+        return buildScrollbarGeometry(barX, firstRowY, visible, total, this.spawnEggAttributeScrollOffset);
+    }
+
+    private ScrollbarGeometry getSpawnEggEffectScrollbarGeometry() {
+        if (this.currentCategory != Category.SPAWN_EGG || !isEditingSpawnEgg() || this.currentEggTab != SpawnEggTab.EFFECTS) {
+            return null;
+        }
+        int contentStartX = SIDEBAR_WIDTH + CONTENT_PADDING;
+        int contentWidth = this.width - contentStartX - CONTENT_PADDING;
+        EffectTableLayout layout = computeEffectTableLayout(contentStartX, contentWidth);
+        int total = getSpawnEggEntityTagCopy().getList("ActiveEffects", Tag.TAG_COMPOUND).size();
+        int firstRowY = getSpawnEggListStartY() + layout.headerHeight;
+        int visible = computeVisibleRows(firstRowY);
+        int barX = layout.listX + layout.tableWidth - SCROLLBAR_WIDTH;
+        return buildScrollbarGeometry(barX, firstRowY, visible, total, this.spawnEggEffectScrollOffset);
+    }
+
     private int offsetFromDrag(ScrollbarGeometry geometry, double mouseY, int thumbGrabOffsetY) {
         int thumbTrack = Math.max(1, geometry.height() - geometry.thumbHeight());
         int desiredThumbTop = Mth.clamp((int) mouseY - thumbGrabOffsetY, geometry.y(), geometry.y() + thumbTrack);
@@ -2528,6 +2759,8 @@ public class ItemEditorScreen extends Screen {
             case ATTRIBUTES -> this.attributeScrollOffset = newOffset;
             case ENCHANTMENTS -> this.enchantmentScrollOffset = newOffset;
             case EFFECTS -> this.effectScrollOffset = newOffset;
+            case SPAWN_EGG_ATTRIBUTES -> this.spawnEggAttributeScrollOffset = newOffset;
+            case SPAWN_EGG_EFFECTS -> this.spawnEggEffectScrollOffset = newOffset;
             default -> {}
         }
         this.init();
@@ -2553,6 +2786,14 @@ public class ItemEditorScreen extends Screen {
             if (inside(effects, mouseX, mouseY)) {
                 return beginOrJumpScroll(ScrollTarget.EFFECTS, effects, mouseY);
             }
+            ScrollbarGeometry eggAttributes = getSpawnEggAttributeScrollbarGeometry();
+            if (inside(eggAttributes, mouseX, mouseY)) {
+                return beginOrJumpScroll(ScrollTarget.SPAWN_EGG_ATTRIBUTES, eggAttributes, mouseY);
+            }
+            ScrollbarGeometry eggEffects = getSpawnEggEffectScrollbarGeometry();
+            if (inside(eggEffects, mouseX, mouseY)) {
+                return beginOrJumpScroll(ScrollTarget.SPAWN_EGG_EFFECTS, eggEffects, mouseY);
+            }
         }
         return super.mouseClicked(mouseX, mouseY, button);
     }
@@ -2565,6 +2806,8 @@ public class ItemEditorScreen extends Screen {
                 case ATTRIBUTES -> getAttributeScrollbarGeometry();
                 case ENCHANTMENTS -> getEnchantmentScrollbarGeometry();
                 case EFFECTS -> getEffectScrollbarGeometry();
+                case SPAWN_EGG_ATTRIBUTES -> getSpawnEggAttributeScrollbarGeometry();
+                case SPAWN_EGG_EFFECTS -> getSpawnEggEffectScrollbarGeometry();
                 default -> null;
             };
             if (geometry != null) {
@@ -2574,6 +2817,8 @@ public class ItemEditorScreen extends Screen {
                     case ATTRIBUTES -> this.attributeScrollOffset = newOffset;
                     case ENCHANTMENTS -> this.enchantmentScrollOffset = newOffset;
                     case EFFECTS -> this.effectScrollOffset = newOffset;
+                    case SPAWN_EGG_ATTRIBUTES -> this.spawnEggAttributeScrollOffset = newOffset;
+                    case SPAWN_EGG_EFFECTS -> this.spawnEggEffectScrollOffset = newOffset;
                     default -> {}
                 }
                 this.init();
@@ -2595,12 +2840,35 @@ public class ItemEditorScreen extends Screen {
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
         if (this.currentCategory == Category.SPAWN_EGG && isEditingSpawnEgg()) {
-            int maxOffset = getSpawnEggMaxScrollOffset();
-            if (maxOffset > 0) {
-                int step = delta > 0 ? -16 : 16;
-                this.spawnEggScrollOffset = Mth.clamp(this.spawnEggScrollOffset + step, 0, maxOffset);
-                this.init();
-                return true;
+            int contentStartX = SIDEBAR_WIDTH + CONTENT_PADDING;
+            int contentWidth = this.width - contentStartX - CONTENT_PADDING;
+
+            if (this.currentEggTab == SpawnEggTab.ATTRIBUTES) {
+                AttributeTableLayout layout = computeAttributeTableLayout(contentStartX, contentWidth);
+                int total = getSpawnEggEntityTagCopy().getList("Attributes", Tag.TAG_COMPOUND).size();
+                int listTop = getSpawnEggListStartY() + layout.headerHeight;
+                int visible = computeVisibleRows(listTop);
+                int listBottom = listTop + visible * ROW_HEIGHT;
+                if (total > visible && mouseX >= layout.listX && mouseX <= layout.listX + layout.tableWidth && mouseY >= listTop && mouseY <= listBottom) {
+                    int step = delta > 0 ? -1 : 1;
+                    this.spawnEggAttributeScrollOffset = clampScrollOffset(this.spawnEggAttributeScrollOffset + step, total, visible);
+                    this.init();
+                    return true;
+                }
+            }
+
+            if (this.currentEggTab == SpawnEggTab.EFFECTS) {
+                EffectTableLayout layout = computeEffectTableLayout(contentStartX, contentWidth);
+                int total = getSpawnEggEntityTagCopy().getList("ActiveEffects", Tag.TAG_COMPOUND).size();
+                int listTop = getSpawnEggListStartY() + layout.headerHeight;
+                int visible = computeVisibleRows(listTop);
+                int listBottom = listTop + visible * ROW_HEIGHT;
+                if (total > visible && mouseX >= layout.listX && mouseX <= layout.listX + layout.tableWidth && mouseY >= listTop && mouseY <= listBottom) {
+                    int step = delta > 0 ? -1 : 1;
+                    this.spawnEggEffectScrollOffset = clampScrollOffset(this.spawnEggEffectScrollOffset + step, total, visible);
+                    this.init();
+                    return true;
+                }
             }
         }
 
@@ -2798,11 +3066,30 @@ public class ItemEditorScreen extends Screen {
         }
     }
 
-    private enum SpawnEggSection {
-        MAIN,
-        EQUIPMENT,
-        ATTRIBUTES,
-        EFFECTS
+    private enum SpawnEggTab {
+        PROPERTIES("Propriedades"),
+        EQUIPMENT("Equipamentos"),
+        DROPS("Drops"),
+        ATTRIBUTES("Atributos"),
+        EFFECTS("Efeitos");
+
+        static final SpawnEggTab[] ORDERED = {
+            PROPERTIES,
+            EQUIPMENT,
+            DROPS,
+            ATTRIBUTES,
+            EFFECTS
+        };
+
+        private final String label;
+
+        SpawnEggTab(String label) {
+            this.label = label;
+        }
+
+        String label() {
+            return this.label;
+        }
     }
 
     private enum SpawnEggEquipmentSlot {

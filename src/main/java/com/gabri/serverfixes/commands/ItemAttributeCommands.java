@@ -43,6 +43,7 @@ public class ItemAttributeCommands {
 
     public static void register(LiteralArgumentBuilder<CommandSourceStack> parent, net.minecraft.commands.CommandBuildContext buildContext) {
         parent.then(Commands.literal("item")
+            .requires(source -> source.hasPermission(2))
             .then(Commands.literal("attribute")
                 .then(Commands.literal("list")
                     .executes(ItemAttributeCommands::listAttributes))

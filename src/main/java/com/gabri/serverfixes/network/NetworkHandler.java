@@ -43,6 +43,30 @@ public class NetworkHandler {
                 .encoder(UpdateServerConfigPacket::toBytes)
                 .consumerMainThread(UpdateServerConfigPacket::handle)
                 .add();
+
+        INSTANCE.messageBuilder(RequestAdminPanelPacket.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
+                .decoder(RequestAdminPanelPacket::new)
+                .encoder(RequestAdminPanelPacket::toBytes)
+                .consumerMainThread(RequestAdminPanelPacket::handle)
+                .add();
+
+        INSTANCE.messageBuilder(RequestOpenContextEditorPacket.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
+                .decoder(RequestOpenContextEditorPacket::new)
+                .encoder(RequestOpenContextEditorPacket::toBytes)
+                .consumerMainThread(RequestOpenContextEditorPacket::handle)
+                .add();
+
+        INSTANCE.messageBuilder(OpenContextNbtEditorPacket.class, packetId++, NetworkDirection.PLAY_TO_CLIENT)
+                .decoder(OpenContextNbtEditorPacket::new)
+                .encoder(OpenContextNbtEditorPacket::toBytes)
+                .consumerMainThread(OpenContextNbtEditorPacket::handle)
+                .add();
+
+        INSTANCE.messageBuilder(SaveContextNbtPacket.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
+                .decoder(SaveContextNbtPacket::new)
+                .encoder(SaveContextNbtPacket::toBytes)
+                .consumerMainThread(SaveContextNbtPacket::handle)
+                .add();
     }
 
     public static void sendToPlayer(ServerPlayer player, Object message) {

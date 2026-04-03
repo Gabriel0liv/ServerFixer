@@ -6,7 +6,6 @@ import com.gabri.serverfixes.network.NetworkHandler;
 import com.gabri.serverfixes.network.UpdateServerConfigPacket;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.EditBox;
@@ -85,7 +84,6 @@ public class AdminPanelScreen extends AbstractEditorScreen {
         this.rowInfos.clear();
         computeLayout();
         buildSidebar();
-        buildTopBar();
 
         if (currentCategory == Category.MAIN) {
             initMainPage(this.contentX, this.contentY, this.contentW, this.contentH);
@@ -152,22 +150,8 @@ public class AdminPanelScreen extends AbstractEditorScreen {
         }
     }
 
-    private void buildTopBar() {
-        int barButtonH = 16;
-        int leftX = this.contentX + 2;
-        this.addRenderableWidget(Button.builder(Component.literal("Item Editor"), (btn) -> openItemEditor())
-            .bounds(leftX, this.barY, 96, barButtonH).build());
-    }
-
     private void initMainPage(int contentStartX, int contentStartY, int contentWidth, int contentHeight) {
         // Home usa apenas o painel de conteúdo único para evitar redundância visual.
-    }
-
-    private void openItemEditor() {
-        if (this.minecraft == null) return;
-        LocalPlayer player = this.minecraft.player;
-        if (player == null || player.getMainHandItem().isEmpty()) return;
-        this.minecraft.setScreen(new ItemEditorScreen(player.getMainHandItem().getOrCreateTag()));
     }
 
     private void initCategoryPage(int contentStartX, int contentWidth, int startY) {
@@ -304,7 +288,7 @@ public class AdminPanelScreen extends AbstractEditorScreen {
         y += 22;
         graphics.drawString(this.font, "§7Use a coluna da esquerda para navegar entre categorias.", textX, y, 0xFFBECBDD);
         y += 16;
-        graphics.drawString(this.font, "§7Use o botão da barra superior para abrir o Item Editor.", textX, y, 0xFFBECBDD);
+        graphics.drawString(this.font, "§7Painel administrativo separado do editor de itens.", textX, y, 0xFFBECBDD);
         y += 16;
         graphics.drawString(this.font, "§7A tela segue o formato do IBE: sidebar + area unica de conteudo.", textX, y, 0xFFBECBDD);
     }

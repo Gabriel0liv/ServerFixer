@@ -32,6 +32,7 @@ public class ItemCommands {
 
     public static void register(LiteralArgumentBuilder<CommandSourceStack> parent, net.minecraft.commands.CommandBuildContext buildContext) {
         parent.then(Commands.literal("item")
+            .requires(source -> source.hasPermission(2))
             .then(Commands.literal("add_effect")
                 .then(Commands.argument("effect", ResourceArgument.resource(buildContext, Registries.MOB_EFFECT))
                     .suggests((ctx, builder) -> {

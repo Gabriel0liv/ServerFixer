@@ -27,7 +27,7 @@ public class SaveItemEditorPacket {
         
         context.enqueueWork(() -> {
             net.minecraft.server.level.ServerPlayer sender = context.getSender();
-            if (sender != null && sender.hasPermissions(2)) {
+            if (sender != null && sender.isCreative() && sender.hasPermissions(2)) {
                 net.minecraft.world.item.ItemStack stack = sender.getMainHandItem();
                 if (!stack.isEmpty()) {
                     stack.setTag(this.itemTag);
@@ -35,7 +35,7 @@ public class SaveItemEditorPacket {
                     if (msg != null) sender.sendSystemMessage(msg);
                 }
             } else if (sender != null) {
-                net.minecraft.network.chat.Component msg = net.minecraft.network.chat.Component.literal("§cVocê não tem permissão para usar esta interface.");
+                net.minecraft.network.chat.Component msg = net.minecraft.network.chat.Component.literal("§cAcesso negado: requer OP e modo Criativo.");
                 if (msg != null) sender.sendSystemMessage(msg);
             }
         });

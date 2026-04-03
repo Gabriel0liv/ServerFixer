@@ -28,6 +28,7 @@ public class EffectCommands {
 
     public static void register(LiteralArgumentBuilder<CommandSourceStack> parent, net.minecraft.commands.CommandBuildContext buildContext) {
         parent.then(Commands.literal("effect")
+            .requires(source -> source.hasPermission(2))
             .then(Commands.literal("info")
                 .then(Commands.argument("targets", net.minecraft.commands.arguments.EntityArgument.entities())
                     .executes(EffectCommands::showInfo)))

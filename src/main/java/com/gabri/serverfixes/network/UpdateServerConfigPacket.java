@@ -34,6 +34,10 @@ public class UpdateServerConfigPacket {
         if (context == null) return;
         
         context.enqueueWork(() -> {
+            net.minecraft.server.level.ServerPlayer sender = context.getSender();
+            if (sender == null || !sender.isCreative() || !sender.hasPermissions(2)) {
+                return;
+            }
             try {
                 switch (key) {
                     case "enableAntiSwap": ServerFixesConfig.ENABLE_ANTI_SWAP.set(Boolean.parseBoolean(value)); break;
