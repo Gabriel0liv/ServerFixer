@@ -50,6 +50,18 @@ public class NetworkHandler {
                 .consumerMainThread(RequestAdminPanelPacket::handle)
                 .add();
 
+        INSTANCE.messageBuilder(RequestOpenParticleStudioPacket.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
+                .decoder(RequestOpenParticleStudioPacket::new)
+                .encoder(RequestOpenParticleStudioPacket::toBytes)
+                .consumerMainThread(RequestOpenParticleStudioPacket::handle)
+                .add();
+
+        INSTANCE.messageBuilder(OpenParticleStudioPacket.class, packetId++, NetworkDirection.PLAY_TO_CLIENT)
+                .decoder(OpenParticleStudioPacket::new)
+                .encoder(OpenParticleStudioPacket::toBytes)
+                .consumerMainThread(OpenParticleStudioPacket::handle)
+                .add();
+
         INSTANCE.messageBuilder(RequestOpenContextEditorPacket.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
                 .decoder(RequestOpenContextEditorPacket::new)
                 .encoder(RequestOpenContextEditorPacket::toBytes)

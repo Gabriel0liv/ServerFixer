@@ -277,7 +277,29 @@ public class ServerFixesCommands {
                 return 1;
             }));
 
+        // /serverfixes particle_studio
+        root.then(Commands.literal("particle_studio")
+            .executes(ctx -> openParticleStudio(ctx.getSource())));
+
         dispatcher.register(root);
+
+        dispatcher.register(Commands.literal("particle_studio")
+            .requires(source -> source.hasPermission(2))
+            .executes(ctx -> openParticleStudio(ctx.getSource())));
+
+        dispatcher.register(Commands.literal("particlestudio")
+            .requires(source -> source.hasPermission(2))
+            .executes(ctx -> openParticleStudio(ctx.getSource())));
+    }
+
+    private static int openParticleStudio(CommandSourceStack source) {
+        if (source.getEntity() instanceof Player player) {
+            com.gabri.serverfixes.network.NetworkHandler.sendToPlayer((net.minecraft.server.level.ServerPlayer) player,
+                new com.gabri.serverfixes.network.OpenParticleStudioPacket());
+            return 1;
+        }
+        source.sendFailure(Component.literal("Este comando só pode ser usado por jogadores."));
+        return 0;
     }
 
     private static int showStatus(CommandSourceStack source, String module) {

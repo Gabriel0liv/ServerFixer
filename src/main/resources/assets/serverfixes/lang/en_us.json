@@ -1,5 +1,6 @@
 {
   "key.categories.serverfixes": "Server Fixes",
   "key.serverfixes.admin_panel": "Abrir Painel Admin",
-  "key.serverfixes.context_editor": "Editor Contextual (IBE)"
+  "key.serverfixes.context_editor": "Editor Contextual (IBE)",
+  "key.serverfixes.particle_studio": "Abrir Particle Studio"
 }

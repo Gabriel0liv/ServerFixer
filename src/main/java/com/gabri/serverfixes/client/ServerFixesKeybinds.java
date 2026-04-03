@@ -24,15 +24,25 @@ public class ServerFixesKeybinds {
         CATEGORY
     );
 
+    public static final KeyMapping PARTICLE_STUDIO = new KeyMapping(
+        "key.serverfixes.particle_studio",
+        InputConstants.UNKNOWN.getValue(),
+        CATEGORY
+    );
+
     @Deprecated
     public static final KeyMapping OPEN_ADMIN_PANEL = ADMIN_PANEL;
 
     @Deprecated
     public static final KeyMapping OPEN_CONTEXT_EDITOR = CONTEXT_EDITOR;
 
+    @Deprecated
+    public static final KeyMapping OPEN_PARTICLE_STUDIO = PARTICLE_STUDIO;
+
     @SubscribeEvent
     public static void registerKeyMappings(RegisterKeyMappingsEvent event) {
         event.register(ADMIN_PANEL);
         event.register(CONTEXT_EDITOR);
+        event.register(PARTICLE_STUDIO);
     }
 }

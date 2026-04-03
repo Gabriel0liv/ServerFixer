@@ -9,6 +9,7 @@ import com.gabri.serverfixes.network.NetworkHandler;
 import com.gabri.serverfixes.network.RequestAdminPanelPacket;
 import com.gabri.serverfixes.network.RequestBlockEditorPacket;
 import com.gabri.serverfixes.network.RequestOpenContextEditorPacket;
+import com.gabri.serverfixes.network.RequestOpenParticleStudioPacket;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.core.BlockPos;
@@ -45,6 +46,10 @@ public class ContextKeybindHandler {
 
         while (ServerFixesKeybinds.CONTEXT_EDITOR.consumeClick()) {
             handleOpenContextEditor(minecraft);
+        }
+
+        while (ServerFixesKeybinds.PARTICLE_STUDIO.consumeClick()) {
+            handleOpenParticleStudio(minecraft);
         }
     }
 
@@ -135,6 +140,17 @@ public class ContextKeybindHandler {
         minecraft.player.displayClientMessage(Component.literal("§7Nenhum alvo contextual disponível."), true);
     }
 
+    private static void handleOpenParticleStudio(Minecraft minecraft) {
+        if (!canUseOperatorOnly(minecraft)) {
+            if (minecraft.player != null) {
+                minecraft.player.displayClientMessage(Component.literal("§cAcesso negado: requer OP."), true);
+            }
+            return;
+        }
+
+        NetworkHandler.sendToServer(new RequestOpenParticleStudioPacket());
+    }
+
     private static Slot resolveHoveredSlot(AbstractContainerScreen<?> screen) {
         if (!(screen instanceof AbstractContainerScreenAccessor accessor)) {
             return null;
@@ -144,5 +160,9 @@ public class ContextKeybindHandler {
 
     private static boolean canUsePrivilegedEditor(Minecraft minecraft) {
         return minecraft.player != null && minecraft.player.isCreative() && minecraft.player.hasPermissions(2);
+    }
+
+    private static boolean canUseOperatorOnly(Minecraft minecraft) {
+        return minecraft.player != null && minecraft.player.hasPermissions(2);
     }
 }

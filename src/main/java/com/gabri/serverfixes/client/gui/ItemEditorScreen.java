@@ -2212,21 +2212,37 @@ public class ItemEditorScreen extends Screen {
 
         try {
             CompoundTag parsed = TagParser.parseTag(raw);
-            ItemStack rebuilt = ItemStack.of(parsed);
-            if (rebuilt.isEmpty()) {
-                this.rawNbtError = "SNBT não representa um ItemStack válido (id/Count/tag).";
-                this.rawNbtText = raw;
-                return false;
+            boolean isFullItemStack = parsed.contains("id", Tag.TAG_STRING) && parsed.contains("Count", Tag.TAG_ANY_NUMERIC);
+
+            if (isFullItemStack) {
+                ItemStack rebuilt = ItemStack.of(parsed);
+                if (rebuilt.isEmpty()) {
+                    this.rawNbtError = "SNBT contém id/Count, mas não representa um ItemStack válido.";
+                    this.rawNbtText = raw;
+                    return false;
+                }
+
+                this.rawWorkingItem = rebuilt.copy();
+                CompoundTag innerTag = rebuilt.getTag();
+                this.currentTag = innerTag != null ? innerTag.copy() : new CompoundTag();
+            } else {
+                this.currentTag = parsed.copy();
+                if (!this.rawWorkingItem.isEmpty()) {
+                    this.rawWorkingItem.setTag(this.currentTag.isEmpty() ? null : this.currentTag.copy());
+                }
             }
 
-            this.rawWorkingItem = rebuilt.copy();
-            CompoundTag innerTag = rebuilt.getTag();
-            this.currentTag = innerTag != null ? innerTag.copy() : new CompoundTag();
             this.editingEnchantedBook = detectEnchantedBookContext(this.currentTag, this.rawWorkingItem);
+            refreshGeneralInputState();
 
             CompoundTag normalizedFull = new CompoundTag();
-            this.rawWorkingItem.save(normalizedFull);
-            this.rawNbtText = normalizedFull.toString();
+            if (!this.rawWorkingItem.isEmpty()) {
+                this.rawWorkingItem.save(normalizedFull);
+                this.rawNbtText = normalizedFull.toString();
+            } else {
+                this.rawNbtText = parsed.toString();
+            }
+
             if (this.rawNbtBox != null) {
                 this.rawNbtBox.setValue(this.rawNbtText);
                 this.rawNbtBox.refreshSuggestionsNow();

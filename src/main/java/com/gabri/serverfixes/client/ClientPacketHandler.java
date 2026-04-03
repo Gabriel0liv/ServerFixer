@@ -35,4 +35,8 @@ public class ClientPacketHandler {
             blockEntityTag
         ));
     }
+
+    public static void handleOpenParticleStudio() {
+        Minecraft.getInstance().setScreen(new com.gabri.serverfixes.client.gui.ParticleStudioScreen());
+    }
 }
