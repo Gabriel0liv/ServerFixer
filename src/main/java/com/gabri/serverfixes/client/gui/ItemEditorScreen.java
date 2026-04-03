@@ -10,6 +10,7 @@ import com.gabri.serverfixes.config.ServerFixesConfig;
 import com.gabri.serverfixes.network.NetworkHandler;
 import com.gabri.serverfixes.network.SaveItemEditorPacket;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
@@ -48,7 +49,7 @@ import java.util.regex.Pattern;
 @SuppressWarnings("null")
 public class ItemEditorScreen extends Screen {
     public CompoundTag currentTag;
-    private Category currentCategory = Category.MENU;
+    private Category currentCategory = Category.GENERAL;
     // Active sub-tab used when the sidebar category is the single Effects entry
     private Category activeEffectTab = Category.ON_USE;
     private List<AttributeRow> attributeRows = new ArrayList<>();
@@ -97,6 +98,10 @@ public class ItemEditorScreen extends Screen {
     private ScrollTarget draggingScrollTarget = ScrollTarget.NONE;
     private int draggingThumbOffsetY = 0;
     private boolean editingEnchantedBook;
+    private SelectableEditBox generalCountBox;
+    private SelectableEditBox generalDamageBox;
+    private int editorContainerId = -1;
+    private int editorSlotIndex = -1;
 
     private static final int SIDEBAR_WIDTH = 150;
     private static final int CONTENT_PADDING = 12;
@@ -129,7 +134,7 @@ public class ItemEditorScreen extends Screen {
     private static final String SF_HIDE_EFFECT_FLAGS_TAG = "SF_HideEffectFlags";
 
     public enum Category {
-        MENU("Editor de Item"),
+        GENERAL("Geral"),
         DISPLAY("Display"),
         ATTRIBUTES("Atributos"),
         ENCHANTMENTS("Encantamentos"),
@@ -147,13 +152,40 @@ public class ItemEditorScreen extends Screen {
     }
 
     public ItemEditorScreen(CompoundTag itemTag) {
+        this(resolveInitialWorkingItem(itemTag != null ? itemTag : new CompoundTag()), -1, -1);
+        if (itemTag != null) {
+            this.currentTag = itemTag.copy();
+            if (!this.rawWorkingItem.isEmpty()) {
+                this.rawWorkingItem.setTag(this.currentTag.isEmpty() ? null : this.currentTag.copy());
+            }
+            this.rawOriginalFullItemNbt = buildFullItemNbt(this.rawWorkingItem, this.currentTag);
+            this.rawNbtText = this.rawOriginalFullItemNbt.toString();
+            this.editingEnchantedBook = detectEnchantedBookContext(this.currentTag, this.rawWorkingItem);
+            this.displayForm = DisplayEditorFormModel.fromTag(this.currentTag);
+        }
+    }
+
+    public ItemEditorScreen(ItemStack sourceStack, int containerId, int slotIndex) {
         super(Component.literal("Item Editor"));
-        this.currentTag = itemTag != null ? itemTag.copy() : new CompoundTag();
-        this.rawWorkingItem = resolveInitialWorkingItem(this.currentTag);
+        this.editorContainerId = containerId;
+        this.editorSlotIndex = slotIndex;
+
+        ItemStack baseStack = sourceStack != null ? sourceStack.copy() : ItemStack.EMPTY;
+        if (baseStack.isEmpty()) {
+            baseStack = resolveInitialWorkingItem(new CompoundTag());
+        }
+
+        this.rawWorkingItem = baseStack.copy();
+        CompoundTag stackTag = this.rawWorkingItem.getTag();
+        this.currentTag = stackTag != null ? stackTag.copy() : new CompoundTag();
         this.rawOriginalFullItemNbt = buildFullItemNbt(this.rawWorkingItem, this.currentTag);
         this.rawNbtText = this.rawOriginalFullItemNbt.toString();
         this.editingEnchantedBook = detectEnchantedBookContext(this.currentTag, this.rawWorkingItem);
         this.displayForm = DisplayEditorFormModel.fromTag(this.currentTag);
+    }
+
+    public ItemEditorScreen(ItemStack sourceStack) {
+        this(sourceStack, -1, -1);
     }
 
     private static boolean detectEnchantedBookContext(CompoundTag itemTag, ItemStack sourceStack) {
@@ -218,7 +250,7 @@ public class ItemEditorScreen extends Screen {
         int contentMidX = contentStartX + (contentWidth / 2);
 
         if (this.currentCategory == Category.SPAWN_EGG && !isEditingSpawnEgg()) {
-            this.currentCategory = Category.MENU;
+            this.currentCategory = Category.GENERAL;
         }
 
         int y = 40;
@@ -230,6 +262,9 @@ public class ItemEditorScreen extends Screen {
             boolean active = currentCategory == cat;
             Component title = Component.literal((active ? "§6> " : "") + cat.title);
             this.addRenderableWidget(Button.builder(title, (btn) -> {
+                if (this.currentCategory == Category.GENERAL && cat != Category.GENERAL) {
+                    applyGeneralChanges();
+                }
                 if (this.currentCategory == Category.RAW_NBT && cat != Category.RAW_NBT) {
                     if (!applyRawNbtIfValid()) {
                         this.init();
@@ -253,7 +288,7 @@ public class ItemEditorScreen extends Screen {
             y += 28;
         }
 
-        if (currentCategory != Category.MENU) {
+        if (currentCategory != Category.GENERAL) {
             if (currentCategory == Category.DISPLAY) {
                 initDisplayCategory(contentStartX, contentWidth);
             } else {
@@ -289,11 +324,12 @@ public class ItemEditorScreen extends Screen {
         }
 
         int bottomY = this.height - 30;
-        if (currentCategory == Category.MENU) {
+        if (currentCategory == Category.GENERAL) {
             this.addRenderableWidget(Button.builder(Component.literal("Salvar no Item"), (btn) -> {
                 applyDisplayChanges();
+                applyGeneralChanges();
                 normalizePotionEffectsForCompatibility();
-                NetworkHandler.sendToServer(new SaveItemEditorPacket(this.currentTag));
+                NetworkHandler.sendToServer(createSavePacket());
                 this.minecraft.setScreen(null);
             }).bounds(contentMidX - 105, bottomY, 100, 20).build());
 
@@ -302,27 +338,29 @@ public class ItemEditorScreen extends Screen {
         } else if (currentCategory == Category.DISPLAY) {
             this.addRenderableWidget(Button.builder(Component.literal("Salvar no Item"), (btn) -> {
                 applyDisplayChanges();
+                applyGeneralChanges();
                 normalizePotionEffectsForCompatibility();
-                NetworkHandler.sendToServer(new SaveItemEditorPacket(this.currentTag));
+                NetworkHandler.sendToServer(createSavePacket());
                 // Close the screen after saving (match MENU behavior)
                 this.minecraft.setScreen(null);
             }).bounds(contentMidX - 105, bottomY, 100, 20).build());
 
             this.addRenderableWidget(Button.builder(Component.literal("Voltar"), (btn) -> {
                 applyDisplayChanges();
-                this.currentCategory = Category.MENU;
+                this.currentCategory = Category.GENERAL;
                 this.init();
             }).bounds(contentMidX + 5, bottomY, 100, 20).build());
         } else if (currentCategory == Category.ATTRIBUTES) {
             // On attributes screen show Save and Back
             this.addRenderableWidget(Button.builder(Component.literal("Salvar no Item"), (btn) -> {
+                applyGeneralChanges();
                 normalizePotionEffectsForCompatibility();
-                NetworkHandler.sendToServer(new SaveItemEditorPacket(this.currentTag));
+                NetworkHandler.sendToServer(createSavePacket());
                 this.minecraft.setScreen(null);
             }).bounds(contentMidX - 105, bottomY, 100, 20).build());
 
             this.addRenderableWidget(Button.builder(Component.literal("Voltar"), (btn) -> {
-                this.currentCategory = Category.MENU;
+                this.currentCategory = Category.GENERAL;
                 this.init();
             }).bounds(contentMidX + 5, bottomY, 100, 20).build());
         } else {
@@ -331,8 +369,9 @@ public class ItemEditorScreen extends Screen {
                     this.init();
                     return;
                 }
+                applyGeneralChanges();
                 normalizePotionEffectsForCompatibility();
-                NetworkHandler.sendToServer(new SaveItemEditorPacket(this.currentTag));
+                NetworkHandler.sendToServer(createSavePacket());
                 this.minecraft.setScreen(null);
             }).bounds(contentMidX - 105, bottomY, 100, 20).build());
 
@@ -341,13 +380,124 @@ public class ItemEditorScreen extends Screen {
                     this.init();
                     return;
                 }
-                this.currentCategory = Category.MENU;
+                this.currentCategory = Category.GENERAL;
                 this.init();
             }).bounds(contentMidX + 5, bottomY, 100, 20).build());
         }
     }
 
+    private SaveItemEditorPacket createSavePacket() {
+        int count = this.rawWorkingItem.isEmpty() ? 1 : this.rawWorkingItem.getCount();
+        int damage = (this.rawWorkingItem.isEmpty() || !this.rawWorkingItem.isDamageableItem()) ? 0 : this.rawWorkingItem.getDamageValue();
+        return new SaveItemEditorPacket(this.currentTag, count, damage, this.editorContainerId, this.editorSlotIndex);
+    }
+
+    private void initGeneralCategory(int contentStartX, int contentWidth) {
+        int panelX = contentStartX + 10;
+        int panelY = 44;
+        int panelW = Math.max(220, contentWidth - 20);
+
+        int countMax = Math.max(1, this.rawWorkingItem.isEmpty() ? 64 : this.rawWorkingItem.getMaxStackSize());
+        int damageMax = this.rawWorkingItem.isDamageableItem() ? Math.max(0, this.rawWorkingItem.getMaxDamage()) : 0;
+
+        int countY = panelY + 36;
+        this.generalCountBox = new SelectableEditBox(this.font, panelX + 70, countY, 72, 18, Component.literal("Count"));
+        this.generalCountBox.setFilter(value -> value.isEmpty() || value.matches("\\d{1,4}"));
+        this.generalCountBox.setValue(Integer.toString(this.rawWorkingItem.isEmpty() ? 1 : this.rawWorkingItem.getCount()));
+        this.addRenderableWidget(this.generalCountBox);
+
+        this.generalDamageBox = new SelectableEditBox(this.font, panelX + 70, countY + 24, 72, 18, Component.literal("Damage"));
+        this.generalDamageBox.setFilter(value -> value.isEmpty() || value.matches("\\d{1,7}"));
+        this.generalDamageBox.setValue(Integer.toString((this.rawWorkingItem.isDamageableItem() ? this.rawWorkingItem.getDamageValue() : 0)));
+        this.generalDamageBox.setEditable(this.rawWorkingItem.isDamageableItem());
+        this.addRenderableWidget(this.generalDamageBox);
+
+        String toggleLabel = this.currentTag.getBoolean("Unbreakable") ? "[ X ] Inquebrável" : "[   ] Inquebrável";
+        this.addRenderableWidget(Button.builder(Component.literal(toggleLabel), btn -> {
+            if (this.currentTag.getBoolean("Unbreakable")) {
+                this.currentTag.remove("Unbreakable");
+            } else {
+                this.currentTag.putBoolean("Unbreakable", true);
+            }
+            applyGeneralChanges();
+            this.init();
+        }).bounds(panelX + 4, countY + 52, 170, 18).build());
+
+        if (this.generalCountBox != null) {
+            this.generalCountBox.setHint(Component.literal("1.." + countMax));
+        }
+        if (this.generalDamageBox != null && this.rawWorkingItem.isDamageableItem()) {
+            this.generalDamageBox.setHint(Component.literal("0.." + damageMax));
+        }
+    }
+
+    private void applyGeneralChanges() {
+        if (this.rawWorkingItem.isEmpty()) {
+            return;
+        }
+
+        int countMax = Math.max(1, this.rawWorkingItem.getMaxStackSize());
+        int currentCount = Math.max(1, this.rawWorkingItem.getCount());
+        int count = parseIntWithin(this.generalCountBox != null ? this.generalCountBox.getValue() : null, currentCount, 1, countMax);
+        this.rawWorkingItem.setCount(count);
+
+        if (this.rawWorkingItem.isDamageableItem()) {
+            int damageMax = Math.max(0, this.rawWorkingItem.getMaxDamage());
+            int currentDamage = Mth.clamp(this.rawWorkingItem.getDamageValue(), 0, damageMax);
+            int damage = parseIntWithin(this.generalDamageBox != null ? this.generalDamageBox.getValue() : null, currentDamage, 0, damageMax);
+            this.rawWorkingItem.setDamageValue(damage);
+        }
+
+        this.rawWorkingItem.setTag(this.currentTag.isEmpty() ? null : this.currentTag.copy());
+        CompoundTag full = new CompoundTag();
+        this.rawWorkingItem.save(full);
+        this.rawNbtText = full.toString();
+    }
+
+    private int parseIntWithin(String raw, int fallback, int min, int max) {
+        if (raw == null || raw.isBlank()) {
+            return Mth.clamp(fallback, min, max);
+        }
+        try {
+            return Mth.clamp(Integer.parseInt(raw.trim()), min, max);
+        } catch (Exception ignored) {
+            return Mth.clamp(fallback, min, max);
+        }
+    }
+
+    private void renderGeneralPanel(GuiGraphics graphics, int contentStartX, int contentWidth) {
+        int panelX = contentStartX + 10;
+        int panelY = 44;
+        int panelW = Math.max(220, contentWidth - 20);
+        int panelH = 132;
+        int iconX = panelX + 16;
+        int iconY = panelY + 24;
+
+        GuiLayoutUtils.drawPanel(graphics, panelX - 6, panelY - 8, panelW + 12, panelH, 0xCC1C2532, 0xFF4E6B8D);
+
+        if (!this.rawWorkingItem.isEmpty()) {
+            graphics.renderItem(this.rawWorkingItem, iconX, iconY);
+            graphics.renderItemDecorations(this.font, this.rawWorkingItem, iconX, iconY);
+            ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(this.rawWorkingItem.getItem());
+            String idText = itemId != null ? itemId.toString() : "minecraft:air";
+            GuiLayoutUtils.drawFieldLabel(graphics, this.font, "ID: " + idText, panelX + 44, panelY + 8, 0xFFE5F6FF);
+        } else {
+            GuiLayoutUtils.drawFieldLabel(graphics, this.font, "ID: minecraft:air", panelX + 44, panelY + 8, 0xFFE5F6FF);
+        }
+
+        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Count", panelX + 6, panelY + 40, 0xFFCCD9F1);
+        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Damage", panelX + 6, panelY + 64, 0xFFCCD9F1);
+
+        if (!this.rawWorkingItem.isDamageableItem()) {
+            graphics.drawString(this.font, "§7Não aplicável para este item", panelX + 150, panelY + 66, 0xFF9FB0C5);
+        }
+    }
+
     private void initCategoryList(int contentStartX, int contentWidth) {
+        if (currentCategory == Category.GENERAL) {
+            initGeneralCategory(contentStartX, contentWidth);
+            return;
+        }
         if (currentCategory == Category.DISPLAY) {
             return;
         }
@@ -2027,10 +2177,10 @@ public class ItemEditorScreen extends Screen {
         GuiLayoutUtils.drawPanel(graphics, contentStartX - 6, 35, contentWidth + 10, this.height - 38, 0xD9182432, 0xFF4E6B8D);
         GuiLayoutUtils.drawTitleWithUnderline(graphics, this.font, Component.literal("§6§l" + currentCategory.title), midContentX, 15, 0xFFF5F5F5, 0xFF3ACAFF);
 
-        if (currentCategory != Category.MENU) {
+        if (currentCategory != Category.GENERAL) {
             renderListEntries(graphics, contentStartX, contentWidth);
         } else {
-            graphics.drawCenteredString(this.font, "§eEscolha uma categoria para editar este item", midContentX, this.height / 2, 0xAAAAAA);
+            renderGeneralPanel(graphics, contentStartX, contentWidth);
         }
 
         super.render(graphics, mouseX, mouseY, partialTicks);
@@ -2040,6 +2190,11 @@ public class ItemEditorScreen extends Screen {
     }
 
     private void renderListEntries(GuiGraphics graphics, int contentStartX, int contentWidth) {
+        if (currentCategory == Category.GENERAL) {
+            renderGeneralPanel(graphics, contentStartX, contentWidth);
+            return;
+        }
+
         if (currentCategory == Category.DISPLAY) {
             renderDisplayForm(graphics, contentStartX, contentWidth);
             return;

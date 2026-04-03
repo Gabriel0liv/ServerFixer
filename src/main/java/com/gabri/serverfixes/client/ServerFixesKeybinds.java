@@ -10,16 +10,16 @@ import net.minecraftforge.fml.common.Mod;
 
 @Mod.EventBusSubscriber(modid = ServerFixes.MODID, value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.MOD)
 public class ServerFixesKeybinds {
-    private static final String CATEGORY = "key.categories.server_fixes";
+    private static final String CATEGORY = "key.categories.serverfixes";
 
     public static final KeyMapping OPEN_ADMIN_PANEL = new KeyMapping(
-        "key.server_fixes.admin_panel",
+        "key.serverfixes.admin_panel",
         InputConstants.UNKNOWN.getValue(),
         CATEGORY
     );
 
     public static final KeyMapping OPEN_CONTEXT_EDITOR = new KeyMapping(
-        "key.server_fixes.context_editor",
+        "key.serverfixes.context_editor",
         InputConstants.UNKNOWN.getValue(),
         CATEGORY
     );

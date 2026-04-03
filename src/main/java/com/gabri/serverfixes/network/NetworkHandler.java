@@ -67,6 +67,24 @@ public class NetworkHandler {
                 .encoder(SaveContextNbtPacket::toBytes)
                 .consumerMainThread(SaveContextNbtPacket::handle)
                 .add();
+
+        INSTANCE.messageBuilder(RequestBlockEditorPacket.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
+                .decoder(RequestBlockEditorPacket::new)
+                .encoder(RequestBlockEditorPacket::toBytes)
+                .consumerMainThread(RequestBlockEditorPacket::handle)
+                .add();
+
+        INSTANCE.messageBuilder(OpenBlockEditorPacket.class, packetId++, NetworkDirection.PLAY_TO_CLIENT)
+                .decoder(OpenBlockEditorPacket::new)
+                .encoder(OpenBlockEditorPacket::toBytes)
+                .consumerMainThread(OpenBlockEditorPacket::handle)
+                .add();
+
+        INSTANCE.messageBuilder(SaveBlockEditorPacket.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
+                .decoder(SaveBlockEditorPacket::new)
+                .encoder(SaveBlockEditorPacket::toBytes)
+                .consumerMainThread(SaveBlockEditorPacket::handle)
+                .add();
     }
 
     public static void sendToPlayer(ServerPlayer player, Object message) {

@@ -25,4 +25,14 @@ public class ClientPacketHandler {
             title
         ));
     }
+
+    public static void handleOpenBlockEditor(BlockPos blockPos, String blockId, CompoundTag stateValues, CompoundTag allowedValues, CompoundTag blockEntityTag) {
+        Minecraft.getInstance().setScreen(new com.gabri.serverfixes.client.gui.BlockEditorScreen(
+            blockPos,
+            blockId,
+            stateValues,
+            allowedValues,
+            blockEntityTag
+        ));
+    }
 }
