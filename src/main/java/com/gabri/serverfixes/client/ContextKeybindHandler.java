@@ -3,6 +3,7 @@ package com.gabri.serverfixes.client;
 import com.gabri.serverfixes.ServerFixes;
 import com.gabri.serverfixes.client.gui.ItemEditorScreen;
 import com.gabri.serverfixes.mixin.AbstractContainerScreenAccessor;
+import com.mojang.blaze3d.platform.InputConstants;
 import com.gabri.serverfixes.network.ContextTargetType;
 import com.gabri.serverfixes.network.NetworkHandler;
 import com.gabri.serverfixes.network.RequestAdminPanelPacket;
@@ -10,13 +11,16 @@ import com.gabri.serverfixes.network.RequestBlockEditorPacket;
 import com.gabri.serverfixes.network.RequestOpenContextEditorPacket;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.client.event.ScreenEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -35,12 +39,41 @@ public class ContextKeybindHandler {
             return;
         }
 
-        while (ServerFixesKeybinds.OPEN_ADMIN_PANEL.consumeClick()) {
+        while (ServerFixesKeybinds.ADMIN_PANEL.consumeClick()) {
             handleOpenAdminPanel(minecraft);
         }
 
-        while (ServerFixesKeybinds.OPEN_CONTEXT_EDITOR.consumeClick()) {
+        while (ServerFixesKeybinds.CONTEXT_EDITOR.consumeClick()) {
             handleOpenContextEditor(minecraft);
+        }
+    }
+
+    @SubscribeEvent
+    public static void onScreenKeyPressedPre(ScreenEvent.KeyPressed.Pre event) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (!canUsePrivilegedEditor(minecraft)) {
+            return;
+        }
+
+        if (!(event.getScreen() instanceof AbstractContainerScreen<?> containerScreen)) {
+            return;
+        }
+
+        if (!ServerFixesKeybinds.CONTEXT_EDITOR.isActiveAndMatches(InputConstants.getKey(event.getKeyCode(), event.getScanCode()))) {
+            return;
+        }
+
+        Slot slot = resolveHoveredSlot(containerScreen);
+        if (slot == null || !slot.hasItem()) {
+            return;
+        }
+
+        AbstractContainerMenu menu = containerScreen.getMenu();
+        minecraft.setScreen(new ItemEditorScreen(slot.getItem().copy(), menu.containerId, slot.index));
+        event.setCanceled(true);
+
+        while (ServerFixesKeybinds.CONTEXT_EDITOR.consumeClick()) {
+            // Drain pending clicks to avoid duplicate handling on the next client tick.
         }
     }
 
@@ -70,8 +103,17 @@ public class ContextKeybindHandler {
 
         HitResult hitResult = minecraft.hitResult;
         if (hitResult instanceof BlockHitResult blockHitResult) {
-            NetworkHandler.sendToServer(new RequestBlockEditorPacket(blockHitResult.getBlockPos()));
-            return;
+            BlockPos blockPos = blockHitResult.getBlockPos();
+            BlockState blockState = minecraft.level.getBlockState(blockPos);
+
+            if (!blockState.isAir()) {
+                boolean hasProperties = !blockState.getProperties().isEmpty();
+                boolean hasBlockEntity = minecraft.level.getBlockEntity(blockPos) != null;
+                if (hasProperties || hasBlockEntity) {
+                    NetworkHandler.sendToServer(new RequestBlockEditorPacket(blockPos));
+                    return;
+                }
+            }
         }
 
         if (hitResult instanceof EntityHitResult entityHitResult) {

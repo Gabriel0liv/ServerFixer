@@ -12,21 +12,27 @@ import net.minecraftforge.fml.common.Mod;
 public class ServerFixesKeybinds {
     private static final String CATEGORY = "key.categories.serverfixes";
 
-    public static final KeyMapping OPEN_ADMIN_PANEL = new KeyMapping(
+    public static final KeyMapping ADMIN_PANEL = new KeyMapping(
         "key.serverfixes.admin_panel",
         InputConstants.UNKNOWN.getValue(),
         CATEGORY
     );
 
-    public static final KeyMapping OPEN_CONTEXT_EDITOR = new KeyMapping(
+    public static final KeyMapping CONTEXT_EDITOR = new KeyMapping(
         "key.serverfixes.context_editor",
         InputConstants.UNKNOWN.getValue(),
         CATEGORY
     );
 
+    @Deprecated
+    public static final KeyMapping OPEN_ADMIN_PANEL = ADMIN_PANEL;
+
+    @Deprecated
+    public static final KeyMapping OPEN_CONTEXT_EDITOR = CONTEXT_EDITOR;
+
     @SubscribeEvent
     public static void registerKeyMappings(RegisterKeyMappingsEvent event) {
-        event.register(OPEN_ADMIN_PANEL);
-        event.register(OPEN_CONTEXT_EDITOR);
+        event.register(ADMIN_PANEL);
+        event.register(CONTEXT_EDITOR);
     }
 }
