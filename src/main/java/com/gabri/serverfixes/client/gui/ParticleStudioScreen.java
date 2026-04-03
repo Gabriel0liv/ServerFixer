@@ -9,6 +9,7 @@ import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.CycleButton;
+import net.minecraft.client.gui.components.ObjectSelectionList;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.particle.SpriteSet;
 import net.minecraft.client.renderer.texture.TextureAtlasSprite;
@@ -17,6 +18,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import net.minecraftforge.registries.ForgeRegistries;
 import org.jetbrains.annotations.NotNull;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -25,8 +27,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.function.IntConsumer;
 import java.util.function.DoubleConsumer;
+import java.util.function.IntConsumer;
 
 @SuppressWarnings("null")
 public class ParticleStudioScreen extends Screen {
@@ -48,6 +50,7 @@ public class ParticleStudioScreen extends Screen {
     private final List<ResourceLocation> filteredParticles = new ArrayList<>();
 
     private SelectableEditBox searchBox;
+    private ParticleList particleList;
     private SelectableEditBox commandOutputBox;
 
     private DoubleParameterSlider deltaXSlider;
@@ -70,8 +73,6 @@ public class ParticleStudioScreen extends Screen {
     private int maxRightScroll = 0;
     private final List<AbstractWidget> rightPanelWidgets = new ArrayList<>();
     private final Map<AbstractWidget, Integer> widgetOriginalY = new HashMap<>();
-
-    private int scrollOffset = 0;
 
     private int leftX;
     private int leftY;
@@ -115,7 +116,6 @@ public class ParticleStudioScreen extends Screen {
         if (!this.filteredParticles.isEmpty()) {
             this.selectedParticleId = this.filteredParticles.get(0);
         }
-        // Do not touch texture atlas in constructor; resources may not be ready yet.
         updateCommandString();
     }
 
@@ -136,69 +136,69 @@ public class ParticleStudioScreen extends Screen {
         this.searchBox.setMaxLength(80);
         this.searchBox.setResponder(value -> applySearchFilter());
         this.addRenderableWidget(this.searchBox);
+        applySearchFilter();
 
-        // Keep widgets strictly inside the right panel to avoid leaking/cropping at high GUI scale.
         int sliderX = this.rightX + 5;
         int sliderW = this.rightW - 10;
-        int sliderY = this.rightY + 28;
+        int currentY = this.rightY + 28;
 
-        this.deltaXSlider = registerRightPanelWidget(new DoubleParameterSlider(sliderX, sliderY, sliderW, 18, "Delta X", 0.0D, 5.0D, this.deltaX, 2, value -> {
+        this.deltaXSlider = registerRightPanelWidget(new DoubleParameterSlider(sliderX, currentY, sliderW, 18, "Delta X", 0.0D, 5.0D, this.deltaX, 2, value -> {
             this.deltaX = value;
             updateCommandString();
         }));
-        sliderY += 24;
+        currentY += 24;
 
-        this.deltaYSlider = registerRightPanelWidget(new DoubleParameterSlider(sliderX, sliderY, sliderW, 18, "Delta Y", 0.0D, 5.0D, this.deltaY, 2, value -> {
+        this.deltaYSlider = registerRightPanelWidget(new DoubleParameterSlider(sliderX, currentY, sliderW, 18, "Delta Y", 0.0D, 5.0D, this.deltaY, 2, value -> {
             this.deltaY = value;
             updateCommandString();
         }));
-        sliderY += 24;
+        currentY += 24;
 
-        this.deltaZSlider = registerRightPanelWidget(new DoubleParameterSlider(sliderX, sliderY, sliderW, 18, "Delta Z", 0.0D, 5.0D, this.deltaZ, 2, value -> {
+        this.deltaZSlider = registerRightPanelWidget(new DoubleParameterSlider(sliderX, currentY, sliderW, 18, "Delta Z", 0.0D, 5.0D, this.deltaZ, 2, value -> {
             this.deltaZ = value;
             updateCommandString();
         }));
-        sliderY += 24;
+        currentY += 24;
 
-        this.speedSlider = registerRightPanelWidget(new DoubleParameterSlider(sliderX, sliderY, sliderW, 18, "Speed", 0.0D, 1.0D, this.speed, 2, value -> {
+        this.speedSlider = registerRightPanelWidget(new DoubleParameterSlider(sliderX, currentY, sliderW, 18, "Speed", 0.0D, 1.0D, this.speed, 2, value -> {
             this.speed = value;
             updateCommandString();
         }));
-        sliderY += 24;
+        currentY += 24;
 
-        this.countSlider = registerRightPanelWidget(new IntParameterSlider(sliderX, sliderY, sliderW, 18, "Count", 1, 1000, this.count, value -> {
+        this.countSlider = registerRightPanelWidget(new IntParameterSlider(sliderX, currentY, sliderW, 18, "Count", 1, 1000, this.count, value -> {
             this.count = value;
             updateCommandString();
         }));
-        sliderY += 28;
+        currentY += 28;
 
         this.forceToggle = registerRightPanelWidget(CycleButton.builder((Boolean value) -> Component.literal(value ? "FORCE" : "NORMAL"))
             .withValues(false, true)
             .withInitialValue(this.force)
             .displayOnlyValue()
-            .create(sliderX, sliderY, sliderW, 18, Component.literal("Modo"), (btn, value) -> {
+            .create(sliderX, currentY, sliderW, 18, Component.literal("Modo"), (btn, value) -> {
                 this.force = value;
                 updateCommandString();
             }));
-        sliderY += 24;
+        currentY += 24;
 
-        this.commandOutputBox = new SelectableEditBox(this.font, sliderX, sliderY, sliderW, 18, Component.literal("Comando"));
+        this.commandOutputBox = new SelectableEditBox(this.font, sliderX, currentY, sliderW, 18, Component.literal("Comando"));
         this.commandOutputBox.setEditable(false);
         this.commandOutputBox.setCanLoseFocus(true);
         registerRightPanelWidget(this.commandOutputBox);
-        sliderY += 26;
+        currentY += 26;
 
         this.testButton = Button.builder(Component.literal("Testar"), btn -> testCurrentCommand())
-            .bounds(sliderX, sliderY, (sliderW - 4) / 2, 20)
+            .bounds(sliderX, currentY, (sliderW - 4) / 2, 20)
             .build();
         this.copyButton = Button.builder(Component.literal("Copiar"), btn -> copyCurrentCommand())
-            .bounds(sliderX + ((sliderW - 4) / 2) + 4, sliderY, (sliderW - 4) / 2, 20)
+            .bounds(sliderX + ((sliderW - 4) / 2) + 4, currentY, (sliderW - 4) / 2, 20)
             .build();
 
         registerRightPanelWidget(this.testButton);
         registerRightPanelWidget(this.copyButton);
 
-        int currentY = sliderY + 22;
+        currentY += 24;
         this.maxRightScroll = Math.max(0, currentY - this.height + 10);
         this.rightScrollAmount = Mth.clamp(this.rightScrollAmount, 0.0D, this.maxRightScroll);
         applyRightScroll();
@@ -209,6 +209,9 @@ public class ParticleStudioScreen extends Screen {
 
         refreshSelectedSpriteSafe();
         updateCommandString();
+        if (this.particleList != null) {
+            this.setFocused(this.particleList);
+        }
     }
 
     private void updateLayout() {
@@ -274,13 +277,62 @@ public class ParticleStudioScreen extends Screen {
         }
 
         this.filteredParticles.removeIf(Objects::isNull);
-
-        this.scrollOffset = 0;
-        if (this.selectedParticleId == null || !this.filteredParticles.contains(this.selectedParticleId)) {
-            this.selectedParticleId = this.filteredParticles.isEmpty() ? null : this.filteredParticles.get(0);
-            refreshSelectedSpriteSafe();
+        ResourceLocation nextSelection = this.selectedParticleId;
+        if (nextSelection == null || !this.filteredParticles.contains(nextSelection)) {
+            nextSelection = this.filteredParticles.isEmpty() ? null : this.filteredParticles.get(0);
         }
+        this.selectedParticleId = nextSelection;
+        rebuildParticleList();
+        setSelectedParticle(nextSelection);
+    }
+
+    private void rebuildParticleList() {
+        if (this.minecraft == null) {
+            return;
+        }
+        if (this.particleList != null) {
+            this.removeWidget(this.particleList);
+        }
+
+        this.particleList = new ParticleList(this.minecraft, this.listAreaW, this.height, this.listAreaY + 1, this.listAreaY + this.listAreaH - 1, ROW_HEIGHT, this.listAreaX);
+        for (ResourceLocation id : this.filteredParticles) {
+            if (id == null) {
+                continue;
+            }
+            this.particleList.add(new ParticleEntry(id));
+        }
+        this.addRenderableWidget(this.particleList);
+
+        if (this.selectedParticleId != null) {
+            ParticleEntry entry = this.particleList.findEntry(this.selectedParticleId);
+            if (entry != null) {
+                this.particleList.setSelected(entry);
+                this.particleList.ensureEntryVisible(entry);
+            }
+        } else if (!this.particleList.children().isEmpty()) {
+            ParticleEntry entry = this.particleList.children().get(0);
+            this.particleList.setSelected(entry);
+            setSelectedParticle(entry.getParticleId());
+        }
+    }
+
+    private void setSelectedParticle(ResourceLocation id) {
+        this.selectedParticleId = id;
+        refreshSelectedSpriteSafe();
         updateCommandString();
+
+        if (this.particleList == null) {
+            return;
+        }
+        if (id == null) {
+            this.particleList.setSelected(null);
+            return;
+        }
+        ParticleEntry entry = this.particleList.findEntry(id);
+        if (entry != null) {
+            this.particleList.setSelected(entry);
+            this.particleList.ensureEntryVisible(entry);
+        }
     }
 
     private void refreshSelectedSpriteSafe() {
@@ -312,8 +364,12 @@ public class ParticleStudioScreen extends Screen {
         }
 
         boolean hasSelection = this.selectedParticleId != null && !this.commandString.isBlank();
-        if (this.testButton != null) this.testButton.active = hasSelection;
-        if (this.copyButton != null) this.copyButton.active = hasSelection;
+        if (this.testButton != null) {
+            this.testButton.active = hasSelection;
+        }
+        if (this.copyButton != null) {
+            this.copyButton.active = hasSelection;
+        }
     }
 
     private void testCurrentCommand() {
@@ -333,37 +389,40 @@ public class ParticleStudioScreen extends Screen {
     }
 
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (isInsideListArea(mouseX, mouseY)) {
-            int localY = (int) mouseY - this.listAreaY;
-            int row = localY / ROW_HEIGHT;
-            int index = this.scrollOffset + row;
-            if (row >= 0 && index >= 0 && index < this.filteredParticles.size()) {
-                this.selectedParticleId = this.filteredParticles.get(index);
-                refreshSelectedSpriteSafe();
-                updateCommandString();
-                return true;
-            }
-        }
-        return super.mouseClicked(mouseX, mouseY, button);
-    }
-
-    @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollY) {
-        if (isInsideListArea(mouseX, mouseY)) {
-            int visibleRows = Math.max(1, this.listAreaH / ROW_HEIGHT);
-            int maxOffset = Math.max(0, this.filteredParticles.size() - visibleRows);
-            int next = this.scrollOffset - (int) Math.signum(scrollY);
-            this.scrollOffset = Mth.clamp(next, 0, maxOffset);
-            return true;
-        }
-        if (mouseX >= this.rightX && this.maxRightScroll > 0) {
+        if (mouseX >= (this.width - this.rightW) && this.maxRightScroll > 0) {
             this.rightScrollAmount -= scrollY * 15.0D;
             this.rightScrollAmount = Mth.clamp(this.rightScrollAmount, 0.0D, this.maxRightScroll);
             applyRightScroll();
             return true;
         }
         return super.mouseScrolled(mouseX, mouseY, scrollY);
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (this.searchBox != null && this.searchBox.isFocused()) {
+            return super.keyPressed(keyCode, scanCode, modifiers);
+        }
+
+        if (this.particleList != null && !this.particleList.children().isEmpty()) {
+            if (keyCode == GLFW.GLFW_KEY_UP || keyCode == GLFW.GLFW_KEY_DOWN) {
+                List<ParticleEntry> entries = this.particleList.children();
+                ParticleEntry current = this.particleList.getSelected();
+                int currentIndex = current != null ? entries.indexOf(current) : 0;
+                int newIndex = keyCode == GLFW.GLFW_KEY_UP
+                    ? Math.max(0, currentIndex - 1)
+                    : Math.min(entries.size() - 1, currentIndex + 1);
+
+                ParticleEntry entry = entries.get(newIndex);
+                this.particleList.setSelected(entry);
+                setSelectedParticle(entry.getParticleId());
+                this.particleList.ensureEntryVisible(entry);
+                return true;
+            }
+        }
+
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     @Override
@@ -374,7 +433,6 @@ public class ParticleStudioScreen extends Screen {
 
         updateLayout();
 
-        // Dark world overlay + dashboard panels (avoid vanilla dirt background)
         graphics.fill(0, 0, this.width, this.height, 0xDD000000);
 
         graphics.fill(this.leftX, this.leftY, this.leftX + this.leftW, this.leftY + this.leftH, 0x44242D3D);
@@ -389,7 +447,8 @@ public class ParticleStudioScreen extends Screen {
         graphics.drawString(this.font, "Preview 2D", this.centerX + 8, this.centerY + 8, 0xFFF4F7FF);
         graphics.drawString(this.font, "Command Builder", this.rightX + 8, this.rightY + 8, 0xFFF4F7FF);
 
-        renderParticleList(graphics, mouseX, mouseY);
+        GuiLayoutUtils.drawPanel(graphics, this.listAreaX, this.listAreaY, this.listAreaW, this.listAreaH, 0xB1121924, 0xFF2E4258);
+
         renderPreviewPanel(graphics);
 
         boolean clipRightPanel = !this.rightPanelWidgets.isEmpty();
@@ -400,6 +459,13 @@ public class ParticleStudioScreen extends Screen {
         }
 
         super.render(graphics, mouseX, mouseY, partialTick);
+
+        if (this.particleList != null && this.particleList.entryCount() == 0) {
+            graphics.drawCenteredString(this.font, "Nenhuma particula encontrada", this.listAreaX + (this.listAreaW / 2), this.listAreaY + 8, 0xFFFF8A8A);
+        }
+
+        graphics.fillGradient(this.listAreaX + 1, this.listAreaY + 1, this.listAreaX + this.listAreaW - 1, this.listAreaY + 9, 0xCC111824, 0x00111824);
+        graphics.fillGradient(this.listAreaX + 1, this.listAreaY + this.listAreaH - 9, this.listAreaX + this.listAreaW - 1, this.listAreaY + this.listAreaH - 1, 0x00111824, 0xCC111824);
 
         if (clipRightPanel) {
             for (AbstractWidget widget : this.rightPanelWidgets) {
@@ -413,55 +479,6 @@ public class ParticleStudioScreen extends Screen {
         }
 
         renderRightScrollbar(graphics);
-    }
-
-    private void renderParticleList(GuiGraphics graphics, int mouseX, int mouseY) {
-        GuiLayoutUtils.drawPanel(graphics, this.listAreaX, this.listAreaY, this.listAreaW, this.listAreaH, 0xB1121924, 0xFF2E4258);
-
-        int visibleRows = Math.max(1, this.listAreaH / ROW_HEIGHT);
-        int maxOffset = Math.max(0, this.filteredParticles.size() - visibleRows);
-        this.scrollOffset = Mth.clamp(this.scrollOffset, 0, maxOffset);
-
-        graphics.enableScissor(this.listAreaX + 1, this.listAreaY + 1, this.listAreaX + this.listAreaW - 1, this.listAreaY + this.listAreaH - 1);
-        for (int i = 0; i < visibleRows; i++) {
-            int index = this.scrollOffset + i;
-            if (index >= this.filteredParticles.size()) {
-                break;
-            }
-
-            ResourceLocation id = this.filteredParticles.get(index);
-            if (id == null) {
-                continue;
-            }
-            int rowY = this.listAreaY + (i * ROW_HEIGHT);
-            boolean selected = id.equals(this.selectedParticleId);
-            boolean hovered = isInsideListArea(mouseX, mouseY) && ((int) mouseY - this.listAreaY) / ROW_HEIGHT == i;
-
-            int rowColor = selected ? 0xAA2B4E72 : (hovered ? 0xAA263445 : 0x55202A36);
-            graphics.fill(this.listAreaX + 1, rowY, this.listAreaX + this.listAreaW - 1, rowY + ROW_HEIGHT - 1, rowColor);
-
-            String namespace = id.getNamespace();
-            String path = id.getPath();
-            String prefix = namespace + ":";
-            int prefixX = this.listAreaX + 6;
-            int prefixW = this.font.width(prefix);
-            int pathX = prefixX + prefixW;
-            int maxTextX = this.listAreaX + this.listAreaW - 8;
-            int pathWidth = Math.max(0, maxTextX - pathX);
-            String clippedPath = this.font.plainSubstrByWidth(path, pathWidth);
-
-            graphics.drawString(this.font, prefix, prefixX, rowY + 5, 0xFFE8CC6D);
-            graphics.drawString(this.font, clippedPath, pathX, rowY + 5, 0xFFF2F6FF);
-        }
-        graphics.disableScissor();
-
-        // Soft fade masks at top/bottom to make list overflow clipping smoother.
-        graphics.fillGradient(this.listAreaX + 1, this.listAreaY + 1, this.listAreaX + this.listAreaW - 1, this.listAreaY + 9, 0xCC111824, 0x00111824);
-        graphics.fillGradient(this.listAreaX + 1, this.listAreaY + this.listAreaH - 9, this.listAreaX + this.listAreaW - 1, this.listAreaY + this.listAreaH - 1, 0x00111824, 0xCC111824);
-
-        if (this.filteredParticles.isEmpty()) {
-            graphics.drawCenteredString(this.font, "Nenhuma particula encontrada", this.listAreaX + (this.listAreaW / 2), this.listAreaY + 8, 0xFFFF8A8A);
-        }
     }
 
     private void renderPreviewPanel(GuiGraphics graphics) {
@@ -580,11 +597,6 @@ public class ParticleStudioScreen extends Screen {
         }
     }
 
-    private boolean isInsideListArea(double mouseX, double mouseY) {
-        return mouseX >= this.listAreaX && mouseX < this.listAreaX + this.listAreaW
-            && mouseY >= this.listAreaY && mouseY < this.listAreaY + this.listAreaH;
-    }
-
     private void applyRightScroll() {
         for (AbstractWidget widget : this.rightPanelWidgets) {
             Integer baseY = this.widgetOriginalY.get(widget);
@@ -618,6 +630,104 @@ public class ParticleStudioScreen extends Screen {
             ((rgb >> 8) & 0xFF) / 255.0F,
             (rgb & 0xFF) / 255.0F
         };
+    }
+
+    private final class ParticleList extends ObjectSelectionList<ParticleEntry> {
+        private final int leftX;
+        private final int listWidth;
+
+        private ParticleList(Minecraft mc, int width, int height, int y0, int y1, int itemHeight, int leftX) {
+            super(mc, width, height, y0, y1, itemHeight);
+            this.leftX = leftX;
+            this.listWidth = width;
+            this.x0 = leftX;
+            this.x1 = leftX + width;
+        }
+
+        private void add(ParticleEntry entry) {
+            this.addEntry(entry);
+        }
+
+        private int entryCount() {
+            return this.getItemCount();
+        }
+
+        private ParticleEntry findEntry(ResourceLocation id) {
+            for (ParticleEntry entry : this.children()) {
+                if (entry.getParticleId().equals(id)) {
+                    return entry;
+                }
+            }
+            return null;
+        }
+
+        private void ensureEntryVisible(ParticleEntry entry) {
+            int index = this.children().indexOf(entry);
+            if (index < 0) {
+                return;
+            }
+
+            int rowTop = this.y0 + 4 - (int) this.getScrollAmount() + index * this.itemHeight;
+            int rowBottom = rowTop + this.itemHeight;
+            if (rowTop < this.y0) {
+                this.setScrollAmount(this.getScrollAmount() - (this.y0 - rowTop));
+            } else if (rowBottom > this.y1) {
+                this.setScrollAmount(this.getScrollAmount() + (rowBottom - this.y1));
+            }
+        }
+
+        @Override
+        protected int getScrollbarPosition() {
+            return this.leftX + this.listWidth - 6;
+        }
+
+        @Override
+        public int getRowWidth() {
+            return this.listWidth - 15;
+        }
+    }
+
+    private final class ParticleEntry extends ObjectSelectionList.Entry<ParticleEntry> {
+        private final ResourceLocation id;
+
+        private ParticleEntry(ResourceLocation id) {
+            this.id = id;
+        }
+
+        private ResourceLocation getParticleId() {
+            return this.id;
+        }
+
+        @Override
+        public void render(@NotNull GuiGraphics graphics, int index, int top, int left, int width, int height, int mouseX, int mouseY, boolean isMouseOver, float partialTicks) {
+            boolean selected = this.id.equals(ParticleStudioScreen.this.selectedParticleId);
+            int rowColor = selected ? 0xAA2B4E72 : (isMouseOver ? 0xAA263445 : 0x55202A36);
+            graphics.fill(left - 4, top, left + width - 4, top + height - 1, rowColor);
+
+            String namespace = this.id.getNamespace();
+            String path = this.id.getPath();
+            String prefix = namespace + ":";
+            int prefixX = left + 4;
+            int prefixW = Minecraft.getInstance().font.width(prefix);
+            int pathX = prefixX + prefixW;
+            int maxTextX = left + width - 6;
+            int pathWidth = Math.max(0, maxTextX - pathX);
+            String clippedPath = Minecraft.getInstance().font.plainSubstrByWidth(path, pathWidth);
+
+            graphics.drawString(Minecraft.getInstance().font, prefix, prefixX, top + 5, 0xFFE8CC6D);
+            graphics.drawString(Minecraft.getInstance().font, clippedPath, pathX, top + 5, 0xFFF2F6FF);
+        }
+
+        @Override
+        public boolean mouseClicked(double mouseX, double mouseY, int button) {
+            ParticleStudioScreen.this.setSelectedParticle(this.id);
+            return true;
+        }
+
+        @Override
+        public @NotNull Component getNarration() {
+            return Component.literal(this.id.toString());
+        }
     }
 
     @Override
