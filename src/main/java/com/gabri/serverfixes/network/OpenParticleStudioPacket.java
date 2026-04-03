@@ -22,8 +22,19 @@ public class OpenParticleStudioPacket {
         NetworkEvent.Context context = ctx.get();
         if (context == null) return;
 
-        context.enqueueWork(() -> DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () ->
-            com.gabri.serverfixes.client.ClientPacketHandler.handleOpenParticleStudio()));
+        context.enqueueWork(() -> DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> {
+            try {
+                com.gabri.serverfixes.client.ClientPacketHandler.handleOpenParticleStudio();
+            } catch (Exception e) {
+                net.minecraft.client.Minecraft minecraft = net.minecraft.client.Minecraft.getInstance();
+                if (minecraft.player != null) {
+                    minecraft.player.displayClientMessage(
+                        net.minecraft.network.chat.Component.literal("§cFalha ao abrir Particle Studio: " + e.getClass().getSimpleName()),
+                        true
+                    );
+                }
+            }
+        }));
         context.setPacketHandled(true);
     }
 }

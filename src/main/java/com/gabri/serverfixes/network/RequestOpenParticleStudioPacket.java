@@ -22,10 +22,15 @@ public class RequestOpenParticleStudioPacket {
 
         context.enqueueWork(() -> {
             net.minecraft.server.level.ServerPlayer sender = context.getSender();
-            if (sender == null || !sender.hasPermissions(2)) {
+            if (sender == null) {
+                return;
+            }
+            if (!sender.hasPermissions(2)) {
+                sender.sendSystemMessage(net.minecraft.network.chat.Component.literal("§cAcesso negado: requer OP."));
                 return;
             }
             NetworkHandler.sendToPlayer(sender, new OpenParticleStudioPacket());
+            sender.sendSystemMessage(net.minecraft.network.chat.Component.literal("§aAbrindo Particle Studio..."));
         });
         context.setPacketHandled(true);
     }

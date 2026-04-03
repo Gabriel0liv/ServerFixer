@@ -296,6 +296,7 @@ public class ServerFixesCommands {
         if (source.getEntity() instanceof Player player) {
             com.gabri.serverfixes.network.NetworkHandler.sendToPlayer((net.minecraft.server.level.ServerPlayer) player,
                 new com.gabri.serverfixes.network.OpenParticleStudioPacket());
+            source.sendSuccess(() -> Component.literal("Abrindo Particle Studio...").withStyle(ChatFormatting.GREEN), false);
             return 1;
         }
         source.sendFailure(Component.literal("Este comando só pode ser usado por jogadores."));

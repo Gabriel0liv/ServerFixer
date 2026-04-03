@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.function.Function;
 import java.util.function.IntConsumer;
 import java.util.function.DoubleConsumer;
@@ -84,7 +85,10 @@ public class ParticleStudioScreen extends Screen {
 
     public ParticleStudioScreen() {
         super(Component.literal("Particle Studio"));
-        this.allParticles.addAll(ForgeRegistries.PARTICLE_TYPES.getKeys());
+        if (ForgeRegistries.PARTICLE_TYPES != null && ForgeRegistries.PARTICLE_TYPES.getKeys() != null) {
+            this.allParticles.addAll(ForgeRegistries.PARTICLE_TYPES.getKeys());
+        }
+        this.allParticles.removeIf(Objects::isNull);
         this.allParticles.sort(Comparator
             .comparing(ResourceLocation::getNamespace)
             .thenComparing(ResourceLocation::getPath));
@@ -218,12 +222,17 @@ public class ParticleStudioScreen extends Screen {
             this.filteredParticles.addAll(this.allParticles);
         } else {
             for (ResourceLocation id : this.allParticles) {
+                if (id == null) {
+                    continue;
+                }
                 String full = id.toString().toLowerCase(Locale.ROOT);
                 if (full.contains(query) || id.getNamespace().toLowerCase(Locale.ROOT).contains(query) || id.getPath().toLowerCase(Locale.ROOT).contains(query)) {
                     this.filteredParticles.add(id);
                 }
             }
         }
+
+        this.filteredParticles.removeIf(Objects::isNull);
 
         this.scrollOffset = 0;
         if (this.selectedParticleId == null || !this.filteredParticles.contains(this.selectedParticleId)) {
@@ -243,6 +252,9 @@ public class ParticleStudioScreen extends Screen {
         }
 
         Function<ResourceLocation, TextureAtlasSprite> atlas = Minecraft.getInstance().getTextureAtlas(TextureAtlas.LOCATION_PARTICLES);
+        if (atlas == null) {
+            return;
+        }
         TextureAtlasSprite missingSprite = atlas.apply(MissingTextureAtlasSprite.getLocation());
 
         List<ResourceLocation> candidates = new ArrayList<>();
@@ -252,6 +264,9 @@ public class ParticleStudioScreen extends Screen {
         candidates.add(ResourceLocation.fromNamespaceAndPath(this.selectedParticleId.getNamespace(), "particle/" + this.selectedParticleId.getPath() + "_0"));
 
         for (ResourceLocation candidate : candidates) {
+            if (candidate == null) {
+                continue;
+            }
             TextureAtlasSprite sprite = atlas.apply(candidate);
             if (sprite != null && sprite != missingSprite) {
                 this.selectedPreviewSprite = sprite;
@@ -368,6 +383,9 @@ public class ParticleStudioScreen extends Screen {
             }
 
             ResourceLocation id = this.filteredParticles.get(index);
+            if (id == null) {
+                continue;
+            }
             int rowY = this.listAreaY + (i * ROW_HEIGHT);
             boolean selected = id.equals(this.selectedParticleId);
             boolean hovered = isInsideListArea(mouseX, mouseY) && ((int) mouseY - this.listAreaY) / ROW_HEIGHT == i;

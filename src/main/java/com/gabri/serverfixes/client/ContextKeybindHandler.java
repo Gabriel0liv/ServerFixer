@@ -2,6 +2,7 @@ package com.gabri.serverfixes.client;
 
 import com.gabri.serverfixes.ServerFixes;
 import com.gabri.serverfixes.client.gui.ItemEditorScreen;
+import com.gabri.serverfixes.client.gui.ParticleStudioScreen;
 import com.gabri.serverfixes.mixin.AbstractContainerScreenAccessor;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.gabri.serverfixes.network.ContextTargetType;
@@ -9,7 +10,6 @@ import com.gabri.serverfixes.network.NetworkHandler;
 import com.gabri.serverfixes.network.RequestAdminPanelPacket;
 import com.gabri.serverfixes.network.RequestBlockEditorPacket;
 import com.gabri.serverfixes.network.RequestOpenContextEditorPacket;
-import com.gabri.serverfixes.network.RequestOpenParticleStudioPacket;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.core.BlockPos;
@@ -148,7 +148,13 @@ public class ContextKeybindHandler {
             return;
         }
 
-        NetworkHandler.sendToServer(new RequestOpenParticleStudioPacket());
+        try {
+            minecraft.setScreen(new ParticleStudioScreen());
+        } catch (Exception e) {
+            if (minecraft.player != null) {
+                minecraft.player.displayClientMessage(Component.literal("§cFalha ao abrir Particle Studio: " + e.getClass().getSimpleName()), true);
+            }
+        }
     }
 
     private static Slot resolveHoveredSlot(AbstractContainerScreen<?> screen) {
