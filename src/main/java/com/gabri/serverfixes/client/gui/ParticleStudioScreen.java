@@ -15,6 +15,9 @@ import net.minecraft.client.renderer.texture.TextureAtlasSprite;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
+import net.minecraft.core.particles.ParticleType;
+import net.minecraft.core.particles.SimpleParticleType;
+import java.lang.reflect.Method;
 import net.minecraftforge.registries.ForgeRegistries;
 import org.jetbrains.annotations.NotNull;
 import org.lwjgl.glfw.GLFW;
@@ -58,6 +61,8 @@ public class ParticleStudioScreen extends Screen {
 
     private Button testButton;
     private Button copyButton;
+    private SelectableEditBox extraArgsBox;
+    private Button colorButton;
 
     private ResourceLocation selectedParticleId;
     private ResourceLocation selectedPreviewSpriteId;
@@ -196,6 +201,35 @@ public class ParticleStudioScreen extends Screen {
 
         registerRightPanelWidget(this.testButton);
         registerRightPanelWidget(this.copyButton);
+        // Extra Args box and Color button (disabled by default). Keep strict right-column math.
+        this.extraArgsBox = new SelectableEditBox(this.font, sliderX, currentY, sliderW, 18, Component.literal("Parâmetros Extras"));
+        this.extraArgsBox.setMaxLength(200);
+        this.extraArgsBox.setResponder(value -> updateCommandString());
+        this.extraArgsBox.setEditable(false);
+        this.extraArgsBox.active = false;
+        registerRightPanelWidget(this.extraArgsBox);
+        currentY += 25;
+
+        this.colorButton = Button.builder(Component.literal("Definir Cor..."), btn -> {
+            String initialHex = "#ffffff";
+            this.minecraft.setScreen(new HexColorPickerScreen(this, initialHex, (selectedHex) -> {
+                try {
+                    int color = Integer.parseInt(selectedHex.substring(1), 16);
+                    float r = ((color >> 16) & 0xFF) / 255.0F;
+                    float g = ((color >> 8) & 0xFF) / 255.0F;
+                    float b = (color & 0xFF) / 255.0F;
+                    if (this.extraArgsBox != null) {
+                        this.extraArgsBox.setValue(String.format(Locale.ROOT, "%.2f %.2f %.2f 1.0", r, g, b));
+                    }
+                    this.updateCommandString();
+                } catch (Exception ignored) {
+                }
+                this.minecraft.setScreen(this);
+            }));
+        }).bounds(sliderX, currentY, sliderW, 18).build();
+        this.colorButton.active = false;
+        registerRightPanelWidget(this.colorButton);
+        currentY += 25;
 
         currentY += 24;
         this.maxRightScroll = Math.max(0, currentY - this.height + 10);
@@ -336,6 +370,7 @@ public class ParticleStudioScreen extends Screen {
         this.selectedParticleId = id;
         refreshSelectedSpriteSafe();
         updateCommandString();
+        updateExtraArgsAvailability();
     }
 
     private void refreshSelectedSpriteSafe() {
@@ -347,10 +382,17 @@ public class ParticleStudioScreen extends Screen {
         if (this.selectedParticleId == null) {
             this.commandString = "";
         } else {
+            String selectedId = this.selectedParticleId.toString();
+            String extraArgs = "";
+            if (this.extraArgsBox != null && this.extraArgsBox.active) {
+                extraArgs = this.extraArgsBox.getValue().trim();
+            }
+            String fullParticleId = selectedId + (extraArgs.isEmpty() ? "" : " " + extraArgs);
+
             this.commandString = String.format(
                 Locale.ROOT,
                 "/particle %s ~ ~1 ~ %.2f %.2f %.2f %.2f %d %s",
-                this.selectedParticleId,
+                fullParticleId,
                 this.deltaX,
                 this.deltaY,
                 this.deltaZ,
@@ -370,6 +412,37 @@ public class ParticleStudioScreen extends Screen {
         }
         if (this.copyButton != null) {
             this.copyButton.active = hasSelection;
+        }
+    }
+
+    private void updateExtraArgsAvailability() {
+        if (this.extraArgsBox == null || this.colorButton == null) {
+            return;
+        }
+
+        boolean requiresExtraArgs = false;
+        if (this.selectedParticleId != null) {
+            ParticleType<?> type = ForgeRegistries.PARTICLE_TYPES.getValue(this.selectedParticleId);
+            requiresExtraArgs = type != null && !(type instanceof SimpleParticleType);
+        }
+
+        this.extraArgsBox.setEditable(requiresExtraArgs);
+        this.extraArgsBox.active = requiresExtraArgs;
+        this.colorButton.active = requiresExtraArgs;
+
+        if (!requiresExtraArgs) {
+            this.extraArgsBox.setValue("");
+            try {
+                Method m = this.extraArgsBox.getClass().getMethod("setSuggestion", String.class);
+                if (m != null) m.invoke(this.extraArgsBox, "Não exige extras");
+            } catch (Exception ignored) {
+            }
+        } else {
+            try {
+                Method m = this.extraArgsBox.getClass().getMethod("setSuggestion", String.class);
+                if (m != null) m.invoke(this.extraArgsBox, "Ex: 1.0 0.0 0.0 1.0");
+            } catch (Exception ignored) {
+            }
         }
     }
 
