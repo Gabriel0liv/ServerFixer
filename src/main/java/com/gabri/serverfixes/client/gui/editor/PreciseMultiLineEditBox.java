@@ -110,10 +110,10 @@ public class PreciseMultiLineEditBox extends MultiLineEditBox {
         int contentY = this.getY() + this.innerPadding() - (int) this.scrollAmount();
         int lineH = lineHeight();
 
-        int clipX1 = this.getX() + this.innerPadding();
-        int clipY1 = this.getY() + this.innerPadding();
-        int clipX2 = this.getX() + this.getWidth() - this.innerPadding();
-        int clipY2 = this.getY() + this.getHeight() - this.innerPadding();
+        int clipX1 = this.getX();
+        int clipY1 = this.getY();
+        int clipX2 = this.getX() + this.getWidth();
+        int clipY2 = this.getY() + this.getHeight();
         graphics.enableScissor(clipX1, clipY1, clipX2, clipY2);
 
         LineView selection = textField.hasSelection() ? toLineView(textField.getSelected()) : null;

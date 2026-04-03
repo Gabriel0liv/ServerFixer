@@ -1,6 +1,7 @@
 package com.gabri.serverfixes.client.gui.editor;
 
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
@@ -120,6 +121,10 @@ public class SyntaxNbtEditBox extends PreciseMultiLineEditBox {
     private int selectedSuggestion;
     private int tokenStart;
     private int tokenEnd;
+    private int suggestionBoxX;
+    private int suggestionBoxY;
+    private int suggestionBoxWidth;
+    private int suggestionBoxHeight;
 
     public SyntaxNbtEditBox(net.minecraft.client.gui.Font font, int x, int y, int width, int height, Component message, Component placeholder) {
         super(font, x, y, width, height, message, placeholder);
@@ -130,7 +135,11 @@ public class SyntaxNbtEditBox extends PreciseMultiLineEditBox {
     public boolean charTyped(char codePoint, int modifiers) {
         boolean handled = super.charTyped(codePoint, modifiers);
         if (handled) {
-            updateSuggestions();
+            if (isTokenChar(codePoint)) {
+                updateSuggestions();
+            } else {
+                hideSuggestions();
+            }
         }
         return handled;
     }
@@ -157,24 +166,25 @@ public class SyntaxNbtEditBox extends PreciseMultiLineEditBox {
         }
 
         boolean handled = super.keyPressed(keyCode, scanCode, modifiers);
-        if (handled) {
+        if (handled && isSuggestionEditKey(keyCode)) {
             updateSuggestions();
+        } else if (handled) {
+            hideSuggestions();
         }
         return handled;
     }
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        boolean handled = super.mouseClicked(mouseX, mouseY, button);
-        updateSuggestions();
-        return handled;
+        if (this.suggestionsVisible && !isInsideSuggestionBox(mouseX, mouseY)) {
+            hideSuggestions();
+        }
+        return super.mouseClicked(mouseX, mouseY, button);
     }
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
-        boolean handled = super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
-        updateSuggestions();
-        return handled;
+        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
     }
 
     public void renderSuggestionOverlay(GuiGraphics graphics) {
@@ -201,6 +211,14 @@ public class SyntaxNbtEditBox extends PreciseMultiLineEditBox {
         }
         boxY = Math.max(this.getY() + 2, boxY);
 
+        this.suggestionBoxX = boxX;
+        this.suggestionBoxY = boxY;
+        this.suggestionBoxWidth = maxWidth;
+        this.suggestionBoxHeight = listHeight;
+
+        graphics.pose().pushPose();
+        graphics.pose().translate(0.0F, 0.0F, 400.0F);
+
         graphics.fill(boxX, boxY, boxX + maxWidth, boxY + listHeight, SUGGESTION_BG);
         graphics.fill(boxX, boxY, boxX + maxWidth, boxY + 1, SUGGESTION_BORDER);
         graphics.fill(boxX, boxY + listHeight - 1, boxX + maxWidth, boxY + listHeight, SUGGESTION_BORDER);
@@ -214,6 +232,8 @@ public class SyntaxNbtEditBox extends PreciseMultiLineEditBox {
             }
             graphics.drawString(font(), this.suggestions.get(i), boxX + 5, rowY, 0xFFE8F1FF);
         }
+
+        graphics.pose().popPose();
     }
 
     public void refreshSuggestionsNow() {
@@ -248,7 +268,7 @@ public class SyntaxNbtEditBox extends PreciseMultiLineEditBox {
         String prefix = value.substring(0, start);
         ContextSnapshot context = ContextSnapshot.scan(prefix);
         String token = value.substring(start, cursor).toLowerCase(Locale.ROOT);
-        if (token.isEmpty() && !context.allowEmptyTokenSuggestions()) {
+        if (token.isBlank()) {
             hideSuggestions();
             return;
         }
@@ -331,6 +351,26 @@ public class SyntaxNbtEditBox extends PreciseMultiLineEditBox {
         this.selectedSuggestion = 0;
         this.tokenStart = 0;
         this.tokenEnd = 0;
+        this.suggestionBoxX = 0;
+        this.suggestionBoxY = 0;
+        this.suggestionBoxWidth = 0;
+        this.suggestionBoxHeight = 0;
+    }
+
+    private boolean isSuggestionEditKey(int keyCode) {
+        return keyCode == 259 // backspace
+            || keyCode == 261 // delete
+            || (Screen.hasControlDown() && (keyCode == 86 || keyCode == 88)); // ctrl+v / ctrl+x
+    }
+
+    private boolean isInsideSuggestionBox(double mouseX, double mouseY) {
+        if (!this.suggestionsVisible || this.suggestionBoxWidth <= 0 || this.suggestionBoxHeight <= 0) {
+            return false;
+        }
+        return mouseX >= this.suggestionBoxX
+            && mouseX <= this.suggestionBoxX + this.suggestionBoxWidth
+            && mouseY >= this.suggestionBoxY
+            && mouseY <= this.suggestionBoxY + this.suggestionBoxHeight;
     }
 
     private boolean isTokenChar(char c) {
