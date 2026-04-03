@@ -98,8 +98,10 @@ public class ItemEditorScreen extends Screen {
     private ScrollTarget draggingScrollTarget = ScrollTarget.NONE;
     private int draggingThumbOffsetY = 0;
     private boolean editingEnchantedBook;
+    private SelectableEditBox generalIdBox;
     private SelectableEditBox generalCountBox;
     private SelectableEditBox generalDamageBox;
+    private boolean generalFormUpdating = false;
     private int editorContainerId = -1;
     private int editorSlotIndex = -1;
 
@@ -288,38 +290,36 @@ public class ItemEditorScreen extends Screen {
             y += 28;
         }
 
-        if (currentCategory != Category.GENERAL) {
-            if (currentCategory == Category.DISPLAY) {
-                initDisplayCategory(contentStartX, contentWidth);
-            } else {
-                if (isEffectsCategory(this.currentCategory)) {
-                    addEffectCategoryTabs(contentStartX, contentWidth);
-                }
-                initCategoryList(contentStartX, contentWidth);
-                boolean showAddButton = this.currentCategory == Category.ATTRIBUTES
-                    || this.currentCategory == Category.ENCHANTMENTS
-                    || isEffectsCategory(this.currentCategory);
-                if (showAddButton) {
-                    int addWidth = 22;
-                    int addButtonY = isEffectsCategory(this.currentCategory) ? EFFECT_TAB_Y : 42;
-                    // Use IconButton with add asset for consistency
-                    this.addRenderableWidget(new IconButton(contentStartX + contentWidth - addWidth, addButtonY, addWidth, 18,
-                        ADD_ICON, 16, 16,
-                        0xFF2E7D32, 0xFF43A047, 0xFF66BB6A,
-                        (btn) -> {
-                            if (currentCategory == Category.ATTRIBUTES) {
-                                this.minecraft.setScreen(new AddAttributeScreen(this));
-                            } else if (currentCategory == Category.ENCHANTMENTS) {
-                                this.minecraft.setScreen(new AddEnchantmentScreen(this));
-                            } else {
-                                Category viewCat = isEffectsCategory(this.currentCategory) ? this.activeEffectTab : this.currentCategory;
-                                if (shouldUseVanillaOnUseStorage(viewCat)) {
-                                    canonicalizeOnUsePotionStorage();
-                                }
-                                this.minecraft.setScreen(new AddEffectScreen(this, viewCat));
+        if (currentCategory == Category.DISPLAY) {
+            initDisplayCategory(contentStartX, contentWidth);
+        } else {
+            if (isEffectsCategory(this.currentCategory)) {
+                addEffectCategoryTabs(contentStartX, contentWidth);
+            }
+            initCategoryList(contentStartX, contentWidth);
+            boolean showAddButton = this.currentCategory == Category.ATTRIBUTES
+                || this.currentCategory == Category.ENCHANTMENTS
+                || isEffectsCategory(this.currentCategory);
+            if (showAddButton) {
+                int addWidth = 22;
+                int addButtonY = isEffectsCategory(this.currentCategory) ? EFFECT_TAB_Y : 42;
+                // Use IconButton with add asset for consistency
+                this.addRenderableWidget(new IconButton(contentStartX + contentWidth - addWidth, addButtonY, addWidth, 18,
+                    ADD_ICON, 16, 16,
+                    0xFF2E7D32, 0xFF43A047, 0xFF66BB6A,
+                    (btn) -> {
+                        if (currentCategory == Category.ATTRIBUTES) {
+                            this.minecraft.setScreen(new AddAttributeScreen(this));
+                        } else if (currentCategory == Category.ENCHANTMENTS) {
+                            this.minecraft.setScreen(new AddEnchantmentScreen(this));
+                        } else {
+                            Category viewCat = isEffectsCategory(this.currentCategory) ? this.activeEffectTab : this.currentCategory;
+                            if (shouldUseVanillaOnUseStorage(viewCat)) {
+                                canonicalizeOnUsePotionStorage();
                             }
-                        }));
-                }
+                            this.minecraft.setScreen(new AddEffectScreen(this, viewCat));
+                        }
+                    }));
             }
         }
 
@@ -387,31 +387,48 @@ public class ItemEditorScreen extends Screen {
     }
 
     private SaveItemEditorPacket createSavePacket() {
-        int count = this.rawWorkingItem.isEmpty() ? 1 : this.rawWorkingItem.getCount();
-        int damage = (this.rawWorkingItem.isEmpty() || !this.rawWorkingItem.isDamageableItem()) ? 0 : this.rawWorkingItem.getDamageValue();
-        return new SaveItemEditorPacket(this.currentTag, count, damage, this.editorContainerId, this.editorSlotIndex);
+        ItemStack stackToSave = this.rawWorkingItem != null ? this.rawWorkingItem.copy() : ItemStack.EMPTY;
+        if (!stackToSave.isEmpty()) {
+            stackToSave.setTag(this.currentTag.isEmpty() ? null : this.currentTag.copy());
+        }
+        return new SaveItemEditorPacket(stackToSave, this.editorContainerId, this.editorSlotIndex);
     }
 
     private void initGeneralCategory(int contentStartX, int contentWidth) {
-        int panelX = contentStartX + 10;
-        int panelY = 44;
-        int panelW = Math.max(220, contentWidth - 20);
+        int startX = contentStartX + 10;
+        int startY = 60;
+        int labelX = startX;
+        int inputX = startX + 80;
+        int idWidth = Math.max(140, Math.min(220, contentWidth - 130));
+        int smallWidth = 62;
 
-        int countMax = Math.max(1, this.rawWorkingItem.isEmpty() ? 64 : this.rawWorkingItem.getMaxStackSize());
-        int damageMax = this.rawWorkingItem.isDamageableItem() ? Math.max(0, this.rawWorkingItem.getMaxDamage()) : 0;
+        int rowY = startY + 40;
 
-        int countY = panelY + 36;
-        this.generalCountBox = new SelectableEditBox(this.font, panelX + 70, countY, 72, 18, Component.literal("Count"));
+        this.generalIdBox = new SelectableEditBox(this.font, inputX, rowY, idWidth, 18, Component.literal("ID"));
+        this.generalIdBox.setFilter(value -> value.isEmpty() || value.matches("[a-z0-9_:\\-./]{0,80}"));
+        this.generalIdBox.setMaxLength(80);
+        this.generalIdBox.setValue(getCurrentItemIdString());
+        this.generalIdBox.setResponder(this::onGeneralIdChanged);
+        this.addRenderableWidget(this.generalIdBox);
+
+        rowY += 25;
+        this.generalCountBox = new SelectableEditBox(this.font, inputX, rowY, smallWidth, 18, Component.literal("Count"));
         this.generalCountBox.setFilter(value -> value.isEmpty() || value.matches("\\d{1,4}"));
+        this.generalCountBox.setMaxLength(4);
         this.generalCountBox.setValue(Integer.toString(this.rawWorkingItem.isEmpty() ? 1 : this.rawWorkingItem.getCount()));
+        this.generalCountBox.setResponder(this::onGeneralCountChanged);
         this.addRenderableWidget(this.generalCountBox);
 
-        this.generalDamageBox = new SelectableEditBox(this.font, panelX + 70, countY + 24, 72, 18, Component.literal("Damage"));
+        rowY += 25;
+        this.generalDamageBox = new SelectableEditBox(this.font, inputX, rowY, smallWidth, 18, Component.literal("Damage"));
         this.generalDamageBox.setFilter(value -> value.isEmpty() || value.matches("\\d{1,7}"));
-        this.generalDamageBox.setValue(Integer.toString((this.rawWorkingItem.isDamageableItem() ? this.rawWorkingItem.getDamageValue() : 0)));
+        this.generalDamageBox.setMaxLength(7);
+        this.generalDamageBox.setValue(Integer.toString(this.rawWorkingItem.isDamageableItem() ? this.rawWorkingItem.getDamageValue() : 0));
         this.generalDamageBox.setEditable(this.rawWorkingItem.isDamageableItem());
+        this.generalDamageBox.setResponder(this::onGeneralDamageChanged);
         this.addRenderableWidget(this.generalDamageBox);
 
+        rowY += 25;
         String toggleLabel = this.currentTag.getBoolean("Unbreakable") ? "[ X ] Inquebrável" : "[   ] Inquebrável";
         this.addRenderableWidget(Button.builder(Component.literal(toggleLabel), btn -> {
             if (this.currentTag.getBoolean("Unbreakable")) {
@@ -419,21 +436,133 @@ public class ItemEditorScreen extends Screen {
             } else {
                 this.currentTag.putBoolean("Unbreakable", true);
             }
-            applyGeneralChanges();
+            syncGeneralWorkingItemToRawText();
             this.init();
-        }).bounds(panelX + 4, countY + 52, 170, 18).build());
+        }).bounds(inputX, rowY, 140, 18).build());
 
-        if (this.generalCountBox != null) {
-            this.generalCountBox.setHint(Component.literal("1.." + countMax));
+        refreshGeneralInputState();
+    }
+
+    private void onGeneralIdChanged(String text) {
+        if (this.generalFormUpdating) {
+            return;
         }
-        if (this.generalDamageBox != null && this.rawWorkingItem.isDamageableItem()) {
-            this.generalDamageBox.setHint(Component.literal("0.." + damageMax));
+        trySwapGeneralItemById(text);
+    }
+
+    private void onGeneralCountChanged(String text) {
+        if (this.generalFormUpdating || this.rawWorkingItem.isEmpty() || text == null || text.isBlank()) {
+            return;
         }
+        int clamped = parseIntWithin(text, this.rawWorkingItem.getCount(), 1, Math.max(1, this.rawWorkingItem.getMaxStackSize()));
+        this.rawWorkingItem.setCount(clamped);
+        syncGeneralWorkingItemToRawText();
+    }
+
+    private void onGeneralDamageChanged(String text) {
+        if (this.generalFormUpdating || this.rawWorkingItem.isEmpty() || !this.rawWorkingItem.isDamageableItem() || text == null || text.isBlank()) {
+            return;
+        }
+        int clamped = parseIntWithin(text, this.rawWorkingItem.getDamageValue(), 0, Math.max(0, this.rawWorkingItem.getMaxDamage()));
+        this.rawWorkingItem.setDamageValue(clamped);
+        syncGeneralWorkingItemToRawText();
+    }
+
+    private void trySwapGeneralItemById(String rawId) {
+        if (rawId == null || rawId.isBlank()) {
+            return;
+        }
+
+        ResourceLocation id = ResourceLocation.tryParse(rawId.trim());
+        if (id == null) {
+            return;
+        }
+
+        var newItem = ForgeRegistries.ITEMS.getValue(id);
+        if (newItem == null || newItem == Items.AIR) {
+            return;
+        }
+
+        if (!this.rawWorkingItem.isEmpty() && newItem == this.rawWorkingItem.getItem()) {
+            return;
+        }
+
+        ItemStack previous = this.rawWorkingItem != null ? this.rawWorkingItem : ItemStack.EMPTY;
+        int previousCount = previous.isEmpty() ? 1 : previous.getCount();
+
+        ItemStack swapped = new ItemStack(newItem);
+        int count = Mth.clamp(previousCount, 1, Math.max(1, swapped.getMaxStackSize()));
+        swapped.setCount(count);
+        if (!this.currentTag.isEmpty()) {
+            swapped.setTag(this.currentTag.copy());
+        } else {
+            swapped.setTag(null);
+        }
+
+        if (swapped.isDamageableItem()) {
+            int damage = previous.isDamageableItem() ? previous.getDamageValue() : 0;
+            swapped.setDamageValue(Mth.clamp(damage, 0, Math.max(0, swapped.getMaxDamage())));
+        }
+
+        this.rawWorkingItem = swapped;
+        CompoundTag swappedTag = swapped.getTag();
+        this.currentTag = swappedTag != null ? swappedTag.copy() : new CompoundTag();
+        this.editingEnchantedBook = detectEnchantedBookContext(this.currentTag, this.rawWorkingItem);
+        refreshGeneralInputState();
+        syncGeneralWorkingItemToRawText();
+    }
+
+    private String getCurrentItemIdString() {
+        if (this.rawWorkingItem.isEmpty()) {
+            return "minecraft:air";
+        }
+        ResourceLocation id = ForgeRegistries.ITEMS.getKey(this.rawWorkingItem.getItem());
+        return id != null ? id.toString() : "minecraft:air";
+    }
+
+    private void refreshGeneralInputState() {
+        this.generalFormUpdating = true;
+        try {
+            if (this.generalIdBox != null) {
+                this.generalIdBox.setValue(getCurrentItemIdString());
+            }
+            if (this.generalCountBox != null && !this.rawWorkingItem.isEmpty()) {
+                this.generalCountBox.setValue(Integer.toString(this.rawWorkingItem.getCount()));
+                this.generalCountBox.setHint(Component.literal("1.." + Math.max(1, this.rawWorkingItem.getMaxStackSize())));
+            }
+            if (this.generalDamageBox != null) {
+                if (!this.rawWorkingItem.isEmpty() && this.rawWorkingItem.isDamageableItem()) {
+                    this.generalDamageBox.setEditable(true);
+                    this.generalDamageBox.setValue(Integer.toString(this.rawWorkingItem.getDamageValue()));
+                    this.generalDamageBox.setHint(Component.literal("0.." + Math.max(0, this.rawWorkingItem.getMaxDamage())));
+                } else {
+                    this.generalDamageBox.setEditable(false);
+                    this.generalDamageBox.setValue("0");
+                    this.generalDamageBox.setHint(Component.literal("N/A"));
+                }
+            }
+        } finally {
+            this.generalFormUpdating = false;
+        }
+    }
+
+    private void syncGeneralWorkingItemToRawText() {
+        if (this.rawWorkingItem.isEmpty()) {
+            return;
+        }
+        this.rawWorkingItem.setTag(this.currentTag.isEmpty() ? null : this.currentTag.copy());
+        CompoundTag full = new CompoundTag();
+        this.rawWorkingItem.save(full);
+        this.rawNbtText = full.toString();
     }
 
     private void applyGeneralChanges() {
         if (this.rawWorkingItem.isEmpty()) {
             return;
+        }
+
+        if (this.generalIdBox != null) {
+            trySwapGeneralItemById(this.generalIdBox.getValue());
         }
 
         int countMax = Math.max(1, this.rawWorkingItem.getMaxStackSize());
@@ -446,12 +575,12 @@ public class ItemEditorScreen extends Screen {
             int currentDamage = Mth.clamp(this.rawWorkingItem.getDamageValue(), 0, damageMax);
             int damage = parseIntWithin(this.generalDamageBox != null ? this.generalDamageBox.getValue() : null, currentDamage, 0, damageMax);
             this.rawWorkingItem.setDamageValue(damage);
+        } else {
+            this.rawWorkingItem.setDamageValue(0);
         }
 
-        this.rawWorkingItem.setTag(this.currentTag.isEmpty() ? null : this.currentTag.copy());
-        CompoundTag full = new CompoundTag();
-        this.rawWorkingItem.save(full);
-        this.rawNbtText = full.toString();
+        syncGeneralWorkingItemToRawText();
+        refreshGeneralInputState();
     }
 
     private int parseIntWithin(String raw, int fallback, int min, int max) {
@@ -469,27 +598,34 @@ public class ItemEditorScreen extends Screen {
         int panelX = contentStartX + 10;
         int panelY = 44;
         int panelW = Math.max(220, contentWidth - 20);
-        int panelH = 132;
-        int iconX = panelX + 16;
-        int iconY = panelY + 24;
+        int panelH = 178;
+
+        int startX = panelX + 8;
+        int startY = panelY + 8;
+        int labelX = startX;
+        int inputX = startX + 80;
+
+        int iconX = panelX + (panelW / 2) - 8;
+        int iconY = startY;
+        int rowY = startY + 40;
 
         GuiLayoutUtils.drawPanel(graphics, panelX - 6, panelY - 8, panelW + 12, panelH, 0xCC1C2532, 0xFF4E6B8D);
 
         if (!this.rawWorkingItem.isEmpty()) {
             graphics.renderItem(this.rawWorkingItem, iconX, iconY);
             graphics.renderItemDecorations(this.font, this.rawWorkingItem, iconX, iconY);
-            ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(this.rawWorkingItem.getItem());
-            String idText = itemId != null ? itemId.toString() : "minecraft:air";
-            GuiLayoutUtils.drawFieldLabel(graphics, this.font, "ID: " + idText, panelX + 44, panelY + 8, 0xFFE5F6FF);
-        } else {
-            GuiLayoutUtils.drawFieldLabel(graphics, this.font, "ID: minecraft:air", panelX + 44, panelY + 8, 0xFFE5F6FF);
         }
 
-        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Count", panelX + 6, panelY + 40, 0xFFCCD9F1);
-        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Damage", panelX + 6, panelY + 64, 0xFFCCD9F1);
+        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "ID", labelX, rowY + 6, 0xFFCCD9F1);
+        rowY += 25;
+        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Count", labelX, rowY + 6, 0xFFCCD9F1);
+        rowY += 25;
+        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Damage", labelX, rowY + 6, 0xFFCCD9F1);
+        rowY += 25;
+        GuiLayoutUtils.drawFieldLabel(graphics, this.font, "Unbreakable", labelX, rowY + 6, 0xFFCCD9F1);
 
         if (!this.rawWorkingItem.isDamageableItem()) {
-            graphics.drawString(this.font, "§7Não aplicável para este item", panelX + 150, panelY + 66, 0xFF9FB0C5);
+            graphics.drawString(this.font, "§7N/A", inputX + 66, startY + 40 + 25 + 25 + 6, 0xFF9FB0C5);
         }
     }
 
@@ -2062,6 +2198,7 @@ public class ItemEditorScreen extends Screen {
     private void applyRawNbtFromToolbar() {
         if (applyRawNbtIfValid()) {
             this.rawNbtStatusMessage = "NBT validada e aplicada.";
+            this.init();
         } else {
             this.rawNbtStatusMessage = "Falha na validação da NBT.";
         }
