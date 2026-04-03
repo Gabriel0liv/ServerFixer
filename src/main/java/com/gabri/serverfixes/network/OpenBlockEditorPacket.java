@@ -9,6 +9,7 @@ import net.minecraftforge.network.NetworkEvent;
 
 import java.util.function.Supplier;
 
+@SuppressWarnings("null")
 public class OpenBlockEditorPacket {
     private final BlockPos blockPos;
     private final String blockId;

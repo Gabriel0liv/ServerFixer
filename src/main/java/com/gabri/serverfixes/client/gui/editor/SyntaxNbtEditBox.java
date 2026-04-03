@@ -552,9 +552,6 @@ public class SyntaxNbtEditBox extends PreciseMultiLineEditBox {
             return this.expectingKey;
         }
 
-        boolean allowEmptyTokenSuggestions() {
-            return this.expectingKey || this.activeValueKey != null;
-        }
 
         boolean isTopLevelObject() {
             return this.path.isEmpty();

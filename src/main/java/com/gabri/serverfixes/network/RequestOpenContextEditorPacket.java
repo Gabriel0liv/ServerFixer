@@ -11,6 +11,7 @@ import net.minecraftforge.network.NetworkEvent;
 
 import java.util.function.Supplier;
 
+@SuppressWarnings("null")
 public class RequestOpenContextEditorPacket {
     private final ContextTargetType targetType;
     private final int containerId;

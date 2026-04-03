@@ -7,6 +7,7 @@ import net.minecraft.nbt.TagParser;
 
 import java.util.ArrayList;
 
+@SuppressWarnings("null")
 public final class SnbtFormatUtils {
     private SnbtFormatUtils() {
     }

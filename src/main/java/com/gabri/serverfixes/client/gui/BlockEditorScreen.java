@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
+@SuppressWarnings("null")
 public class BlockEditorScreen extends AbstractEditorScreen {
     private final BlockPos blockPos;
     private final String blockId;

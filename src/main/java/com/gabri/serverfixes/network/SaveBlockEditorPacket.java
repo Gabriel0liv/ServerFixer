@@ -12,6 +12,7 @@ import net.minecraftforge.network.NetworkEvent;
 import java.util.Optional;
 import java.util.function.Supplier;
 
+@SuppressWarnings("null")
 public class SaveBlockEditorPacket {
     private final BlockPos blockPos;
     private final CompoundTag stateValues;

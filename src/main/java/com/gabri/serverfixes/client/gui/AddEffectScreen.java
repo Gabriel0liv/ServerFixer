@@ -16,9 +16,7 @@ import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.PotionItem;
-import net.minecraft.world.item.alchemy.Potion;
 import net.minecraft.world.item.alchemy.PotionUtils;
-import net.minecraft.world.item.alchemy.Potions;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraftforge.fml.ModList;
 import net.minecraftforge.registries.ForgeRegistries;
@@ -36,7 +34,6 @@ public class AddEffectScreen extends Screen {
     private static final int PANEL_MIN_HEIGHT = 250;
     private static final int PANEL_MAX_HEIGHT = 310;
     private static final int TAB_HEIGHT = 18;
-    private static final int FIELD_SPACING = 24;
     private static final int BUTTON_WIDTH = 108;
     private static final int ACTION_BUTTON_WIDTH = 22;
     private static final int RESET_BUTTON_WIDTH = 20;
@@ -74,7 +71,6 @@ public class AddEffectScreen extends Screen {
 
     private String originalId = "";
     private String originalChance = "1.0";
-    private String originalOnUseColor = "";
     private String originalSlot = "any";
     private boolean originalSelf;
     private boolean showPotionOnUseUi;
@@ -237,7 +233,6 @@ public class AddEffectScreen extends Screen {
 
         this.originalId = this.pendingId;
         this.originalChance = this.pendingChance;
-        this.originalOnUseColor = this.pendingOnUseColor;
         this.originalSlot = this.pendingSlot;
         this.originalSelf = this.pendingSelf;
 
@@ -611,114 +606,8 @@ public class AddEffectScreen extends Screen {
         this.loadedFromTag = true;
     }
 
-    private void preloadOnUseFromPotionIfNeeded() {
-        if (this.category != ItemEditorScreen.Category.ON_USE || !this.showPotionOnUseUi || this.editingIndex >= 0) {
-            return;
-        }
 
-        CompoundTag sfTag = this.parent.currentTag.getCompound("SF_ItemEffects");
-        ListTag onUseList = sfTag.getList("on_use", Tag.TAG_COMPOUND);
-        if (!onUseList.isEmpty()) {
-            return;
-        }
 
-        // If the user already provided/selected an ID, don't overwrite it with the held potion's effect
-        if (this.pendingId != null && !this.pendingId.isBlank()) {
-            return;
-        }
-
-        if (this.minecraft == null || this.minecraft.player == null) {
-            return;
-        }
-
-        ItemStack held = this.minecraft.player.getMainHandItem();
-        if (held.isEmpty() || !isPotionStack(held)) {
-            return;
-        }
-
-        ItemStack scan = held.copy();
-        scan.setTag(this.parent.currentTag.copy());
-        var effects = PotionUtils.getMobEffects(scan);
-        if (effects.isEmpty()) {
-            return;
-        }
-
-        MobEffectInstance first = effects.get(0);
-        ResourceLocation effectId = ForgeRegistries.MOB_EFFECTS.getKey(first.getEffect());
-        if (effectId == null) {
-            return;
-        }
-
-        this.pendingId = effectId.toString();
-        this.pendingDur = formatSecondsFromTicks(first.getDuration());
-        this.pendingAmp = Integer.toString(first.getAmplifier());
-        this.pendingAmbient = first.isAmbient();
-        this.pendingShowParticles = first.isVisible();
-        this.pendingShowIcon = first.showIcon();
-
-        if (this.parent.currentTag.contains("CustomPotionColor", Tag.TAG_ANY_NUMERIC)) {
-            this.pendingOnUseColor = colorIntToHex(this.parent.currentTag.getInt("CustomPotionColor"));
-        }
-    }
-
-    private void alignPotionToSelection(String effectId, int durationTicks, int amplifier) {
-        ResourceLocation effectRl = ResourceLocation.tryParse(effectId);
-        if (effectRl == null) {
-            return;
-        }
-
-        ResourceLocation bestPotionId = findClosestPotion(effectRl, durationTicks, amplifier);
-        if (bestPotionId != null) {
-            this.parent.currentTag.putString("Potion", bestPotionId.toString());
-            this.parent.currentTag.remove("CustomPotionEffects");
-            return;
-        }
-
-        ListTag customPotionEffects = new ListTag();
-        CompoundTag customEntry = new CompoundTag();
-        writePotionEffectId(customEntry, effectId);
-        customEntry.putInt("Duration", durationTicks);
-        customEntry.putInt("Amplifier", amplifier);
-        customEntry.putBoolean("Ambient", this.pendingAmbient);
-        customEntry.putBoolean("ShowParticles", this.pendingShowParticles);
-        customEntry.putBoolean("ShowIcon", this.pendingShowIcon);
-        customPotionEffects.add(customEntry);
-        this.parent.currentTag.put("CustomPotionEffects", customPotionEffects);
-
-        if (!this.parent.currentTag.contains("Potion", Tag.TAG_STRING)) {
-            this.parent.currentTag.putString("Potion", "minecraft:water");
-        }
-    }
-
-    private static ResourceLocation findClosestPotion(ResourceLocation effectId, int durationTicks, int amplifier) {
-        ResourceLocation bestId = null;
-        int bestScore = Integer.MAX_VALUE;
-
-        for (Potion potion : ForgeRegistries.POTIONS.getValues()) {
-            if (potion == Potions.EMPTY || potion.getEffects().isEmpty()) {
-                continue;
-            }
-
-            for (MobEffectInstance instance : potion.getEffects()) {
-                ResourceLocation currentId = ForgeRegistries.MOB_EFFECTS.getKey(instance.getEffect());
-                if (currentId == null || !currentId.equals(effectId)) {
-                    continue;
-                }
-
-                if (instance.getAmplifier() != amplifier) {
-                    continue;
-                }
-
-                int score = Math.abs(instance.getDuration() - durationTicks) + Math.max(0, potion.getEffects().size() - 1) * 20000;
-                if (score < bestScore) {
-                    bestScore = score;
-                    bestId = ForgeRegistries.POTIONS.getKey(potion);
-                }
-            }
-        }
-
-        return bestId;
-    }
 
     private static String formatSecondsFromTicks(int ticks) {
         if (ticks <= 0) {

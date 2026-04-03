@@ -1,7 +1,6 @@
 package com.gabri.serverfixes.network;
 
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.StringTag;
@@ -13,6 +12,7 @@ import net.minecraftforge.network.NetworkEvent;
 
 import java.util.function.Supplier;
 
+@SuppressWarnings("null")
 public class RequestBlockEditorPacket {
     private final BlockPos blockPos;
 
@@ -63,7 +63,7 @@ public class RequestBlockEditorPacket {
 
             BlockEntity blockEntity = sender.level().getBlockEntity(this.blockPos);
             CompoundTag blockEntityTag = blockEntity != null ? blockEntity.saveWithoutMetadata() : new CompoundTag();
-            String blockId = BuiltInRegistries.BLOCK.getKey(blockState.getBlock()).toString();
+            String blockId = net.minecraftforge.registries.ForgeRegistries.BLOCKS.getKey(blockState.getBlock()).toString();
 
             NetworkHandler.sendToPlayer(sender, new OpenBlockEditorPacket(this.blockPos, blockId, stateValues, allowedValues, blockEntityTag));
         });

@@ -27,6 +27,7 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
 @Mod.EventBusSubscriber(modid = ServerFixes.MODID, value = Dist.CLIENT, bus = Mod.EventBusSubscriber.Bus.FORGE)
+@SuppressWarnings("null")
 public class ContextKeybindHandler {
 
     @SubscribeEvent
@@ -41,15 +42,15 @@ public class ContextKeybindHandler {
         }
 
         while (ServerFixesKeybinds.ADMIN_PANEL.consumeClick()) {
-            handleOpenAdminPanel(minecraft);
+            handleOpenAdminPanel(minecraft.player);
         }
 
         while (ServerFixesKeybinds.CONTEXT_EDITOR.consumeClick()) {
-            handleOpenContextEditor(minecraft);
+            handleOpenContextEditor(minecraft, minecraft.player, minecraft.level);
         }
 
         while (ServerFixesKeybinds.PARTICLE_STUDIO.consumeClick()) {
-            handleOpenParticleStudio(minecraft);
+            handleOpenParticleStudio(minecraft.player);
         }
     }
 
@@ -82,18 +83,18 @@ public class ContextKeybindHandler {
         }
     }
 
-    private static void handleOpenAdminPanel(Minecraft minecraft) {
-        if (!canUsePrivilegedEditor(minecraft)) {
-            minecraft.player.displayClientMessage(Component.literal("§cAcesso negado: requer OP e modo Criativo."), true);
+    private static void handleOpenAdminPanel(net.minecraft.client.player.LocalPlayer player) {
+        if (!canUsePrivilegedEditor(Minecraft.getInstance())) {
+            player.displayClientMessage(Component.literal("§cAcesso negado: requer OP e modo Criativo."), true);
             return;
         }
 
         NetworkHandler.sendToServer(new RequestAdminPanelPacket());
     }
 
-    private static void handleOpenContextEditor(Minecraft minecraft) {
+    private static void handleOpenContextEditor(Minecraft minecraft, net.minecraft.client.player.LocalPlayer player, net.minecraft.world.level.Level level) {
         if (!canUsePrivilegedEditor(minecraft)) {
-            minecraft.player.displayClientMessage(Component.literal("§cAcesso negado: requer OP e modo Criativo."), true);
+            player.displayClientMessage(Component.literal("§cAcesso negado: requer OP e modo Criativo."), true);
             return;
         }
 
@@ -109,11 +110,11 @@ public class ContextKeybindHandler {
         HitResult hitResult = minecraft.hitResult;
         if (hitResult instanceof BlockHitResult blockHitResult) {
             BlockPos blockPos = blockHitResult.getBlockPos();
-            BlockState blockState = minecraft.level.getBlockState(blockPos);
+            BlockState blockState = level.getBlockState(blockPos);
 
             if (!blockState.isAir()) {
                 boolean hasProperties = !blockState.getProperties().isEmpty();
-                boolean hasBlockEntity = minecraft.level.getBlockEntity(blockPos) != null;
+                boolean hasBlockEntity = level.getBlockEntity(blockPos) != null;
                 if (hasProperties || hasBlockEntity) {
                     NetworkHandler.sendToServer(new RequestBlockEditorPacket(blockPos));
                     return;
@@ -132,28 +133,25 @@ public class ContextKeybindHandler {
             return;
         }
 
-        if (!minecraft.player.getMainHandItem().isEmpty()) {
-            minecraft.setScreen(new ItemEditorScreen(minecraft.player.getMainHandItem().copy()));
+        if (!player.getMainHandItem().isEmpty()) {
+            minecraft.setScreen(new ItemEditorScreen(player.getMainHandItem().copy()));
             return;
         }
 
-        minecraft.player.displayClientMessage(Component.literal("§7Nenhum alvo contextual disponível."), true);
+        player.displayClientMessage(Component.literal("§7Nenhum alvo contextual disponível."), true);
     }
 
-    private static void handleOpenParticleStudio(Minecraft minecraft) {
+    private static void handleOpenParticleStudio(net.minecraft.client.player.LocalPlayer player) {
+        Minecraft minecraft = Minecraft.getInstance();
         if (!canUseOperatorOnly(minecraft)) {
-            if (minecraft.player != null) {
-                minecraft.player.displayClientMessage(Component.literal("§cAcesso negado: requer OP."), true);
-            }
+            player.displayClientMessage(Component.literal("§cAcesso negado: requer OP."), true);
             return;
         }
 
         try {
             minecraft.setScreen(new ParticleStudioScreen());
         } catch (Exception e) {
-            if (minecraft.player != null) {
-                minecraft.player.displayClientMessage(Component.literal("§cFalha ao abrir Particle Studio: " + e.getClass().getSimpleName()), true);
-            }
+            player.displayClientMessage(Component.literal("§cFalha ao abrir Particle Studio: " + e.getClass().getSimpleName()), true);
         }
     }
 
@@ -165,10 +163,12 @@ public class ContextKeybindHandler {
     }
 
     private static boolean canUsePrivilegedEditor(Minecraft minecraft) {
-        return minecraft.player != null && minecraft.player.isCreative() && minecraft.player.hasPermissions(2);
+        net.minecraft.client.player.LocalPlayer p = minecraft.player;
+        return p != null && p.isCreative() && p.hasPermissions(2);
     }
 
     private static boolean canUseOperatorOnly(Minecraft minecraft) {
-        return minecraft.player != null && minecraft.player.hasPermissions(2);
+        net.minecraft.client.player.LocalPlayer p = minecraft.player;
+        return p != null && p.hasPermissions(2);
     }
 }

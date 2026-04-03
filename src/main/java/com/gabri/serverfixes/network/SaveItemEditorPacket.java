@@ -9,6 +9,7 @@ import net.minecraftforge.network.NetworkEvent;
 
 import java.util.function.Supplier;
 
+@SuppressWarnings("null")
 public class SaveItemEditorPacket {
     private final CompoundTag fullItemNbt;
     private final int containerId;

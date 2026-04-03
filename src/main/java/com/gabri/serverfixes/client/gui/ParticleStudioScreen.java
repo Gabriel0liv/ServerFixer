@@ -32,8 +32,6 @@ import java.util.function.IntConsumer;
 
 @SuppressWarnings("null")
 public class ParticleStudioScreen extends Screen {
-    private static final int OUTER_MARGIN = 10;
-    private static final int PANEL_GAP = 4;
     private static final int ROW_HEIGHT = 18;
     private static final Map<ResourceLocation, float[]> PARTICLE_TINTS = Map.ofEntries(
         Map.entry(ResourceLocation.fromNamespaceAndPath("minecraft", "totem_of_undying"), tint(0x63D46A)),
@@ -53,20 +51,11 @@ public class ParticleStudioScreen extends Screen {
     private ParticleList particleList;
     private SelectableEditBox commandOutputBox;
 
-    private DoubleParameterSlider deltaXSlider;
-    private DoubleParameterSlider deltaYSlider;
-    private DoubleParameterSlider deltaZSlider;
-    private DoubleParameterSlider speedSlider;
-    private IntParameterSlider countSlider;
-    private CycleButton<Boolean> forceToggle;
-
     private Button testButton;
     private Button copyButton;
 
     private ResourceLocation selectedParticleId;
-    private TextureAtlasSprite selectedPreviewSprite;
     private ResourceLocation selectedPreviewSpriteId;
-    private boolean previewSupported;
     private boolean previewHardcoded;
 
     private double rightScrollAmount = 0.0D;
@@ -142,37 +131,37 @@ public class ParticleStudioScreen extends Screen {
         int sliderW = this.rightW - 10;
         int currentY = this.rightY + 28;
 
-        this.deltaXSlider = registerRightPanelWidget(new DoubleParameterSlider(sliderX, currentY, sliderW, 18, "Delta X", 0.0D, 5.0D, this.deltaX, 2, value -> {
+        registerRightPanelWidget(new DoubleParameterSlider(sliderX, currentY, sliderW, 18, "Delta X", 0.0D, 5.0D, this.deltaX, 2, value -> {
             this.deltaX = value;
             updateCommandString();
         }));
         currentY += 24;
 
-        this.deltaYSlider = registerRightPanelWidget(new DoubleParameterSlider(sliderX, currentY, sliderW, 18, "Delta Y", 0.0D, 5.0D, this.deltaY, 2, value -> {
+        registerRightPanelWidget(new DoubleParameterSlider(sliderX, currentY, sliderW, 18, "Delta Y", 0.0D, 5.0D, this.deltaY, 2, value -> {
             this.deltaY = value;
             updateCommandString();
         }));
         currentY += 24;
 
-        this.deltaZSlider = registerRightPanelWidget(new DoubleParameterSlider(sliderX, currentY, sliderW, 18, "Delta Z", 0.0D, 5.0D, this.deltaZ, 2, value -> {
+        registerRightPanelWidget(new DoubleParameterSlider(sliderX, currentY, sliderW, 18, "Delta Z", 0.0D, 5.0D, this.deltaZ, 2, value -> {
             this.deltaZ = value;
             updateCommandString();
         }));
         currentY += 24;
 
-        this.speedSlider = registerRightPanelWidget(new DoubleParameterSlider(sliderX, currentY, sliderW, 18, "Speed", 0.0D, 1.0D, this.speed, 2, value -> {
+        registerRightPanelWidget(new DoubleParameterSlider(sliderX, currentY, sliderW, 18, "Speed", 0.0D, 1.0D, this.speed, 2, value -> {
             this.speed = value;
             updateCommandString();
         }));
         currentY += 24;
 
-        this.countSlider = registerRightPanelWidget(new IntParameterSlider(sliderX, currentY, sliderW, 18, "Count", 1, 1000, this.count, value -> {
+        registerRightPanelWidget(new IntParameterSlider(sliderX, currentY, sliderW, 18, "Count", 1, 1000, this.count, value -> {
             this.count = value;
             updateCommandString();
         }));
         currentY += 28;
 
-        this.forceToggle = registerRightPanelWidget(CycleButton.builder((Boolean value) -> Component.literal(value ? "FORCE" : "NORMAL"))
+        registerRightPanelWidget(CycleButton.builder((Boolean value) -> Component.literal(value ? "FORCE" : "NORMAL"))
             .withValues(false, true)
             .withInitialValue(this.force)
             .displayOnlyValue()
@@ -221,7 +210,8 @@ public class ParticleStudioScreen extends Screen {
         int desiredLeft = Math.max(100, this.width / 4);
         int desiredRight = Math.max(130, this.width / 4);
         int minCenter = 120;
-        int total = desiredLeft + desiredRight + (PANEL_GAP * 2) + minCenter;
+        int panelGap = 4;
+        int total = desiredLeft + desiredRight + (panelGap * 2) + minCenter;
 
         if (total > this.width) {
             int overflow = total - this.width;
@@ -238,8 +228,8 @@ public class ParticleStudioScreen extends Screen {
         this.rightX = this.width - this.rightW;
 
         this.leftX = 0;
-        this.centerX = this.leftW + PANEL_GAP;
-        int centerRight = this.rightX - PANEL_GAP;
+        this.centerX = this.leftW + panelGap;
+        int centerRight = this.rightX - panelGap;
         this.centerW = Math.max(minCenter, centerRight - this.centerX);
 
         this.leftY = contentY;
@@ -336,9 +326,7 @@ public class ParticleStudioScreen extends Screen {
     }
 
     private void refreshSelectedSpriteSafe() {
-        this.previewSupported = false;
         this.previewHardcoded = false;
-        this.selectedPreviewSprite = null;
         this.selectedPreviewSpriteId = null;
     }
 
@@ -532,30 +520,25 @@ public class ParticleStudioScreen extends Screen {
 
     private TextureAtlasSprite resolveAnimatedPreviewSprite() {
         if (this.selectedParticleId == null || this.minecraft == null) {
-            this.previewSupported = false;
             this.previewHardcoded = false;
-            this.selectedPreviewSprite = null;
             this.selectedPreviewSpriteId = null;
             return null;
         }
 
         try {
             if (this.minecraft.particleEngine == null) {
-                this.previewSupported = false;
                 this.previewHardcoded = true;
                 return null;
             }
 
             Map<ResourceLocation, SpriteSet> spriteSets = ((ParticleEngineAccessor) this.minecraft.particleEngine).getSpriteSets();
             if (spriteSets == null) {
-                this.previewSupported = false;
                 this.previewHardcoded = true;
                 return null;
             }
 
             SpriteSet spriteSet = spriteSets.get(this.selectedParticleId);
             if (spriteSet == null) {
-                this.previewSupported = false;
                 this.previewHardcoded = true;
                 return null;
             }
@@ -564,23 +547,18 @@ public class ParticleStudioScreen extends Screen {
             int currentFrame = (int) ((Util.getMillis() / 100L) % maxFrames);
             TextureAtlasSprite sprite = spriteSet.get(currentFrame, maxFrames);
             if (isMissingSprite(sprite)) {
-                this.previewSupported = false;
                 this.previewHardcoded = false;
                 return null;
             }
 
-            this.previewSupported = true;
             this.previewHardcoded = false;
-            this.selectedPreviewSprite = sprite;
             this.selectedPreviewSpriteId = this.selectedParticleId;
             return sprite;
         } catch (Exception ignored) {
             // Keep UI alive even if a specific particle has no atlas sprite mapping.
         }
 
-        this.previewSupported = false;
         this.previewHardcoded = false;
-        this.selectedPreviewSprite = null;
         this.selectedPreviewSpriteId = null;
         return null;
     }
@@ -642,8 +620,6 @@ public class ParticleStudioScreen extends Screen {
             this.listWidth = width;
             this.x0 = leftX;
             this.x1 = leftX + width;
-            this.setRenderBackground(false);
-            this.setRenderTopAndBottom(false);
         }
 
         private void add(ParticleEntry entry) {
@@ -691,6 +667,11 @@ public class ParticleStudioScreen extends Screen {
         @Override
         protected void renderBackground(@NotNull GuiGraphics graphics) {
             // Intentionally empty: the parent screen draws the panel background.
+        }
+
+        @Override
+        protected void renderDecorations(@NotNull GuiGraphics graphics, int mouseX, int mouseY) {
+            // Intentionally empty: disable vanilla top/bottom shadows.
         }
     }
 

@@ -10,7 +10,6 @@ import com.gabri.serverfixes.config.ServerFixesConfig;
 import com.gabri.serverfixes.network.NetworkHandler;
 import com.gabri.serverfixes.network.SaveItemEditorPacket;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
@@ -32,7 +31,6 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.SpawnEggItem;
 import net.minecraft.world.item.alchemy.Potion;
-import net.minecraft.world.item.alchemy.PotionUtils;
 import net.minecraft.world.item.alchemy.Potions;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.entity.EquipmentSlot;
@@ -397,7 +395,6 @@ public class ItemEditorScreen extends Screen {
     private void initGeneralCategory(int contentStartX, int contentWidth) {
         int startX = contentStartX + 10;
         int startY = 60;
-        int labelX = startX;
         int inputX = startX + 80;
         int idWidth = Math.max(140, Math.min(220, contentWidth - 130));
         int smallWidth = 62;
@@ -2100,7 +2097,6 @@ public class ItemEditorScreen extends Screen {
         int rowHeight = 22;
         int colGap = 8;
         int buttonWidth = (listWidth - colGap) / 2;
-        int rows = (HideFlagOption.ORDERED.length + 1) / 2;
 
         for (int i = 0; i < HideFlagOption.ORDERED.length; i++) {
             HideFlagOption option = HideFlagOption.ORDERED[i];
@@ -2126,7 +2122,6 @@ public class ItemEditorScreen extends Screen {
         int startX = contentStartX + (contentWidth - listWidth) / 2;
         int startY = 74;
         int buttonsTopMargin = 12; // gap between title and first row of buttons
-        int buttonsStartY = startY + buttonsTopMargin;
         int rowHeight = 22;
         int rows = (HideFlagOption.ORDERED.length + 1) / 2;
         int panelHeight = buttonsTopMargin + rows * rowHeight + 22;

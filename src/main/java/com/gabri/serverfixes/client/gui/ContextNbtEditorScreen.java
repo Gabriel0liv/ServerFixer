@@ -15,6 +15,7 @@ import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
 import net.minecraft.core.BlockPos;
 
+@SuppressWarnings("null")
 public class ContextNbtEditorScreen extends AbstractEditorScreen {
     private final ContextTargetType targetType;
     private final int containerId;

@@ -7,6 +7,7 @@ import net.minecraftforge.network.NetworkEvent;
 
 import java.util.function.Supplier;
 
+@SuppressWarnings("null")
 public class OpenParticleStudioPacket {
 
     public OpenParticleStudioPacket() {
