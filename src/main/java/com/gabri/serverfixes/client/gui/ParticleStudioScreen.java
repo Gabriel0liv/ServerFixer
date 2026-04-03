@@ -1,6 +1,7 @@
 package com.gabri.serverfixes.client.gui;
 
 import com.gabri.serverfixes.client.gui.editor.SelectableEditBox;
+import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractSliderButton;
@@ -22,13 +23,14 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.function.Function;
 import java.util.function.IntConsumer;
 import java.util.function.DoubleConsumer;
 
 @SuppressWarnings("null")
 public class ParticleStudioScreen extends Screen {
     private static final int OUTER_MARGIN = 10;
-    private static final int PANEL_GAP = 8;
+    private static final int PANEL_GAP = 4;
     private static final int ROW_HEIGHT = 18;
 
     private final List<ResourceLocation> allParticles = new ArrayList<>();
@@ -114,8 +116,9 @@ public class ParticleStudioScreen extends Screen {
         this.searchBox.setResponder(value -> applySearchFilter());
         this.addRenderableWidget(this.searchBox);
 
-        int sliderX = this.rightX + 10;
-        int sliderW = this.rightW - 20;
+        // Keep widgets strictly inside the right panel to avoid leaking/cropping at high GUI scale.
+        int sliderX = this.rightX + 5;
+        int sliderW = this.rightW - 10;
         int sliderY = this.rightY + 28;
 
         this.deltaXSlider = new DoubleParameterSlider(sliderX, sliderY, sliderW, 18, "Delta X", 0.0D, 5.0D, this.deltaX, 2, value -> {
@@ -181,7 +184,7 @@ public class ParticleStudioScreen extends Screen {
         this.addRenderableWidget(this.copyButton);
 
         this.addRenderableWidget(Button.builder(Component.literal("Fechar"), btn -> onClose())
-            .bounds(this.rightX + this.rightW - 72, this.rightY + this.rightH - 24, 64, 18)
+            .bounds(this.rightX + this.rightW - 69, this.rightY + this.rightH - 24, 64, 18)
             .build());
 
         refreshSelectedSpriteSafe();
@@ -189,20 +192,32 @@ public class ParticleStudioScreen extends Screen {
     }
 
     private void updateLayout() {
-        int contentX = OUTER_MARGIN;
         int contentY = 20;
-        int contentW = this.width - OUTER_MARGIN * 2;
         int contentH = this.height - 28;
 
-        int leftRatio = (int) (contentW * 0.36F);
-        int rightRatio = (int) (contentW * 0.28F);
-        this.leftW = Math.max(220, leftRatio - PANEL_GAP);
-        this.rightW = Math.max(220, rightRatio - PANEL_GAP);
-        this.centerW = Math.max(220, contentW - this.leftW - this.rightW - PANEL_GAP * 2);
+        int desiredLeft = Math.max(100, this.width / 4);
+        int desiredRight = Math.max(130, this.width / 4);
+        int minCenter = 120;
+        int total = desiredLeft + desiredRight + (PANEL_GAP * 2) + minCenter;
 
-        this.leftX = contentX;
-        this.centerX = this.leftX + this.leftW + PANEL_GAP;
-        this.rightX = this.centerX + this.centerW + PANEL_GAP;
+        if (total > this.width) {
+            int overflow = total - this.width;
+            int leftTrim = Math.min(Math.max(0, desiredLeft - 100), (overflow + 1) / 2);
+            desiredLeft -= leftTrim;
+            overflow -= leftTrim;
+
+            int rightTrim = Math.min(Math.max(0, desiredRight - 130), overflow);
+            desiredRight -= rightTrim;
+        }
+
+        this.leftW = desiredLeft;
+        this.rightW = desiredRight;
+        this.rightX = this.width - this.rightW;
+
+        this.leftX = 0;
+        this.centerX = this.leftW + PANEL_GAP;
+        int centerRight = this.rightX - PANEL_GAP;
+        this.centerW = Math.max(minCenter, centerRight - this.centerX);
 
         this.leftY = contentY;
         this.centerY = contentY;
@@ -461,15 +476,10 @@ public class ParticleStudioScreen extends Screen {
             graphics.drawCenteredString(this.font, "Selecione uma particula", boxX + (boxW / 2), boxY + (boxH / 2), 0xFFAAAAAA);
             return;
         }
-
-        // Lazy resolve to avoid touching atlas before screen is fully initialized.
-        if (this.selectedPreviewSprite == null && !this.previewSupported) {
-            refreshSelectedSpriteSafe();
-        }
-
         graphics.drawString(this.font, this.selectedParticleId.toString(), boxX + 8, boxY + 8, 0xFFB8C8DE);
 
-        if (!this.previewSupported || this.selectedPreviewSprite == null) {
+        TextureAtlasSprite animatedSprite = resolveAnimatedPreviewSprite();
+        if (animatedSprite == null) {
             graphics.drawCenteredString(this.font, "Preview nao suportada", boxX + (boxW / 2), boxY + (boxH / 2) - 4, 0xFFFF7D7D);
             return;
         }
@@ -483,12 +493,59 @@ public class ParticleStudioScreen extends Screen {
         graphics.pose().pushPose();
         graphics.pose().translate(drawX, drawY, 0.0F);
         graphics.pose().scale(scale, scale, 1.0F);
-        graphics.blit(0, 0, 0, 16, 16, this.selectedPreviewSprite);
+        graphics.blit(0, 0, 0, 16, 16, animatedSprite);
         graphics.pose().popPose();
 
         if (this.selectedPreviewSpriteId != null) {
             graphics.drawCenteredString(this.font, this.selectedPreviewSpriteId.toString(), boxX + (boxW / 2), boxY + boxH - 14, 0xFF8FA5C2);
         }
+    }
+
+    private TextureAtlasSprite resolveAnimatedPreviewSprite() {
+        if (this.selectedParticleId == null || this.minecraft == null) {
+            this.previewSupported = false;
+            this.selectedPreviewSprite = null;
+            this.selectedPreviewSpriteId = null;
+            return null;
+        }
+
+        try {
+            Function<ResourceLocation, TextureAtlasSprite> atlasFn = this.minecraft.getTextureAtlas(TextureAtlas.LOCATION_PARTICLES);
+            if (atlasFn == null) {
+                this.previewSupported = false;
+                return null;
+            }
+
+            TextureAtlasSprite missing = atlasFn.apply(MissingTextureAtlasSprite.getLocation());
+            String namespace = this.selectedParticleId.getNamespace();
+            String path = this.selectedParticleId.getPath();
+            int frame = (int) ((Util.getMillis() / 100L) % 8L);
+
+            List<ResourceLocation> candidates = new ArrayList<>();
+            candidates.add(ResourceLocation.fromNamespaceAndPath(namespace, "particle/" + path + "_" + frame));
+            candidates.add(ResourceLocation.fromNamespaceAndPath(namespace, "particle/" + path + "_0"));
+            candidates.add(ResourceLocation.fromNamespaceAndPath(namespace, path + "_" + frame));
+            candidates.add(ResourceLocation.fromNamespaceAndPath(namespace, path + "_0"));
+            candidates.add(ResourceLocation.fromNamespaceAndPath(namespace, "particle/" + path));
+            candidates.add(this.selectedParticleId);
+
+            for (ResourceLocation candidate : candidates) {
+                TextureAtlasSprite sprite = atlasFn.apply(candidate);
+                if (sprite != null && sprite != missing) {
+                    this.previewSupported = true;
+                    this.selectedPreviewSprite = sprite;
+                    this.selectedPreviewSpriteId = candidate;
+                    return sprite;
+                }
+            }
+        } catch (Exception ignored) {
+            // Keep UI alive even if a specific particle has no atlas sprite mapping.
+        }
+
+        this.previewSupported = false;
+        this.selectedPreviewSprite = null;
+        this.selectedPreviewSpriteId = null;
+        return null;
     }
 
     private boolean isInsideListArea(double mouseX, double mouseY) {
