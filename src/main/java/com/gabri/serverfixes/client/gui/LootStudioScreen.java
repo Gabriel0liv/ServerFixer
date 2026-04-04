@@ -11,22 +11,18 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
-import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraftforge.registries.ForgeRegistries;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.HashMap;
-import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -54,6 +50,9 @@ public class LootStudioScreen extends Screen {
 
     // center loot list
     private final List<LootDropDTO> lootDrops = new ArrayList<>();
+    private double centerScrollAmount = 0.0D;
+    private int maxCenterScroll = 0;
+    private boolean isDirty = false;
     private final List<String> availableNamespaces = new ArrayList<>();
     private final List<String> availableCategories = new ArrayList<>();
     private final Set<String> selectedNamespaces = new HashSet<>();
@@ -72,26 +71,12 @@ public class LootStudioScreen extends Screen {
     private int listAreaX, listAreaY, listAreaW, listAreaH;
 
     // right panel controls
-    private Button selectItemButton;
-    private DoubleParameterSlider chanceSlider;
-    private IntParameterSlider minSlider;
-    private IntParameterSlider maxSlider;
-    private TextureCheckbox requirePlayerKillCheckbox;
-    private TextureCheckbox affectedByLootingCheckbox;
-    private CycleButton<EditorMode> editModeCycle;
-    private Button injectButton;
+    private Button addNewDropButton;
+    private SaveApplyButton saveApplyButton;
     private IconButton resetButton;
+    private LootDropEditorModal editorModal;
 
-    private static final Item[] FALLBACK_ITEMS = new Item[]{Items.DIAMOND, Items.IRON_INGOT, Items.GOLD_INGOT, Items.EMERALD, Items.COAL};
-    private int fallbackItemIndex = 0;
     private int editingDropIndex = -1;
-    private ItemStack editorItem = new ItemStack(Items.DIAMOND);
-    private ResourceLocation editorTag;
-    private ResourceLocation editorReferenceTable;
-    private final List<ResourceLocation> availableItemTags = new ArrayList<>();
-    private int selectedTagIndex = 0;
-    private int selectedReferenceTableIndex = 0;
-    private EditorMode editorMode = EditorMode.ITEM;
 
     public LootStudioScreen() {
         super(Component.literal("Loot Studio"));
@@ -108,6 +93,9 @@ public class LootStudioScreen extends Screen {
         this.leftScrollAmount = 0.0D;
         this.maxLeftScroll = 0;
         this.selectedTableIndex = 0;
+
+        this.centerScrollAmount = 0.0D;
+        this.maxCenterScroll = 0;
 
         this.rightPanelWidgets.clear();
         this.widgetOriginalY.clear();
@@ -141,42 +129,18 @@ public class LootStudioScreen extends Screen {
 
         applySearchFilter();
 
-        // Right panel widgets
-        int sliderW = this.rightW - 16;
+        // Right panel actions (manual workflow)
+        int actionW = this.rightW - 16;
 
-        this.selectItemButton = Button.builder(Component.literal("Item: <nenhum>"), btn -> selectEditorItemFromPlayerOrFallback())
-            .bounds(0, 0, sliderW, 18).build();
-        registerRightPanelWidget(this.selectItemButton);
-        updateSelectItemButtonLabel();
+        this.addNewDropButton = Button.builder(Component.literal("Adicionar Novo Drop"), btn -> {
+            if (this.editorModal != null) {
+                this.editorModal.openForCreate();
+            }
+        }).bounds(0, 0, actionW, 20).build();
+        registerRightPanelWidget(this.addNewDropButton);
 
-        this.chanceSlider = new DoubleParameterSlider(0, 0, sliderW, 18, "Chance", 0.0D, 100.0D, 50.0D, 1, value -> {});
-        registerRightPanelWidget(this.chanceSlider);
-
-        this.minSlider = new IntParameterSlider(0, 0, sliderW, 18, "Min", 1, 64, 1, value -> {});
-        registerRightPanelWidget(this.minSlider);
-
-        this.maxSlider = new IntParameterSlider(0, 0, sliderW, 18, "Max", 1, 64, 3, value -> {});
-        registerRightPanelWidget(this.maxSlider);
-
-        this.requirePlayerKillCheckbox = new TextureCheckbox(0, 0, false, Component.literal(""), val -> {});
-        registerRightPanelWidget(this.requirePlayerKillCheckbox);
-
-        this.affectedByLootingCheckbox = new TextureCheckbox(0, 0, false, Component.literal(""), val -> {});
-        registerRightPanelWidget(this.affectedByLootingCheckbox);
-
-        this.editModeCycle = CycleButton.<EditorMode>builder(mode -> mode.label)
-            .withValues(EditorMode.values())
-            .displayOnlyValue()
-            .create(0, 0, sliderW, 18, Component.literal("Modo"), (btn, mode) -> {
-                this.editorMode = mode;
-                updateSelectItemButtonLabel();
-            });
-        registerRightPanelWidget(this.editModeCycle);
-        this.editModeCycle.setValue(this.editorMode);
-
-        this.injectButton = Button.builder(Component.literal("Injetar"), btn -> upsertDropFromEditor())
-            .bounds(0, 0, sliderW, 20).build();
-        registerRightPanelWidget(this.injectButton);
+        this.saveApplyButton = new SaveApplyButton(0, 0, actionW, 22, Component.literal("SALVAR E APLICAR"), btn -> saveCurrentTableToServer());
+        registerRightPanelWidget(this.saveApplyButton);
 
         this.resetButton = new IconButton(0, 0, 12, 12,
             ResourceLocation.fromNamespaceAndPath("serverfixes", "textures/gui/reset.png"),
@@ -184,7 +148,9 @@ public class LootStudioScreen extends Screen {
             btn -> requestResetTable());
         this.addRenderableWidget(this.resetButton);
 
-        refreshAvailableItemTags();
+        this.editorModal = new LootDropEditorModal();
+        this.editorModal.init();
+
         recalculateRightPanel();
 
         NetworkHandler.sendToServer(new RequestLootDataPacket());
@@ -281,6 +247,7 @@ public class LootStudioScreen extends Screen {
         }
 
         this.lootDrops.clear();
+        this.centerScrollAmount = 0.0D;
         if (drops != null) {
             for (LootDropDTO dto : drops) {
                 if (dto != null) {
@@ -289,11 +256,8 @@ public class LootStudioScreen extends Screen {
             }
         }
 
-        if (!this.lootDrops.isEmpty()) {
-            loadDropIntoEditor(0);
-        } else {
-            this.editingDropIndex = -1;
-        }
+        this.isDirty = false;
+        this.editingDropIndex = -1;
     }
 
     private void rebuildFilterOptions() {
@@ -336,8 +300,11 @@ public class LootStudioScreen extends Screen {
         int rows = this.availableNamespaces.size() + this.availableCategories.size() + 4;
         int h = Math.min(this.leftH - 40, 22 + rows * 14);
 
-        graphics.fill(x, y, x + w, y + h, 0xE015202D);
-        GuiLayoutUtils.drawPanel(graphics, x, y, w, h, 0x001A2434, 0xFF4E6B8D);
+        graphics.fill(x, y, x + w, y + h, 0xFB1A2434);
+        graphics.fill(x, y, x + w, y + 1, 0xFF4E6B8D);
+        graphics.fill(x, y + h - 1, x + w, y + h, 0xFF4E6B8D);
+        graphics.fill(x, y, x + 1, y + h, 0xFF4E6B8D);
+        graphics.fill(x + w - 1, y, x + w, y + h, 0xFF4E6B8D);
 
         int drawY = y + 6;
         graphics.drawString(this.font, "Filtros", x + 6, drawY, 0xFFF4F7FF);
@@ -482,6 +449,10 @@ public class LootStudioScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (this.editorModal != null && this.editorModal.isOpen()) {
+            return this.editorModal.mouseClicked(mouseX, mouseY, button);
+        }
+
         if (handleFilterOverlayClick(mouseX, mouseY, button)) {
             return true;
         }
@@ -523,10 +494,19 @@ public class LootStudioScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollY) {
+        if (this.editorModal != null && this.editorModal.isOpen()) {
+            return true;
+        }
+
         if (isInsideLeftList(mouseX, mouseY) && this.maxLeftScroll > 0) {
             this.leftScrollAmount -= scrollY * 15.0D;
             this.leftScrollAmount = Mth.clamp(this.leftScrollAmount, 0.0D, this.maxLeftScroll);
             applyLeftScroll();
+            return true;
+        }
+        if (isInsideCenterList(mouseX, mouseY) && this.maxCenterScroll > 0) {
+            this.centerScrollAmount -= scrollY * 15.0D;
+            this.centerScrollAmount = Mth.clamp(this.centerScrollAmount, 0.0D, this.maxCenterScroll);
             return true;
         }
         if (isInsideRightPanel(mouseX, mouseY) && this.maxRightScroll > 0) {
@@ -546,7 +526,7 @@ public class LootStudioScreen extends Screen {
         int startY = this.centerY + 28;
         int rowH = 28;
         for (int i = 0; i < this.lootDrops.size(); i++) {
-            int rowY = startY + (i * rowH);
+            int rowY = startY + (i * rowH) - (int) this.centerScrollAmount;
             if (mouseY < rowY || mouseY >= rowY + rowH) {
                 continue;
             }
@@ -560,16 +540,20 @@ public class LootStudioScreen extends Screen {
             int delX = this.centerX + this.centerW - 18;
             if (!dto.isComplex()) {
                 if (mouseX >= editX && mouseX < editX + 14 && mouseY >= rowY && mouseY < rowY + 14) {
-                    loadDropIntoEditor(i);
+                    if (this.editorModal != null) {
+                        this.editorModal.openForEdit(i, dto);
+                    }
                     return true;
                 }
                 if (mouseX >= delX && mouseX < delX + 14 && mouseY >= rowY && mouseY < rowY + 14) {
                     this.lootDrops.remove(i);
                     this.editingDropIndex = -1;
-                    saveCurrentTableToServer();
+                    this.isDirty = true;
                     return true;
                 }
-                loadDropIntoEditor(i);
+                if (this.editorModal != null) {
+                    this.editorModal.openForEdit(i, dto);
+                }
                 return true;
             }
 
@@ -627,6 +611,15 @@ public class LootStudioScreen extends Screen {
             }
         }
 
+        Map<AbstractWidget, Boolean> modalVisibilityMemory = new HashMap<>();
+        boolean hideModalBeforeSuper = this.editorModal != null && this.editorModal.isOpen();
+        if (hideModalBeforeSuper) {
+            for (AbstractWidget widget : this.editorModal.getWidgets()) {
+                modalVisibilityMemory.put(widget, widget.visible);
+                widget.visible = false;
+            }
+        }
+
         super.render(graphics, mouseX, mouseY, partialTick);
 
         if (clipRightPanel) {
@@ -638,27 +631,34 @@ public class LootStudioScreen extends Screen {
                 widget.render(graphics, mouseX, mouseY, partialTick);
             }
 
-            if (this.requirePlayerKillCheckbox != null && this.requirePlayerKillCheckbox.visible) {
-                graphics.drawString(this.font, "Exigir Morte por Jogador", this.requirePlayerKillCheckbox.getX() + 18, this.requirePlayerKillCheckbox.getY() + 3, 0xFFD4E0F0);
-            }
-            if (this.affectedByLootingCheckbox != null && this.affectedByLootingCheckbox.visible) {
-                graphics.drawString(this.font, "Afetado por Pilhagem", this.affectedByLootingCheckbox.getX() + 18, this.affectedByLootingCheckbox.getY() + 3, 0xFFD4E0F0);
-            }
-
             graphics.disableScissor();
         }
 
         renderLeftScrollbar(graphics);
         renderRightScrollbar(graphics);
+        renderCenterScrollbar(graphics);
 
         renderFilterOverlay(graphics, mouseX, mouseY);
+
+        if (hideModalBeforeSuper) {
+            for (AbstractWidget widget : this.editorModal.getWidgets()) {
+                widget.visible = modalVisibilityMemory.getOrDefault(widget, true);
+            }
+        }
+        if (this.editorModal != null && this.editorModal.isOpen()) {
+            this.editorModal.render(graphics, mouseX, mouseY, partialTick);
+        }
     }
 
     private void renderCenterLootList(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         int startX = this.centerX + 8;
         int startY = this.centerY + 28;
         int rowH = 28;
-        int currentY = startY;
+        int contentHeight = this.lootDrops.size() * rowH;
+        int visibleHeight = Math.max(1, (this.centerY + this.centerH - 8) - startY);
+        this.maxCenterScroll = Math.max(0, contentHeight - visibleHeight);
+        this.centerScrollAmount = Mth.clamp(this.centerScrollAmount, 0.0D, this.maxCenterScroll);
+        int currentY = startY - (int) this.centerScrollAmount;
 
         graphics.enableScissor(this.centerX, this.centerY, this.centerX + this.centerW, this.centerY + this.centerH);
 
@@ -830,66 +830,21 @@ public class LootStudioScreen extends Screen {
 
         this.widgetOriginalY.clear();
 
-        if (this.selectItemButton != null && this.selectItemButton.visible) {
-            this.selectItemButton.setX(rowX);
-            this.selectItemButton.setY(currentY);
-            this.selectItemButton.setWidth(rowW);
-            this.widgetOriginalY.put(this.selectItemButton, currentY);
-            currentY += this.selectItemButton.getHeight() + gap;
+        if (this.addNewDropButton != null && this.addNewDropButton.visible) {
+            this.addNewDropButton.setX(rowX);
+            this.addNewDropButton.setY(currentY);
+            this.addNewDropButton.setWidth(rowW);
+            this.widgetOriginalY.put(this.addNewDropButton, currentY);
+            currentY += this.addNewDropButton.getHeight() + gap;
         }
 
-        if (this.chanceSlider != null && this.chanceSlider.visible) {
-            this.chanceSlider.setX(rowX);
-            this.chanceSlider.setY(currentY);
-            this.chanceSlider.setWidth(rowW);
-            this.widgetOriginalY.put(this.chanceSlider, currentY);
-            currentY += this.chanceSlider.getHeight() + gap;
-        }
-
-        if (this.minSlider != null && this.minSlider.visible) {
-            this.minSlider.setX(rowX);
-            this.minSlider.setY(currentY);
-            this.minSlider.setWidth(rowW);
-            this.widgetOriginalY.put(this.minSlider, currentY);
-            currentY += this.minSlider.getHeight() + gap;
-        }
-
-        if (this.maxSlider != null && this.maxSlider.visible) {
-            this.maxSlider.setX(rowX);
-            this.maxSlider.setY(currentY);
-            this.maxSlider.setWidth(rowW);
-            this.widgetOriginalY.put(this.maxSlider, currentY);
-            currentY += this.maxSlider.getHeight() + gap;
-        }
-
-        if (this.requirePlayerKillCheckbox != null && this.requirePlayerKillCheckbox.visible) {
-            this.requirePlayerKillCheckbox.setX(rowX);
-            this.requirePlayerKillCheckbox.setY(currentY);
-            this.widgetOriginalY.put(this.requirePlayerKillCheckbox, currentY);
-            currentY += this.requirePlayerKillCheckbox.getHeight() + gap;
-        }
-
-        if (this.affectedByLootingCheckbox != null && this.affectedByLootingCheckbox.visible) {
-            this.affectedByLootingCheckbox.setX(rowX);
-            this.affectedByLootingCheckbox.setY(currentY);
-            this.widgetOriginalY.put(this.affectedByLootingCheckbox, currentY);
-            currentY += this.affectedByLootingCheckbox.getHeight() + gap;
-        }
-
-        if (this.editModeCycle != null && this.editModeCycle.visible) {
-            this.editModeCycle.setX(rowX);
-            this.editModeCycle.setY(currentY);
-            this.editModeCycle.setWidth(rowW);
-            this.widgetOriginalY.put(this.editModeCycle, currentY);
-            currentY += this.editModeCycle.getHeight() + gap;
-        }
-
-        if (this.injectButton != null && this.injectButton.visible) {
-            this.injectButton.setX(rowX);
-            this.injectButton.setY(currentY);
-            this.injectButton.setWidth(rowW);
-            this.widgetOriginalY.put(this.injectButton, currentY);
-            currentY += this.injectButton.getHeight() + gap;
+        if (this.saveApplyButton != null && this.saveApplyButton.visible) {
+            this.saveApplyButton.setX(rowX);
+            this.saveApplyButton.setY(currentY);
+            this.saveApplyButton.setWidth(rowW);
+            this.saveApplyButton.setDirty(this.isDirty);
+            this.widgetOriginalY.put(this.saveApplyButton, currentY);
+            currentY += this.saveApplyButton.getHeight() + gap;
         }
 
         int visibleBottom = this.rightY + this.rightH - 8;
@@ -920,6 +875,22 @@ public class LootStudioScreen extends Screen {
         graphics.fill(barX + 1, thumbY, barX + 4, thumbY + thumbHeight, 0xFF888888);
     }
 
+    private void renderCenterScrollbar(GuiGraphics graphics) {
+        if (this.maxCenterScroll <= 0) return;
+
+        int top = this.centerY + 28;
+        int bottom = this.centerY + this.centerH - 6;
+        int trackHeight = Math.max(1, bottom - top);
+        int barX = this.centerX + this.centerW - 7;
+
+        graphics.fill(barX, top, barX + 5, bottom, 0xFF000000);
+
+        int thumbHeight = Math.max(20, (int) ((trackHeight / (float) (trackHeight + this.maxCenterScroll)) * trackHeight));
+        int available = Math.max(1, trackHeight - thumbHeight);
+        int thumbY = top + (int) ((this.centerScrollAmount / Math.max(1, this.maxCenterScroll)) * available);
+        graphics.fill(barX + 1, thumbY, barX + 4, thumbY + thumbHeight, 0xFF888888);
+    }
+
     private void renderLeftScrollbar(GuiGraphics graphics) {
         if (this.maxLeftScroll <= 0) return;
         int listRight = this.listAreaX + this.listAreaW;
@@ -940,173 +911,12 @@ public class LootStudioScreen extends Screen {
         graphics.fill(barX + 1, thumbY, barX + trackWidth - 1, thumbY + thumbHeight, 0xFF888888);
     }
 
-    private void selectEditorItemFromPlayerOrFallback() {
-        if (this.editorMode == EditorMode.TAG) {
-            if (this.availableItemTags.isEmpty()) {
-                refreshAvailableItemTags();
-            }
-            if (!this.availableItemTags.isEmpty()) {
-                this.selectedTagIndex = (this.selectedTagIndex + 1) % this.availableItemTags.size();
-                this.editorTag = this.availableItemTags.get(this.selectedTagIndex);
-                this.editorReferenceTable = null;
-                this.editorItem = new ItemStack(Items.CHEST);
-            }
-            updateSelectItemButtonLabel();
-            return;
-        }
-
-        if (this.editorMode == EditorMode.TABLE) {
-            if (!this.allTables.isEmpty()) {
-                this.selectedReferenceTableIndex = (this.selectedReferenceTableIndex + 1) % this.allTables.size();
-                this.editorReferenceTable = this.allTables.get(this.selectedReferenceTableIndex);
-                this.editorTag = null;
-                this.editorItem = new ItemStack(Items.CHEST);
-            }
-            updateSelectItemButtonLabel();
-            return;
-        }
-
-        if (this.minecraft != null && this.minecraft.player != null) {
-            ItemStack held = this.minecraft.player.getMainHandItem();
-            if (held != null && !held.isEmpty()) {
-                this.editorItem = held.copy();
-                this.editorItem.setCount(1);
-                this.editorTag = null;
-                this.editorReferenceTable = null;
-                updateSelectItemButtonLabel();
-                return;
-            }
-        }
-
-        this.fallbackItemIndex = (this.fallbackItemIndex + 1) % FALLBACK_ITEMS.length;
-        this.editorItem = new ItemStack(FALLBACK_ITEMS[this.fallbackItemIndex]);
-        this.editorTag = null;
-        this.editorReferenceTable = null;
-        updateSelectItemButtonLabel();
-    }
-
-    private void updateSelectItemButtonLabel() {
-        if (this.selectItemButton == null) {
-            return;
-        }
-
-        String value;
-        if (this.editorMode == EditorMode.TAG) {
-            value = this.editorTag != null ? ("#" + this.editorTag) : "<tag>";
-            this.selectItemButton.setMessage(Component.literal("Tag: " + value));
-            return;
-        }
-
-        if (this.editorMode == EditorMode.TABLE) {
-            value = this.editorReferenceTable != null ? this.editorReferenceTable.toString() : "<tabela>";
-            this.selectItemButton.setMessage(Component.literal("Tabela: " + value));
-            return;
-        }
-
-        value = "<item>";
-        if (this.editorItem != null && !this.editorItem.isEmpty()) {
-            value = this.editorItem.getHoverName().getString();
-        }
-        this.selectItemButton.setMessage(Component.literal("Item: " + value));
-    }
-
-    private void loadDropIntoEditor(int index) {
-        if (index < 0 || index >= this.lootDrops.size()) {
-            return;
-        }
-
-        LootDropDTO dto = this.lootDrops.get(index);
-        this.editingDropIndex = index;
-
-        if (dto.getTag() != null) {
-            this.editorMode = EditorMode.TAG;
-            this.editorTag = dto.getTag();
-            this.editorReferenceTable = null;
-            this.editorItem = new ItemStack(Items.CHEST);
-        } else if (dto.getReferenceTable() != null) {
-            this.editorMode = EditorMode.TABLE;
-            this.editorReferenceTable = dto.getReferenceTable();
-            this.editorTag = null;
-            this.editorItem = new ItemStack(Items.CHEST);
-        } else {
-            this.editorMode = EditorMode.ITEM;
-            this.editorItem = dto.getItem() != null && !dto.getItem().isEmpty()
-                ? dto.getItem().copy()
-                : new ItemStack(Items.DIAMOND);
-            this.editorTag = null;
-            this.editorReferenceTable = null;
-        }
-
-        this.editorItem.setCount(1);
-        if (this.editModeCycle != null) this.editModeCycle.setValue(this.editorMode);
-        updateSelectItemButtonLabel();
-
-        if (this.chanceSlider != null) this.chanceSlider.setCurrentValue(dto.getChance());
-        if (this.minSlider != null) this.minSlider.setCurrentValue(dto.getMin());
-        if (this.maxSlider != null) this.maxSlider.setCurrentValue(dto.getMax());
-        if (this.requirePlayerKillCheckbox != null) this.requirePlayerKillCheckbox.setSelected(dto.isRequirePlayerKill());
-        if (this.affectedByLootingCheckbox != null) this.affectedByLootingCheckbox.setSelected(dto.isAffectedByLooting());
-    }
-
-    private void upsertDropFromEditor() {
-        if (this.selectedTableId == null) {
-            return;
-        }
-
-        int min = this.minSlider != null ? this.minSlider.getCurrentValue() : 1;
-        int max = this.maxSlider != null ? this.maxSlider.getCurrentValue() : 1;
-        if (max < min) {
-            max = min;
-            if (this.maxSlider != null) this.maxSlider.setCurrentValue(max);
-        }
-
-        ItemStack resultItem = this.editorItem != null ? this.editorItem.copy() : ItemStack.EMPTY;
-        ResourceLocation resultTag = null;
-        ResourceLocation resultReference = null;
-
-        if (this.editorMode == EditorMode.TAG) {
-            if (this.editorTag == null) {
-                return;
-            }
-            resultTag = this.editorTag;
-            resultItem = new ItemStack(Items.CHEST);
-        } else if (this.editorMode == EditorMode.TABLE) {
-            if (this.editorReferenceTable == null) {
-                return;
-            }
-            resultReference = this.editorReferenceTable;
-            resultItem = new ItemStack(Items.CHEST);
-        }
-
-        LootDropDTO dto = new LootDropDTO(
-            resultItem,
-            this.chanceSlider != null ? this.chanceSlider.getCurrentValue() : 100.0D,
-            min,
-            max,
-            this.requirePlayerKillCheckbox != null && this.requirePlayerKillCheckbox.isSelected(),
-            this.affectedByLootingCheckbox != null && this.affectedByLootingCheckbox.isSelected(),
-            false,
-            resultTag,
-            resultReference
-        );
-
-        dto.getItem().setCount(1);
-
-        if (this.editingDropIndex >= 0 && this.editingDropIndex < this.lootDrops.size()) {
-            this.lootDrops.set(this.editingDropIndex, dto);
-        } else {
-            this.lootDrops.add(dto);
-            this.editingDropIndex = this.lootDrops.size() - 1;
-        }
-
-        saveCurrentTableToServer();
-    }
-
     private void saveCurrentTableToServer() {
-        if (this.selectedTableId == null) {
+        if (this.selectedTableId == null || !this.isDirty) {
             return;
         }
         NetworkHandler.sendToServer(new SaveLootTablePacket(this.selectedTableId, this.lootDrops));
+        this.isDirty = false;
     }
 
     private void requestResetTable() {
@@ -1133,33 +943,405 @@ public class LootStudioScreen extends Screen {
         );
     }
 
-    private void refreshAvailableItemTags() {
-        this.availableItemTags.clear();
+    private static final class SaveApplyButton extends Button {
+        private boolean dirty;
 
-        try {
-            Object tagManager = ForgeRegistries.ITEMS.tags();
-            if (tagManager != null) {
-                Method getTagNames = tagManager.getClass().getMethod("getTagNames");
-                Object streamObj = getTagNames.invoke(tagManager);
-                if (streamObj instanceof java.util.stream.Stream<?> stream) {
-                    stream.forEach(tagKey -> {
-                        try {
-                            Method locationMethod = tagKey.getClass().getMethod("location");
-                            Object loc = locationMethod.invoke(tagKey);
-                            if (loc instanceof ResourceLocation rl) {
-                                this.availableItemTags.add(rl);
-                            }
-                        } catch (Throwable ignored) {
-                        }
-                    });
-                }
-            }
-        } catch (Throwable ignored) {
+        private SaveApplyButton(int x, int y, int width, int height, Component message, OnPress onPress) {
+            super(x, y, width, height, message, onPress, DEFAULT_NARRATION);
         }
 
-        this.availableItemTags.sort(Comparator.comparing(ResourceLocation::toString));
-        if (!this.availableItemTags.isEmpty() && this.editorTag == null) {
-            this.editorTag = this.availableItemTags.get(0);
+        private void setDirty(boolean dirty) {
+            this.dirty = dirty;
+        }
+
+        @Override
+        protected void renderWidget(@NotNull GuiGraphics graphics, int mouseX, int mouseY, float partialTicks) {
+            int x = this.getX();
+            int y = this.getY();
+            int w = this.getWidth();
+            int h = this.getHeight();
+
+            int baseColor = this.dirty ? 0xFF2D6A3E : 0xFF2E3A42;
+            if (this.dirty) {
+                double t = (System.currentTimeMillis() % 900L) / 900.0D;
+                int pulse = (int) (20.0D + 35.0D * Math.sin(t * Math.PI * 2.0D));
+                int r = Math.min(255, 0x2D + pulse / 3);
+                int g = Math.min(255, 0x6A + pulse / 2);
+                int b = Math.min(255, 0x3E + pulse / 4);
+                baseColor = (0xFF << 24) | (r << 16) | (g << 8) | b;
+            }
+
+            int fill = !this.active ? 0xFF2B2B2B : (this.isHoveredOrFocused() ? lighten(baseColor, 0x18) : baseColor);
+            int border = this.dirty ? 0xFF8EE6A0 : 0xFF4E6B8D;
+
+            graphics.fill(x, y, x + w, y + h, fill);
+            graphics.fill(x, y, x + w, y + 1, border);
+            graphics.fill(x, y + h - 1, x + w, y + h, border);
+            graphics.fill(x, y, x + 1, y + h, border);
+            graphics.fill(x + w - 1, y, x + w, y + h, border);
+
+            int textColor = 0xFFF4F7FF;
+            int textX = x + (w - Minecraft.getInstance().font.width(this.getMessage())) / 2;
+            int textY = y + (h - 8) / 2;
+            graphics.drawString(Minecraft.getInstance().font, this.getMessage(), textX, textY, textColor);
+        }
+
+        private static int lighten(int argb, int delta) {
+            int a = (argb >>> 24) & 0xFF;
+            int r = Math.min(255, ((argb >>> 16) & 0xFF) + delta);
+            int g = Math.min(255, ((argb >>> 8) & 0xFF) + delta);
+            int b = Math.min(255, (argb & 0xFF) + delta);
+            return (a << 24) | (r << 16) | (g << 8) | b;
+        }
+    }
+
+    private final class LootDropEditorModal {
+        private final List<AbstractWidget> widgets = new ArrayList<>();
+        private Button modeCycleButton;
+        private SelectableEditBox tagInput;
+        private SelectableEditBox referenceTableInput;
+        private DoubleParameterSlider chanceSlider;
+        private IntParameterSlider minSlider;
+        private IntParameterSlider maxSlider;
+        private TextureCheckbox requirePlayerKillCheckbox;
+        private TextureCheckbox affectedByLootingCheckbox;
+        private Button confirmButton;
+        private Button cancelButton;
+
+        private boolean open = false;
+        private int editingIndex = -1;
+        private EditorMode mode = EditorMode.ITEM;
+        private ItemStack itemStack = new ItemStack(Items.DIAMOND);
+
+        private int modalX, modalY, modalW, modalH;
+        private int slotX, slotY, slotSize;
+
+        private void init() {
+            this.modalW = 300;
+            this.modalH = 206;
+            this.slotSize = 24;
+
+            this.modeCycleButton = Button.builder(this.mode.label, btn -> cycleMode()).bounds(0, 0, 88, 20).build();
+            this.tagInput = new SelectableEditBox(LootStudioScreen.this.font, 0, 0, 10, 18, Component.literal("tag"));
+            this.tagInput.setMaxLength(120);
+            this.referenceTableInput = new SelectableEditBox(LootStudioScreen.this.font, 0, 0, 10, 18, Component.literal("table"));
+            this.referenceTableInput.setMaxLength(120);
+
+            this.chanceSlider = new DoubleParameterSlider(0, 0, 10, 18, "Chance", 0.0D, 100.0D, 50.0D, 1, value -> {});
+            this.minSlider = new IntParameterSlider(0, 0, 10, 18, "Min", 1, 64, 1, value -> {});
+            this.maxSlider = new IntParameterSlider(0, 0, 10, 18, "Max", 1, 64, 1, value -> {});
+            this.requirePlayerKillCheckbox = new TextureCheckbox(0, 0, false, Component.literal("PK"), v -> {});
+            this.affectedByLootingCheckbox = new TextureCheckbox(0, 0, false, Component.literal("Looting"), v -> {});
+
+            this.confirmButton = Button.builder(Component.literal("Confirmar"), btn -> confirm()).bounds(0, 0, 80, 20).build();
+            this.cancelButton = Button.builder(Component.literal("Cancelar"), btn -> close()).bounds(0, 0, 80, 20).build();
+
+            register(this.modeCycleButton);
+            register(this.tagInput);
+            register(this.referenceTableInput);
+            register(this.chanceSlider);
+            register(this.minSlider);
+            register(this.maxSlider);
+            register(this.requirePlayerKillCheckbox);
+            register(this.affectedByLootingCheckbox);
+            register(this.confirmButton);
+            register(this.cancelButton);
+
+            setWidgetsVisible(false);
+        }
+
+        private void register(AbstractWidget widget) {
+            this.widgets.add(widget);
+            LootStudioScreen.this.addRenderableWidget(widget);
+        }
+
+        private List<AbstractWidget> getWidgets() {
+            return this.widgets;
+        }
+
+        private boolean isOpen() {
+            return this.open;
+        }
+
+        private void openForCreate() {
+            this.editingIndex = -1;
+            this.mode = EditorMode.ITEM;
+            this.itemStack = getCarriedOrFallbackItem();
+            this.tagInput.setValue("");
+            this.referenceTableInput.setValue("");
+            this.chanceSlider.setCurrentValue(50.0D);
+            this.minSlider.setCurrentValue(1);
+            this.maxSlider.setCurrentValue(1);
+            this.requirePlayerKillCheckbox.setSelected(false);
+            this.affectedByLootingCheckbox.setSelected(false);
+            this.open = true;
+            updateLayout();
+            updateModeVisibility();
+            setWidgetsVisible(true);
+        }
+
+        private void openForEdit(int index, LootDropDTO dto) {
+            this.editingIndex = index;
+            this.mode = EditorMode.ITEM;
+            this.itemStack = dto != null && dto.getItem() != null && !dto.getItem().isEmpty() ? dto.getItem().copy() : getCarriedOrFallbackItem();
+            if (dto != null && dto.getTag() != null) {
+                this.mode = EditorMode.TAG;
+                this.tagInput.setValue(dto.getTag().toString());
+                this.referenceTableInput.setValue("");
+            } else if (dto != null && dto.getReferenceTable() != null) {
+                this.mode = EditorMode.TABLE;
+                this.referenceTableInput.setValue(dto.getReferenceTable().toString());
+                this.tagInput.setValue("");
+            } else {
+                this.tagInput.setValue("");
+                this.referenceTableInput.setValue("");
+            }
+            this.itemStack.setCount(1);
+            this.chanceSlider.setCurrentValue(dto != null ? dto.getChance() : 50.0D);
+            this.minSlider.setCurrentValue(dto != null ? dto.getMin() : 1);
+            this.maxSlider.setCurrentValue(dto != null ? dto.getMax() : 1);
+            this.requirePlayerKillCheckbox.setSelected(dto != null && dto.isRequirePlayerKill());
+            this.affectedByLootingCheckbox.setSelected(dto != null && dto.isAffectedByLooting());
+            this.open = true;
+            updateLayout();
+            updateModeVisibility();
+            setWidgetsVisible(true);
+        }
+
+        private boolean mouseClicked(double mouseX, double mouseY, int button) {
+            if (!this.open) return false;
+            updateLayout();
+
+            if (this.mode == EditorMode.ITEM && mouseX >= this.slotX && mouseX < this.slotX + this.slotSize && mouseY >= this.slotY && mouseY < this.slotY + this.slotSize) {
+                ItemStack carried = getCarriedItem();
+                if (!carried.isEmpty()) {
+                    this.itemStack = carried.copy();
+                    this.itemStack.setCount(1);
+                }
+                return true;
+            }
+
+            for (AbstractWidget widget : this.widgets) {
+                if (widget.mouseClicked(mouseX, mouseY, button)) {
+                    return true;
+                }
+            }
+
+            return true;
+        }
+
+        private void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+            if (!this.open || LootStudioScreen.this.font == null) return;
+
+            updateLayout();
+
+            graphics.fill(0, 0, LootStudioScreen.this.width, LootStudioScreen.this.height, 0xAA000000);
+            graphics.fill(this.modalX, this.modalY, this.modalX + this.modalW, this.modalY + this.modalH, 0xFB1A2434);
+            graphics.fill(this.modalX, this.modalY, this.modalX + this.modalW, this.modalY + 1, 0xFF4E6B8D);
+            graphics.fill(this.modalX, this.modalY + this.modalH - 1, this.modalX + this.modalW, this.modalY + this.modalH, 0xFF4E6B8D);
+            graphics.fill(this.modalX, this.modalY, this.modalX + 1, this.modalY + this.modalH, 0xFF4E6B8D);
+            graphics.fill(this.modalX + this.modalW - 1, this.modalY, this.modalX + this.modalW, this.modalY + this.modalH, 0xFF4E6B8D);
+
+            graphics.drawString(LootStudioScreen.this.font, "Editor de Drop", this.modalX + 8, this.modalY + 8, 0xFFF4F7FF);
+            if (this.mode == EditorMode.ITEM) {
+                graphics.drawString(LootStudioScreen.this.font, "Item (clique usa item no cursor)", this.modalX + 8, this.modalY + 24, 0xFFD4E0F0);
+                graphics.fill(this.slotX, this.slotY, this.slotX + this.slotSize, this.slotY + this.slotSize, 0xFF4E6B8D);
+                graphics.fill(this.slotX + 1, this.slotY + 1, this.slotX + this.slotSize - 1, this.slotY + this.slotSize - 1, 0xFF1A2434);
+                if (this.itemStack != null && !this.itemStack.isEmpty()) {
+                    graphics.renderItem(this.itemStack, this.slotX + 4, this.slotY + 4);
+                    graphics.renderItemDecorations(LootStudioScreen.this.font, this.itemStack, this.slotX + 4, this.slotY + 4);
+                }
+            } else if (this.mode == EditorMode.TAG) {
+                graphics.drawString(LootStudioScreen.this.font, "Tag (ex: minecraft:planks)", this.modalX + 8, this.modalY + 24, 0xFFD4E0F0);
+            } else {
+                graphics.drawString(LootStudioScreen.this.font, "Tabela (ex: minecraft:chests/simple_dungeon)", this.modalX + 8, this.modalY + 24, 0xFFD4E0F0);
+            }
+
+            for (AbstractWidget widget : this.widgets) {
+                widget.render(graphics, mouseX, mouseY, partialTick);
+            }
+
+            graphics.drawString(LootStudioScreen.this.font, "Exigir Morte por Jogador", this.requirePlayerKillCheckbox.getX() + 18, this.requirePlayerKillCheckbox.getY() + 3, 0xFFD4E0F0);
+            graphics.drawString(LootStudioScreen.this.font, "Afetado por Pilhagem", this.affectedByLootingCheckbox.getX() + 18, this.affectedByLootingCheckbox.getY() + 3, 0xFFD4E0F0);
+        }
+
+        private void updateLayout() {
+            this.modalX = (LootStudioScreen.this.width - this.modalW) / 2;
+            this.modalY = (LootStudioScreen.this.height - this.modalH) / 2;
+
+            int bodyX = this.modalX + 12;
+            int bodyY = this.modalY + 42;
+            this.modeCycleButton.setX(this.modalX + this.modalW - 96);
+            this.modeCycleButton.setY(this.modalY + 6);
+            this.modeCycleButton.setMessage(this.mode.label);
+
+            this.slotX = bodyX;
+            this.slotY = bodyY;
+
+            this.tagInput.setX(bodyX);
+            this.tagInput.setY(bodyY + 3);
+            this.tagInput.setWidth(this.modalW - 24);
+
+            this.referenceTableInput.setX(bodyX);
+            this.referenceTableInput.setY(bodyY + 3);
+            this.referenceTableInput.setWidth(this.modalW - 24);
+
+            int sliderX = this.mode == EditorMode.ITEM ? bodyX + this.slotSize + 10 : bodyX;
+            int sliderW = this.modalW - (sliderX - this.modalX) - 12;
+
+            this.chanceSlider.setX(sliderX);
+            this.chanceSlider.setY(bodyY);
+            this.chanceSlider.setWidth(sliderW);
+
+            this.minSlider.setX(sliderX);
+            this.minSlider.setY(bodyY + 24);
+            this.minSlider.setWidth(sliderW);
+
+            this.maxSlider.setX(sliderX);
+            this.maxSlider.setY(bodyY + 48);
+            this.maxSlider.setWidth(sliderW);
+
+            this.requirePlayerKillCheckbox.setX(bodyX);
+            this.requirePlayerKillCheckbox.setY(bodyY + 82);
+
+            this.affectedByLootingCheckbox.setX(bodyX);
+            this.affectedByLootingCheckbox.setY(bodyY + 102);
+
+            int buttonY = this.modalY + this.modalH - 28;
+            int buttonW = (this.modalW - 30) / 2;
+            this.confirmButton.setX(this.modalX + 10);
+            this.confirmButton.setY(buttonY);
+            this.confirmButton.setWidth(buttonW);
+            this.cancelButton.setX(this.modalX + 20 + buttonW);
+            this.cancelButton.setY(buttonY);
+            this.cancelButton.setWidth(buttonW);
+        }
+
+        private void cycleMode() {
+            if (this.mode == EditorMode.ITEM) {
+                this.mode = EditorMode.TAG;
+            } else if (this.mode == EditorMode.TAG) {
+                this.mode = EditorMode.TABLE;
+            } else {
+                this.mode = EditorMode.ITEM;
+            }
+            updateLayout();
+            updateModeVisibility();
+        }
+
+        private void updateModeVisibility() {
+            this.modeCycleButton.visible = true;
+            this.modeCycleButton.active = true;
+
+            boolean itemMode = this.mode == EditorMode.ITEM;
+            boolean tagMode = this.mode == EditorMode.TAG;
+            boolean tableMode = this.mode == EditorMode.TABLE;
+
+            this.tagInput.visible = tagMode;
+            this.tagInput.active = tagMode;
+
+            this.referenceTableInput.visible = tableMode;
+            this.referenceTableInput.active = tableMode;
+
+            if (itemMode) {
+                this.tagInput.setValue("");
+                this.referenceTableInput.setValue("");
+            }
+        }
+
+        private ResourceLocation tryParseResource(String value) {
+            if (value == null) return null;
+            String cleaned = value.trim();
+            if (cleaned.isEmpty()) return null;
+            if (cleaned.startsWith("#") || cleaned.startsWith("@")) {
+                cleaned = cleaned.substring(1);
+            }
+            return ResourceLocation.tryParse(cleaned);
+        }
+
+        private void confirm() {
+            int min = this.minSlider.getCurrentValue();
+            int max = Math.max(min, this.maxSlider.getCurrentValue());
+            this.maxSlider.setCurrentValue(max);
+
+            ItemStack result = ItemStack.EMPTY;
+            ResourceLocation tag = null;
+            ResourceLocation reference = null;
+
+            if (this.mode == EditorMode.ITEM) {
+                result = this.itemStack != null && !this.itemStack.isEmpty() ? this.itemStack.copy() : getCarriedOrFallbackItem();
+                result.setCount(1);
+            } else if (this.mode == EditorMode.TAG) {
+                tag = tryParseResource(this.tagInput.getValue());
+                if (tag == null) {
+                    return;
+                }
+            } else {
+                reference = tryParseResource(this.referenceTableInput.getValue());
+                if (reference == null) {
+                    return;
+                }
+            }
+
+            LootDropDTO dto = new LootDropDTO(
+                result,
+                this.chanceSlider.getCurrentValue(),
+                min,
+                max,
+                this.requirePlayerKillCheckbox.isSelected(),
+                this.affectedByLootingCheckbox.isSelected(),
+                false,
+                tag,
+                reference
+            );
+
+            if (this.editingIndex >= 0 && this.editingIndex < LootStudioScreen.this.lootDrops.size()) {
+                LootStudioScreen.this.lootDrops.set(this.editingIndex, dto);
+                LootStudioScreen.this.editingDropIndex = this.editingIndex;
+            } else {
+                LootStudioScreen.this.lootDrops.add(dto);
+                LootStudioScreen.this.editingDropIndex = LootStudioScreen.this.lootDrops.size() - 1;
+            }
+
+            LootStudioScreen.this.isDirty = true;
+            close();
+        }
+
+        private void close() {
+            this.open = false;
+            this.editingIndex = -1;
+            setWidgetsVisible(false);
+        }
+
+        private void setWidgetsVisible(boolean visible) {
+            for (AbstractWidget widget : this.widgets) {
+                widget.visible = visible;
+                widget.active = visible;
+            }
+            if (visible) {
+                updateModeVisibility();
+            }
+        }
+
+        private ItemStack getCarriedOrFallbackItem() {
+            ItemStack carried = getCarriedItem();
+            if (!carried.isEmpty()) return carried;
+            if (LootStudioScreen.this.minecraft != null && LootStudioScreen.this.minecraft.player != null) {
+                ItemStack hand = LootStudioScreen.this.minecraft.player.getMainHandItem();
+                if (!hand.isEmpty()) return hand.copy();
+            }
+            return new ItemStack(Items.DIAMOND);
+        }
+
+        private ItemStack getCarriedItem() {
+            if (LootStudioScreen.this.minecraft == null || LootStudioScreen.this.minecraft.player == null || LootStudioScreen.this.minecraft.player.containerMenu == null) {
+                return ItemStack.EMPTY;
+            }
+            ItemStack carried = LootStudioScreen.this.minecraft.player.containerMenu.getCarried();
+            if (carried == null || carried.isEmpty()) return ItemStack.EMPTY;
+            ItemStack copy = carried.copy();
+            copy.setCount(1);
+            return copy;
         }
     }
 
