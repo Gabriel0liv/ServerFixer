@@ -68,6 +68,12 @@ public class NetworkHandler {
                 .consumerMainThread(OpenSoundStudioPacket::handle)
                 .add();
 
+        INSTANCE.messageBuilder(OpenLootStudioPacket.class, packetId++, NetworkDirection.PLAY_TO_CLIENT)
+                .decoder(OpenLootStudioPacket::new)
+                .encoder(OpenLootStudioPacket::toBytes)
+                .consumerMainThread(OpenLootStudioPacket::handle)
+                .add();
+
         INSTANCE.messageBuilder(RequestOpenContextEditorPacket.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
                 .decoder(RequestOpenContextEditorPacket::new)
                 .encoder(RequestOpenContextEditorPacket::toBytes)

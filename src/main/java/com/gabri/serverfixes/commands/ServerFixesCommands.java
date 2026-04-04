@@ -305,6 +305,10 @@ public class ServerFixesCommands {
         root.then(Commands.literal("sound_studio")
             .executes(ctx -> openSoundStudio(ctx.getSource())));
 
+        // /serverfixes loot_studio
+        root.then(Commands.literal("loot_studio")
+            .executes(ctx -> openLootStudio(ctx.getSource())));
+
         // Registra o nó raiz e guarda referência para o redirect do alias
         LiteralCommandNode<CommandSourceStack> baseNode = dispatcher.register(root);
 
@@ -334,6 +338,14 @@ public class ServerFixesCommands {
         dispatcher.register(Commands.literal("soundstudio")
             .requires(source -> source.hasPermission(2))
             .executes(ctx -> openSoundStudio(ctx.getSource())));
+
+        dispatcher.register(Commands.literal("loot_studio")
+            .requires(source -> source.hasPermission(3))
+            .executes(ctx -> openLootStudio(ctx.getSource())));
+
+        dispatcher.register(Commands.literal("lootstudio")
+            .requires(source -> source.hasPermission(3))
+            .executes(ctx -> openLootStudio(ctx.getSource())));
     }
 
     /**
@@ -414,6 +426,21 @@ public class ServerFixesCommands {
             com.gabri.serverfixes.network.NetworkHandler.sendToPlayer((net.minecraft.server.level.ServerPlayer) player,
                 new com.gabri.serverfixes.network.OpenSoundStudioPacket());
             source.sendSuccess(() -> Component.literal("Abrindo Sound Studio...").withStyle(ChatFormatting.GREEN), false);
+            return 1;
+        }
+        source.sendFailure(Component.literal("Este comando só pode ser usado por jogadores."));
+        return 0;
+    }
+
+    private static int openLootStudio(CommandSourceStack source) {
+        if (source.getEntity() instanceof Player player) {
+            if (!player.isCreative()) {
+                source.sendFailure(Component.literal("Este comando só pode ser usado no modo Criativo."));
+                return 0;
+            }
+            com.gabri.serverfixes.network.NetworkHandler.sendToPlayer((net.minecraft.server.level.ServerPlayer) player,
+                new com.gabri.serverfixes.network.OpenLootStudioPacket());
+            source.sendSuccess(() -> Component.literal("Abrindo Loot Studio...").withStyle(ChatFormatting.GREEN), false);
             return 1;
         }
         source.sendFailure(Component.literal("Este comando só pode ser usado por jogadores."));
