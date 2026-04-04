@@ -480,10 +480,10 @@ public class LootStudioScreen extends Screen {
             if (dto.isComplex()) {
                 graphics.drawString(this.font, "[Drop Complexo - Apenas Leitura]", textX, currentY + 4, 0xFFFF8A8A);
             } else {
-                String idText = dto.getItem() != null && !dto.getItem().isEmpty() && ForgeRegistries.ITEMS.getKey(dto.getItem().getItem()) != null
-                    ? ForgeRegistries.ITEMS.getKey(dto.getItem().getItem()).toString()
+                String displayName = dto.getItem() != null && !dto.getItem().isEmpty()
+                    ? dto.getItem().getHoverName().getString()
                     : "<vazio>";
-                graphics.drawString(this.font, idText, textX, currentY + 2, 0xFFB8C8DE);
+                graphics.drawString(this.font, displayName, textX, currentY + 2, 0xFFB8C8DE);
                 String meta = String.format(Locale.ROOT, "Chance: %.2f%% | %d a %d | PK: %s", dto.getChance(), dto.getMin(), dto.getMax(), dto.isRequirePlayerKill() ? "Sim" : "Nao");
                 graphics.drawString(this.font, meta, textX, currentY + 14, 0xFF9FB0C5);
 

@@ -56,6 +56,15 @@ public final class LootStudioLogic {
         } catch (Throwable ignored) {
         }
 
+        // Fallback: algumas implementacoes retornam mapas internos ao inves de colecoes diretas.
+        for (Field field : lootData.getClass().getDeclaredFields()) {
+            try {
+                field.setAccessible(true);
+                collectIds(field.get(lootData), result);
+            } catch (Throwable ignored) {
+            }
+        }
+
         if (result.isEmpty()) {
             LOGGER.warn("[LootStudio] Nao foi possivel obter IDs via getKeys(). Lista de loot tables vazia.");
         }
@@ -84,8 +93,8 @@ public final class LootStudioLogic {
             return drops;
         }
 
-        Object[] pools = findObjectArrayByType(table, "net.minecraft.world.level.storage.loot.LootPool");
-        if (pools == null || pools.length == 0) {
+        List<Object> pools = extractListField(table, "pool", "LootPool");
+        if (pools.isEmpty()) {
             return drops;
         }
 
@@ -94,22 +103,20 @@ public final class LootStudioLogic {
                 continue;
             }
 
-            Object[] entries = findObjectArrayByType(pool, "net.minecraft.world.level.storage.loot.entries.LootPoolEntryContainer");
-            if (entries == null || entries.length == 0) {
+            List<Object> entries = extractListField(pool, "entr", "LootPoolEntryContainer");
+            if (entries.isEmpty()) {
                 continue;
             }
 
-            Object[] poolConditions = findObjectArrayByType(pool, "net.minecraft.world.level.storage.loot.predicates.LootItemCondition");
-            Object[] poolFunctions = findObjectArrayByType(pool, "net.minecraft.world.level.storage.loot.functions.LootItemFunction");
+            List<Object> poolConditions = extractListField(pool, "condition", "LootItemCondition");
+            List<Object> poolFunctions = extractListField(pool, "function", "LootItemFunction");
 
             boolean poolRequirePlayerKill = hasConditionLike(poolConditions, "killedbyplayer");
             boolean poolAffectedByLooting = hasConditionLike(poolConditions, "looting");
 
             int totalSimpleWeight = 0;
             for (Object entry : entries) {
-                if (extractItemFromEntry(entry) != null) {
-                    totalSimpleWeight += Math.max(1, extractWeight(entry));
-                }
+                totalSimpleWeight += Math.max(1, extractWeight(entry));
             }
             if (totalSimpleWeight <= 0) {
                 totalSimpleWeight = 1;
@@ -185,8 +192,8 @@ public final class LootStudioLogic {
 
     private static LootDropDTO parseEntry(
         Object entry,
-        Object[] poolConditions,
-        Object[] poolFunctions,
+        List<Object> poolConditions,
+        List<Object> poolFunctions,
         boolean poolRequirePlayerKill,
         boolean poolAffectedByLooting,
         int totalSimpleWeight
@@ -196,8 +203,8 @@ public final class LootStudioLogic {
         }
 
         Item item = extractItemFromEntry(entry);
-        Object[] entryConditions = findObjectArrayByType(entry, "net.minecraft.world.level.storage.loot.predicates.LootItemCondition");
-        Object[] entryFunctions = findObjectArrayByType(entry, "net.minecraft.world.level.storage.loot.functions.LootItemFunction");
+        List<Object> entryConditions = extractListField(entry, "condition", "LootItemCondition");
+        List<Object> entryFunctions = extractListField(entry, "function", "LootItemFunction");
 
         boolean requirePlayerKill = poolRequirePlayerKill || hasConditionLike(entryConditions, "killedbyplayer");
         boolean affectedByLooting = poolAffectedByLooting || hasConditionLike(entryConditions, "looting");
@@ -215,10 +222,16 @@ public final class LootStudioLogic {
         int min = countRange != null ? countRange.min : 1;
         int max = countRange != null ? countRange.max : 1;
 
+        boolean unsupportedEntryType = isReferenceLikeEntry(entry);
         boolean unknownFunction = hasUnknownFunction(entryFunctions) || hasUnknownFunction(poolFunctions);
-        boolean complex = item == null || unknownCondition || unknownFunction;
+        boolean complex = item == null || unknownCondition || unknownFunction || unsupportedEntryType;
 
-        ItemStack stack = item != null ? new ItemStack(item, Math.max(1, min)) : ItemStack.EMPTY;
+        ItemStack stack;
+        if (item != null) {
+            stack = new ItemStack(item, Math.max(1, min));
+        } else {
+            stack = new ItemStack(unsupportedEntryType ? net.minecraft.world.item.Items.CHEST : net.minecraft.world.item.Items.BARRIER);
+        }
         return new LootDropDTO(stack, chance, min, max, requirePlayerKill, affectedByLooting, complex);
     }
 
@@ -355,23 +368,39 @@ public final class LootStudioLogic {
             return;
         }
 
-        if (source instanceof Iterable<?> iterable) {
-            for (Object element : iterable) {
-                ResourceLocation id = resolveIdLike(element);
-                if (id != null) {
-                    out.add(id);
-                }
+        if (source instanceof ResourceLocation rl) {
+            out.add(rl);
+            return;
+        }
+
+        if (source instanceof java.util.Map<?, ?> map) {
+            for (Object key : map.keySet()) {
+                collectIds(key, out);
+            }
+            for (Object value : map.values()) {
+                collectIds(value, out);
             }
             return;
         }
 
-        if (source instanceof Collection<?> collection) {
-            for (Object element : collection) {
-                ResourceLocation id = resolveIdLike(element);
-                if (id != null) {
-                    out.add(id);
-                }
+        if (source instanceof Iterable<?> iterable) {
+            for (Object element : iterable) {
+                collectIds(element, out);
             }
+            return;
+        }
+
+        if (source.getClass().isArray()) {
+            int len = Array.getLength(source);
+            for (int i = 0; i < len; i++) {
+                collectIds(Array.get(source, i), out);
+            }
+            return;
+        }
+
+        ResourceLocation id = resolveIdLike(source);
+        if (id != null) {
+            out.add(id);
         }
     }
 
@@ -387,9 +416,15 @@ public final class LootStudioLogic {
             try {
                 Method m = value.getClass().getMethod(methodName);
                 Object out = m.invoke(value);
-                if (out instanceof ResourceLocation rl) {
-                    return rl;
-                }
+                ResourceLocation resolved = resolveIdLike(out);
+                if (resolved != null) return resolved;
+            } catch (Throwable ignored) {
+            }
+        }
+
+        if (value instanceof CharSequence charSequence) {
+            try {
+                return ResourceLocation.tryParse(charSequence.toString());
             } catch (Throwable ignored) {
             }
         }
@@ -397,37 +432,58 @@ public final class LootStudioLogic {
         return null;
     }
 
-    private static Object[] findObjectArrayByType(Object holder, String componentTypeName) {
+    private static List<Object> extractListField(Object holder, String fieldNameHint, String elementTypeHint) {
+        List<Object> empty = List.of();
         if (holder == null) {
-            return null;
+            return empty;
         }
 
-        for (Field field : holder.getClass().getDeclaredFields()) {
-            try {
-                field.setAccessible(true);
-                Object val = field.get(holder);
-                if (val == null || !val.getClass().isArray()) {
-                    continue;
-                }
-
-                Class<?> component = val.getClass().getComponentType();
-                if (component == null) {
-                    continue;
-                }
-
-                if (component.getName().equals(componentTypeName) || componentTypeName.endsWith(component.getSimpleName())) {
-                    int len = Array.getLength(val);
-                    Object[] array = new Object[len];
-                    for (int i = 0; i < len; i++) {
-                        array[i] = Array.get(val, i);
+        for (Class<?> type = holder.getClass(); type != null; type = type.getSuperclass()) {
+            for (Field field : type.getDeclaredFields()) {
+                try {
+                    field.setAccessible(true);
+                    Object value = field.get(holder);
+                    if (value == null) {
+                        continue;
                     }
-                    return array;
+
+                    if (value instanceof List<?> list) {
+                        String fieldName = field.getName().toLowerCase(Locale.ROOT);
+                        if (fieldNameHint != null && !fieldNameHint.isBlank() && fieldName.contains(fieldNameHint.toLowerCase(Locale.ROOT))) {
+                            return new ArrayList<>(list);
+                        }
+
+                        Object sample = firstNonNull(list);
+                        if (sample != null && matchesTypeHint(sample.getClass(), elementTypeHint)) {
+                            return new ArrayList<>(list);
+                        }
+
+                        if (sample == null && fieldNameHint != null && !fieldNameHint.isBlank()) {
+                            if (fieldName.contains(fieldNameHint.toLowerCase(Locale.ROOT))) {
+                                return new ArrayList<>(list);
+                            }
+                        }
+                    }
+
+                    if (value.getClass().isArray()) {
+                        int len = Array.getLength(value);
+                        List<Object> arrayAsList = new ArrayList<>(len);
+                        for (int i = 0; i < len; i++) {
+                            Object element = Array.get(value, i);
+                            arrayAsList.add(element);
+                        }
+
+                        Object sample = firstNonNull(arrayAsList);
+                        if (sample != null && matchesTypeHint(sample.getClass(), elementTypeHint)) {
+                            return arrayAsList;
+                        }
+                    }
+                } catch (Throwable ignored) {
                 }
-            } catch (Throwable ignored) {
             }
         }
 
-        return null;
+        return empty;
     }
 
     private static Item extractItemFromEntry(Object entry) {
@@ -435,15 +491,64 @@ public final class LootStudioLogic {
             return null;
         }
 
-        for (Field field : entry.getClass().getDeclaredFields()) {
+        // Primeiro tenta por metodo publico comum em wrappers/holders.
+        for (String methodName : new String[]{"getItem", "item", "value"}) {
             try {
-                if (!Item.class.isAssignableFrom(field.getType())) {
-                    continue;
+                Method method = entry.getClass().getMethod(methodName);
+                Object out = method.invoke(entry);
+                Item resolved = resolveItemFromUnknown(out);
+                if (resolved != null) {
+                    return resolved;
                 }
-                field.setAccessible(true);
-                Object value = field.get(entry);
-                if (value instanceof Item item) {
-                    return item;
+            } catch (Throwable ignored) {
+            }
+        }
+
+        for (Class<?> type = entry.getClass(); type != null; type = type.getSuperclass()) {
+            for (Field field : type.getDeclaredFields()) {
+                try {
+                    field.setAccessible(true);
+                    Object value = field.get(entry);
+                    Item resolved = resolveItemFromUnknown(value);
+                    if (resolved != null) {
+                        return resolved;
+                    }
+                } catch (Throwable ignored) {
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static Item resolveItemFromUnknown(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Item item) {
+            return item;
+        }
+        if (value instanceof ItemStack stack && !stack.isEmpty()) {
+            return stack.getItem();
+        }
+
+        try {
+            if (value instanceof net.minecraft.world.level.ItemLike itemLike) {
+                return itemLike.asItem();
+            }
+        } catch (Throwable ignored) {
+        }
+
+        // Holder<T> costuma expor value().
+        for (String mName : new String[]{"value", "get"}) {
+            try {
+                Method method = value.getClass().getMethod(mName);
+                Object out = method.invoke(value);
+                if (out != value) {
+                    Item nested = resolveItemFromUnknown(out);
+                    if (nested != null) {
+                        return nested;
+                    }
                 }
             } catch (Throwable ignored) {
             }
@@ -486,7 +591,7 @@ public final class LootStudioLogic {
         return 1;
     }
 
-    private static boolean hasConditionLike(Object[] conditions, String marker) {
+    private static boolean hasConditionLike(Collection<?> conditions, String marker) {
         if (conditions == null || marker == null) {
             return false;
         }
@@ -503,7 +608,7 @@ public final class LootStudioLogic {
         return false;
     }
 
-    private static boolean hasUnknownCondition(Object[] conditions) {
+    private static boolean hasUnknownCondition(Collection<?> conditions) {
         if (conditions == null) {
             return false;
         }
@@ -516,7 +621,8 @@ public final class LootStudioLogic {
             boolean known = n.contains("killedbyplayer")
                 || n.contains("randomchance")
                 || n.contains("looting")
-                || n.contains("bonuslevel");
+                || n.contains("bonuslevel")
+                || n.contains("inverted");
             if (!known) {
                 return true;
             }
@@ -524,7 +630,7 @@ public final class LootStudioLogic {
         return false;
     }
 
-    private static boolean hasUnknownFunction(Object[] functions) {
+    private static boolean hasUnknownFunction(Collection<?> functions) {
         if (functions == null) {
             return false;
         }
@@ -542,7 +648,7 @@ public final class LootStudioLogic {
         return false;
     }
 
-    private static Range extractCountRange(Object[] functions) {
+    private static Range extractCountRange(Collection<?> functions) {
         if (functions == null) {
             return null;
         }
@@ -569,6 +675,40 @@ public final class LootStudioLogic {
         }
 
         return null;
+    }
+
+    private static boolean isReferenceLikeEntry(Object entry) {
+        if (entry == null) {
+            return false;
+        }
+        String n = entry.getClass().getSimpleName().toLowerCase(Locale.ROOT);
+        return n.contains("tag")
+            || n.contains("table")
+            || n.contains("reference")
+            || n.contains("alternatives")
+            || n.contains("sequence")
+            || n.contains("group")
+            || n.contains("dynamic");
+    }
+
+    private static Object firstNonNull(Collection<?> values) {
+        if (values == null) {
+            return null;
+        }
+        for (Object value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private static boolean matchesTypeHint(Class<?> type, String typeHint) {
+        if (type == null || typeHint == null || typeHint.isBlank()) {
+            return false;
+        }
+        return type.getName().contains(typeHint)
+            || type.getSimpleName().contains(typeHint);
     }
 
     private static Range parseNumberProvider(Object provider) {

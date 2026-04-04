@@ -18,7 +18,21 @@ public class SPSendLootDropsPacket {
 
     public SPSendLootDropsPacket(ResourceLocation tableId, List<LootDropDTO> drops) {
         this.tableId = tableId;
-        this.drops = drops != null ? new ArrayList<>(drops) : new ArrayList<>();
+        this.drops = new ArrayList<>();
+        if (drops != null) {
+            for (LootDropDTO dto : drops) {
+                if (dto == null) continue;
+                this.drops.add(new LootDropDTO(
+                    dto.getItem() != null ? dto.getItem().copy() : net.minecraft.world.item.ItemStack.EMPTY,
+                    dto.getChance(),
+                    dto.getMin(),
+                    dto.getMax(),
+                    dto.isRequirePlayerKill(),
+                    dto.isAffectedByLooting(),
+                    dto.isComplex()
+                ));
+            }
+        }
     }
 
     public SPSendLootDropsPacket(FriendlyByteBuf buf) {

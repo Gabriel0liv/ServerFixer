@@ -58,11 +58,15 @@ public final class LootStudioPacketCodec {
             ? dto
             : new LootDropDTO(ItemStack.EMPTY, 0.0D, 1, 1, false, false, true);
 
-        ItemStack stack = safe.getItem() != null ? safe.getItem() : ItemStack.EMPTY;
+        ItemStack stack = safe.getItem() != null ? safe.getItem().copy() : ItemStack.EMPTY;
+        int min = Math.max(1, safe.getMin());
+        int max = Math.max(min, safe.getMax());
+        double chance = Math.max(0.0D, Math.min(100.0D, safe.getChance()));
+
         buf.writeItem(stack);
-        buf.writeDouble(safe.getChance());
-        buf.writeVarInt(safe.getMin());
-        buf.writeVarInt(safe.getMax());
+        buf.writeDouble(chance);
+        buf.writeVarInt(min);
+        buf.writeVarInt(max);
         buf.writeBoolean(safe.isRequirePlayerKill());
         buf.writeBoolean(safe.isAffectedByLooting());
         buf.writeBoolean(safe.isComplex());
@@ -70,9 +74,9 @@ public final class LootStudioPacketCodec {
 
     private static LootDropDTO readLootDrop(FriendlyByteBuf buf) {
         ItemStack stack = buf.readItem();
-        double chance = buf.readDouble();
-        int min = buf.readVarInt();
-        int max = buf.readVarInt();
+        double chance = Math.max(0.0D, Math.min(100.0D, buf.readDouble()));
+        int min = Math.max(1, buf.readVarInt());
+        int max = Math.max(min, buf.readVarInt());
         boolean requirePlayerKill = buf.readBoolean();
         boolean affectedByLooting = buf.readBoolean();
         boolean complex = buf.readBoolean();
