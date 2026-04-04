@@ -73,7 +73,7 @@ public final class LootStudioLogic {
         }
 
         List<ResourceLocation> sorted = new ArrayList<>(result);
-        sorted.removeIf(Objects::isNull);
+        sorted.removeIf(id -> id == null || id.getPath().startsWith("blocks/"));
         sorted.sort(Comparator.comparing(ResourceLocation::getNamespace).thenComparing(ResourceLocation::getPath));
         return sorted;
     }
