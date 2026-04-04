@@ -6,7 +6,6 @@ import com.gabri.serverfixes.mixin.accessor.*;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
-import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
@@ -31,6 +30,8 @@ import org.apache.logging.log4j.Logger;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.lang.reflect.Array;
+import java.lang.reflect.Method;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
@@ -56,6 +57,13 @@ public final class LootStudioLogic {
         try {
             LootDataManager lootData = (LootDataManager) server.getLootData();
             result.addAll(lootData.getKeys(LootDataType.TABLE));
+
+            try {
+                Method m = lootData.getClass().getMethod("getKeys");
+                Object keys = m.invoke(lootData);
+                collectLootIds(keys, result);
+            } catch (Throwable ignored) {
+            }
         } catch (Throwable t) {
             LOGGER.warn("[LootStudio] Falha ao obter IDs de loot tables via getKeys().", t);
         }
@@ -185,6 +193,8 @@ public final class LootStudioLogic {
 
         // --- Extrai item real via instanceof + Accessor ---
         Item item = null;
+        ResourceLocation tagId = null;
+        ResourceLocation referenceTableId = null;
         boolean unsupportedEntryType = false;
 
         if (entry instanceof LootItem lootItem) {
@@ -194,9 +204,19 @@ public final class LootStudioLogic {
             } catch (Throwable t) {
                 LOGGER.debug("[LootStudio] Falha ao extrair item de LootItem: {}", t.getMessage());
             }
-        } else if (entry instanceof TagEntry
-                || entry instanceof LootTableReference
-                || entry instanceof AlternativesEntry
+        } else if (entry instanceof TagEntry tagEntry) {
+            try {
+                tagId = ((TagEntryAccessor) (Object) tagEntry).sf_getTag().location();
+            } catch (Throwable ignored) {
+            }
+            item = Items.CHEST;
+        } else if (entry instanceof LootTableReference lootTableReference) {
+            try {
+                referenceTableId = ((LootTableReferenceAccessor) (Object) lootTableReference).sf_getName();
+            } catch (Throwable ignored) {
+            }
+            item = Items.CHEST;
+        } else if (entry instanceof AlternativesEntry
                 || entry instanceof SequentialEntry
                 || entry instanceof EntryGroup
                 || entry instanceof DynamicLoot) {
@@ -223,7 +243,13 @@ public final class LootStudioLogic {
 
         // --- Complexidade ---
         boolean unknownFunction = hasUnknownFunction(entryFunctions) || hasUnknownFunction(poolFunctions);
-        boolean complex = item == null || unknownCondition || unknownFunction || unsupportedEntryType;
+        boolean isTagOrReference = tagId != null || referenceTableId != null;
+        boolean complex = isTagOrReference
+            ? false
+            : (item == null && tagId == null && referenceTableId == null)
+                || unknownCondition
+                || unknownFunction
+                || unsupportedEntryType;
 
         ItemStack stack;
         if (item != null) {
@@ -231,7 +257,7 @@ public final class LootStudioLogic {
         } else {
             stack = new ItemStack(unsupportedEntryType ? Items.CHEST : Items.BARRIER);
         }
-        return new LootDropDTO(stack, chance, min, max, requirePlayerKill, affectedByLooting, complex);
+        return new LootDropDTO(stack, chance, min, max, requirePlayerKill, affectedByLooting, complex, tagId, referenceTableId);
     }
 
     // ====================================================================
@@ -369,13 +395,19 @@ public final class LootStudioLogic {
         int limit = Math.min(input.size(), 512);
         for (int i = 0; i < limit; i++) {
             LootDropDTO dto = input.get(i);
-            if (dto == null || dto.isComplex() || dto.getItem() == null || dto.getItem().isEmpty()) continue;
+                if (dto == null || dto.isComplex()) continue;
+                boolean hasTag = dto.getTag() != null;
+                boolean hasRef = dto.getReferenceTable() != null;
+                boolean hasItem = dto.getItem() != null && !dto.getItem().isEmpty();
+                if (!hasTag && !hasRef && !hasItem) continue;
+
             LootDropDTO normalized = new LootDropDTO(
-                    dto.getItem().copy(),
+                    dto.getItem() != null ? dto.getItem().copy() : ItemStack.EMPTY,
                     clamp(dto.getChance(), 0.0D, 100.0D),
                     Math.max(1, Math.min(64, dto.getMin())),
                     Math.max(1, Math.min(64, dto.getMax())),
-                    dto.isRequirePlayerKill(), dto.isAffectedByLooting(), false);
+                    dto.isRequirePlayerKill(), dto.isAffectedByLooting(), false,
+                    dto.getTag(), dto.getReferenceTable());
             if (normalized.getMax() < normalized.getMin()) normalized.setMax(normalized.getMin());
             out.add(normalized);
         }
@@ -388,16 +420,30 @@ public final class LootStudioLogic {
         JsonArray poolsArray = new JsonArray();
 
         for (LootDropDTO dto : drops) {
-            ResourceLocation itemId = ForgeRegistries.ITEMS.getKey(dto.getItem().getItem());
-            if (itemId == null) continue;
+            ResourceLocation itemId = dto.getItem() != null && !dto.getItem().isEmpty()
+                    ? ForgeRegistries.ITEMS.getKey(dto.getItem().getItem())
+                    : null;
+            ResourceLocation tagId = dto.getTag();
+            ResourceLocation refTable = dto.getReferenceTable();
+
+            if (itemId == null && tagId == null && refTable == null) continue;
 
             JsonObject pool = new JsonObject();
             pool.addProperty("rolls", 1);
 
             JsonArray entries = new JsonArray();
             JsonObject entry = new JsonObject();
-            entry.addProperty("type", "minecraft:item");
-            entry.addProperty("name", itemId.toString());
+            if (tagId != null) {
+                entry.addProperty("type", "minecraft:tag");
+                entry.addProperty("name", tagId.toString());
+                entry.addProperty("expand", false);
+            } else if (refTable != null) {
+                entry.addProperty("type", "minecraft:loot_table");
+                entry.addProperty("name", refTable.toString());
+            } else {
+                entry.addProperty("type", "minecraft:item");
+                entry.addProperty("name", itemId.toString());
+            }
             entries.add(entry);
             pool.add("entries", entries);
 
@@ -473,5 +519,69 @@ public final class LootStudioLogic {
     }
 
     private record Range(int min, int max) {
+    }
+
+    private static void collectLootIds(Object source, Set<ResourceLocation> out) {
+        if (source == null || out == null) {
+            return;
+        }
+
+        ResourceLocation direct = asResourceLocation(source);
+        if (direct != null) {
+            out.add(direct);
+            return;
+        }
+
+        if (source instanceof Map<?, ?> map) {
+            for (Object key : map.keySet()) {
+                collectLootIds(key, out);
+            }
+            for (Object value : map.values()) {
+                collectLootIds(value, out);
+            }
+            return;
+        }
+
+        if (source instanceof Iterable<?> iterable) {
+            for (Object value : iterable) {
+                collectLootIds(value, out);
+            }
+            return;
+        }
+
+        if (source.getClass().isArray()) {
+            int len = Array.getLength(source);
+            for (int i = 0; i < len; i++) {
+                collectLootIds(Array.get(source, i), out);
+            }
+        }
+    }
+
+    private static ResourceLocation asResourceLocation(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof ResourceLocation rl) {
+            return rl;
+        }
+
+        for (String methodName : List.of("location", "id")) {
+            try {
+                Method method = value.getClass().getMethod(methodName);
+                Object nested = method.invoke(value);
+                if (nested instanceof ResourceLocation rl) {
+                    return rl;
+                }
+                if (nested instanceof CharSequence cs) {
+                    return ResourceLocation.tryParse(cs.toString());
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+
+        if (value instanceof CharSequence cs) {
+            return ResourceLocation.tryParse(cs.toString());
+        }
+        return null;
     }
 }

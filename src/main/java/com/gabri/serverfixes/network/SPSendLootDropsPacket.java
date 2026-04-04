@@ -29,7 +29,9 @@ public class SPSendLootDropsPacket {
                     dto.getMax(),
                     dto.isRequirePlayerKill(),
                     dto.isAffectedByLooting(),
-                    dto.isComplex()
+                    dto.isComplex(),
+                    dto.getTag(),
+                    dto.getReferenceTable()
                 ));
             }
         }

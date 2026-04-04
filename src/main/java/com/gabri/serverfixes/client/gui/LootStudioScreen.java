@@ -11,6 +11,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -23,11 +24,14 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.HashMap;
+import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.DoubleConsumer;
 import java.util.function.IntConsumer;
 
@@ -37,6 +41,8 @@ public class LootStudioScreen extends Screen {
     private final List<ResourceLocation> filteredTables = new ArrayList<>();
 
     private SelectableEditBox searchBox;
+    private IconButton filterButton;
+    private boolean filterOverlayOpen = false;
 
     // left list widgets
     private double leftScrollAmount = 0.0D;
@@ -48,6 +54,10 @@ public class LootStudioScreen extends Screen {
 
     // center loot list
     private final List<LootDropDTO> lootDrops = new ArrayList<>();
+    private final List<String> availableNamespaces = new ArrayList<>();
+    private final List<String> availableCategories = new ArrayList<>();
+    private final Set<String> selectedNamespaces = new HashSet<>();
+    private final Set<String> selectedCategories = new HashSet<>();
 
     // right panel widgets
     private final List<AbstractWidget> rightPanelWidgets = new ArrayList<>();
@@ -68,6 +78,7 @@ public class LootStudioScreen extends Screen {
     private IntParameterSlider maxSlider;
     private TextureCheckbox requirePlayerKillCheckbox;
     private TextureCheckbox affectedByLootingCheckbox;
+    private CycleButton<EditorMode> editModeCycle;
     private Button injectButton;
     private IconButton resetButton;
 
@@ -75,6 +86,12 @@ public class LootStudioScreen extends Screen {
     private int fallbackItemIndex = 0;
     private int editingDropIndex = -1;
     private ItemStack editorItem = new ItemStack(Items.DIAMOND);
+    private ResourceLocation editorTag;
+    private ResourceLocation editorReferenceTable;
+    private final List<ResourceLocation> availableItemTags = new ArrayList<>();
+    private int selectedTagIndex = 0;
+    private int selectedReferenceTableIndex = 0;
+    private EditorMode editorMode = EditorMode.ITEM;
 
     public LootStudioScreen() {
         super(Component.literal("Loot Studio"));
@@ -99,10 +116,29 @@ public class LootStudioScreen extends Screen {
 
         updateLayout();
 
-        this.searchBox = new SelectableEditBox(this.font, this.leftX + 8, this.leftY + 24, this.listAreaW, 18, Component.literal("Pesquisar"));
+        int filterBtnSize = 14;
+        int filterBtnGap = 4;
+        int searchWidth = Math.max(30, this.listAreaW - (filterBtnSize + filterBtnGap));
+
+        this.searchBox = new SelectableEditBox(this.font, this.leftX + 8, this.leftY + 24, searchWidth, 18, Component.literal("Pesquisar"));
         this.searchBox.setMaxLength(80);
         this.searchBox.setResponder(value -> applySearchFilter());
         this.addRenderableWidget(this.searchBox);
+
+        this.filterButton = new IconButton(
+            this.searchBox.getX() + this.searchBox.getWidth() + filterBtnGap,
+            this.searchBox.getY() + 2,
+            filterBtnSize,
+            filterBtnSize,
+            ResourceLocation.fromNamespaceAndPath("serverfixes", "textures/gui/indent-solid.png"),
+            12, 12,
+            0xFF2E3A42,
+            0xFF3E4A52,
+            0xFF1E262A,
+            btn -> this.filterOverlayOpen = !this.filterOverlayOpen
+        );
+        this.addRenderableWidget(this.filterButton);
+
         applySearchFilter();
 
         // Right panel widgets
@@ -128,6 +164,16 @@ public class LootStudioScreen extends Screen {
         this.affectedByLootingCheckbox = new TextureCheckbox(0, 0, false, Component.literal(""), val -> {});
         registerRightPanelWidget(this.affectedByLootingCheckbox);
 
+        this.editModeCycle = CycleButton.<EditorMode>builder(mode -> mode.label)
+            .withValues(EditorMode.values())
+            .displayOnlyValue()
+            .create(0, 0, sliderW, 18, Component.literal("Modo"), (btn, mode) -> {
+                this.editorMode = mode;
+                updateSelectItemButtonLabel();
+            });
+        registerRightPanelWidget(this.editModeCycle);
+        this.editModeCycle.setValue(this.editorMode);
+
         this.injectButton = Button.builder(Component.literal("Injetar"), btn -> upsertDropFromEditor())
             .bounds(0, 0, sliderW, 20).build();
         registerRightPanelWidget(this.injectButton);
@@ -138,6 +184,7 @@ public class LootStudioScreen extends Screen {
             btn -> requestResetTable());
         this.addRenderableWidget(this.resetButton);
 
+        refreshAvailableItemTags();
         recalculateRightPanel();
 
         NetworkHandler.sendToServer(new RequestLootDataPacket());
@@ -177,15 +224,23 @@ public class LootStudioScreen extends Screen {
         String query = this.searchBox != null ? this.searchBox.getValue().trim().toLowerCase(Locale.ROOT) : "";
         this.filteredTables.clear();
 
-        if (query.isEmpty()) {
-            this.filteredTables.addAll(this.allTables);
-        } else {
-            for (ResourceLocation id : this.allTables) {
-                if (id == null) continue;
-                String full = id.toString().toLowerCase(Locale.ROOT);
-                if (full.contains(query) || id.getNamespace().toLowerCase(Locale.ROOT).contains(query) || id.getPath().toLowerCase(Locale.ROOT).contains(query)) {
-                    this.filteredTables.add(id);
-                }
+        for (ResourceLocation id : this.allTables) {
+            if (id == null) continue;
+
+            String namespace = id.getNamespace().toLowerCase(Locale.ROOT);
+            String category = extractCategory(id);
+            String full = id.toString().toLowerCase(Locale.ROOT);
+
+            boolean matchesSearch = query.isEmpty()
+                || full.contains(query)
+                || namespace.contains(query)
+                || id.getPath().toLowerCase(Locale.ROOT).contains(query);
+
+            boolean matchesNamespace = this.selectedNamespaces.isEmpty() || this.selectedNamespaces.contains(namespace);
+            boolean matchesCategory = this.selectedCategories.isEmpty() || this.selectedCategories.contains(category);
+
+            if (matchesSearch && matchesNamespace && matchesCategory) {
+                this.filteredTables.add(id);
             }
         }
 
@@ -216,6 +271,7 @@ public class LootStudioScreen extends Screen {
         }
 
         this.allTables.sort(Comparator.comparing(ResourceLocation::getNamespace).thenComparing(ResourceLocation::getPath));
+        rebuildFilterOptions();
         applySearchFilter();
     }
 
@@ -238,6 +294,138 @@ public class LootStudioScreen extends Screen {
         } else {
             this.editingDropIndex = -1;
         }
+    }
+
+    private void rebuildFilterOptions() {
+        this.availableNamespaces.clear();
+        this.availableCategories.clear();
+
+        Set<String> namespaces = new HashSet<>();
+        Set<String> categories = new HashSet<>();
+        for (ResourceLocation id : this.allTables) {
+            if (id == null) continue;
+            namespaces.add(id.getNamespace().toLowerCase(Locale.ROOT));
+            categories.add(extractCategory(id));
+        }
+
+        this.availableNamespaces.addAll(namespaces);
+        this.availableCategories.addAll(categories);
+        this.availableNamespaces.sort(String::compareTo);
+        this.availableCategories.sort(String::compareTo);
+
+        this.selectedNamespaces.retainAll(namespaces);
+        this.selectedCategories.retainAll(categories);
+    }
+
+    private String extractCategory(ResourceLocation id) {
+        if (id == null) return "misc";
+        String path = id.getPath();
+        int slash = path.indexOf('/');
+        return (slash > 0 ? path.substring(0, slash) : path).toLowerCase(Locale.ROOT);
+    }
+
+    private void renderFilterOverlay(GuiGraphics graphics, int mouseX, int mouseY) {
+        if (!this.filterOverlayOpen || this.font == null || this.filterButton == null) {
+            return;
+        }
+
+        int x = this.filterButton.getX() - 4;
+        int y = this.filterButton.getY() + this.filterButton.getHeight() + 4;
+        int w = Math.min(220, this.leftW - 16);
+
+        int rows = this.availableNamespaces.size() + this.availableCategories.size() + 4;
+        int h = Math.min(this.leftH - 40, 22 + rows * 14);
+
+        graphics.fill(x, y, x + w, y + h, 0xE015202D);
+        GuiLayoutUtils.drawPanel(graphics, x, y, w, h, 0x001A2434, 0xFF4E6B8D);
+
+        int drawY = y + 6;
+        graphics.drawString(this.font, "Filtros", x + 6, drawY, 0xFFF4F7FF);
+        drawY += 14;
+
+        graphics.drawString(this.font, "Mods", x + 6, drawY, 0xFFE8CC6D);
+        drawY += 12;
+
+        for (String namespace : this.availableNamespaces) {
+            if (drawY + 12 > y + h - 4) break;
+            boolean selected = this.selectedNamespaces.contains(namespace);
+            drawOverlayCheckbox(graphics, x + 8, drawY, selected);
+            graphics.drawString(this.font, namespace, x + 24, drawY + 2, 0xFFD4E0F0);
+            drawY += 14;
+        }
+
+        if (drawY + 14 <= y + h - 4) {
+            graphics.drawString(this.font, "Categorias", x + 6, drawY, 0xFFE8CC6D);
+            drawY += 12;
+        }
+
+        for (String category : this.availableCategories) {
+            if (drawY + 12 > y + h - 4) break;
+            boolean selected = this.selectedCategories.contains(category);
+            drawOverlayCheckbox(graphics, x + 8, drawY, selected);
+            graphics.drawString(this.font, category, x + 24, drawY + 2, 0xFFD4E0F0);
+            drawY += 14;
+        }
+    }
+
+    private void drawOverlayCheckbox(GuiGraphics graphics, int x, int y, boolean selected) {
+        graphics.fill(x, y, x + 12, y + 12, 0xFF4E6B8D);
+        graphics.fill(x + 1, y + 1, x + 11, y + 11, 0xFF1A2434);
+        if (selected) {
+            graphics.fill(x + 3, y + 3, x + 9, y + 9, 0xFF8BD3FF);
+        }
+    }
+
+    private boolean handleFilterOverlayClick(double mouseX, double mouseY, int button) {
+        if (!this.filterOverlayOpen || button != 0 || this.filterButton == null) {
+            return false;
+        }
+
+        int x = this.filterButton.getX() - 4;
+        int y = this.filterButton.getY() + this.filterButton.getHeight() + 4;
+        int w = Math.min(220, this.leftW - 16);
+        int rows = this.availableNamespaces.size() + this.availableCategories.size() + 4;
+        int h = Math.min(this.leftH - 40, 22 + rows * 14);
+
+        if (mouseX < x || mouseX >= x + w || mouseY < y || mouseY >= y + h) {
+            if (!(mouseX >= this.filterButton.getX() && mouseX < this.filterButton.getX() + this.filterButton.getWidth()
+                && mouseY >= this.filterButton.getY() && mouseY < this.filterButton.getY() + this.filterButton.getHeight())) {
+                this.filterOverlayOpen = false;
+            }
+            return false;
+        }
+
+        int drawY = y + 6 + 14 + 12;
+        for (String namespace : this.availableNamespaces) {
+            if (drawY + 12 > y + h - 4) break;
+            if (mouseY >= drawY && mouseY < drawY + 12 && mouseX >= x + 8 && mouseX < x + w - 8) {
+                toggleFilterValue(this.selectedNamespaces, namespace);
+                applySearchFilter();
+                return true;
+            }
+            drawY += 14;
+        }
+
+        if (drawY + 14 <= y + h - 4) {
+            drawY += 12;
+        }
+
+        for (String category : this.availableCategories) {
+            if (drawY + 12 > y + h - 4) break;
+            if (mouseY >= drawY && mouseY < drawY + 12 && mouseX >= x + 8 && mouseX < x + w - 8) {
+                toggleFilterValue(this.selectedCategories, category);
+                applySearchFilter();
+                return true;
+            }
+            drawY += 14;
+        }
+
+        return true;
+    }
+
+    private void toggleFilterValue(Set<String> selectedSet, String value) {
+        if (selectedSet.contains(value)) selectedSet.remove(value);
+        else selectedSet.add(value);
     }
 
     private void rebuildTableButtons() {
@@ -294,6 +482,10 @@ public class LootStudioScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (handleFilterOverlayClick(mouseX, mouseY, button)) {
+            return true;
+        }
+
         if (this.maxLeftScroll > 0 && isInsideLeftScrollbar(mouseX, mouseY)) {
             startLeftScrollbarDrag(mouseY);
             return true;
@@ -395,6 +587,11 @@ public class LootStudioScreen extends Screen {
         updateLayout();
         recalculateRightPanel();
 
+        if (this.filterButton != null && this.searchBox != null) {
+            this.filterButton.setX(this.searchBox.getX() + this.searchBox.getWidth() + 4);
+            this.filterButton.setY(this.searchBox.getY() + 2);
+        }
+
         if (this.resetButton != null) {
             this.resetButton.setX(this.centerX + this.centerW - 20);
             this.resetButton.setY(this.centerY + 6);
@@ -453,6 +650,8 @@ public class LootStudioScreen extends Screen {
 
         renderLeftScrollbar(graphics);
         renderRightScrollbar(graphics);
+
+        renderFilterOverlay(graphics, mouseX, mouseY);
     }
 
     private void renderCenterLootList(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
@@ -484,9 +683,16 @@ public class LootStudioScreen extends Screen {
                     graphics.drawString(this.font, "[Drop Complexo - Apenas Leitura]", textX, currentY + 4, 0xFFFF8A8A);
                 }
             } else {
-                String displayName = dto.getItem() != null && !dto.getItem().isEmpty()
-                    ? dto.getItem().getHoverName().getString()
-                    : "<vazio>";
+                String displayName;
+                if (dto.getTag() != null) {
+                    displayName = "#" + dto.getTag();
+                } else if (dto.getReferenceTable() != null) {
+                    displayName = "@" + dto.getReferenceTable();
+                } else {
+                    displayName = dto.getItem() != null && !dto.getItem().isEmpty()
+                        ? dto.getItem().getHoverName().getString()
+                        : "<vazio>";
+                }
                 graphics.drawString(this.font, displayName, textX, currentY + 2, 0xFFB8C8DE);
                 String meta = String.format(Locale.ROOT, "Chance: %.2f%% | %d a %d | PK: %s", dto.getChance(), dto.getMin(), dto.getMax(), dto.isRequirePlayerKill() ? "Sim" : "Nao");
                 graphics.drawString(this.font, meta, textX, currentY + 14, 0xFF9FB0C5);
@@ -670,6 +876,14 @@ public class LootStudioScreen extends Screen {
             currentY += this.affectedByLootingCheckbox.getHeight() + gap;
         }
 
+        if (this.editModeCycle != null && this.editModeCycle.visible) {
+            this.editModeCycle.setX(rowX);
+            this.editModeCycle.setY(currentY);
+            this.editModeCycle.setWidth(rowW);
+            this.widgetOriginalY.put(this.editModeCycle, currentY);
+            currentY += this.editModeCycle.getHeight() + gap;
+        }
+
         if (this.injectButton != null && this.injectButton.visible) {
             this.injectButton.setX(rowX);
             this.injectButton.setY(currentY);
@@ -727,11 +941,38 @@ public class LootStudioScreen extends Screen {
     }
 
     private void selectEditorItemFromPlayerOrFallback() {
+        if (this.editorMode == EditorMode.TAG) {
+            if (this.availableItemTags.isEmpty()) {
+                refreshAvailableItemTags();
+            }
+            if (!this.availableItemTags.isEmpty()) {
+                this.selectedTagIndex = (this.selectedTagIndex + 1) % this.availableItemTags.size();
+                this.editorTag = this.availableItemTags.get(this.selectedTagIndex);
+                this.editorReferenceTable = null;
+                this.editorItem = new ItemStack(Items.CHEST);
+            }
+            updateSelectItemButtonLabel();
+            return;
+        }
+
+        if (this.editorMode == EditorMode.TABLE) {
+            if (!this.allTables.isEmpty()) {
+                this.selectedReferenceTableIndex = (this.selectedReferenceTableIndex + 1) % this.allTables.size();
+                this.editorReferenceTable = this.allTables.get(this.selectedReferenceTableIndex);
+                this.editorTag = null;
+                this.editorItem = new ItemStack(Items.CHEST);
+            }
+            updateSelectItemButtonLabel();
+            return;
+        }
+
         if (this.minecraft != null && this.minecraft.player != null) {
             ItemStack held = this.minecraft.player.getMainHandItem();
             if (held != null && !held.isEmpty()) {
                 this.editorItem = held.copy();
                 this.editorItem.setCount(1);
+                this.editorTag = null;
+                this.editorReferenceTable = null;
                 updateSelectItemButtonLabel();
                 return;
             }
@@ -739,6 +980,8 @@ public class LootStudioScreen extends Screen {
 
         this.fallbackItemIndex = (this.fallbackItemIndex + 1) % FALLBACK_ITEMS.length;
         this.editorItem = new ItemStack(FALLBACK_ITEMS[this.fallbackItemIndex]);
+        this.editorTag = null;
+        this.editorReferenceTable = null;
         updateSelectItemButtonLabel();
     }
 
@@ -747,11 +990,23 @@ public class LootStudioScreen extends Screen {
             return;
         }
 
-        String value = "<nenhum>";
-        if (this.editorItem != null && !this.editorItem.isEmpty() && ForgeRegistries.ITEMS.getKey(this.editorItem.getItem()) != null) {
-            value = ForgeRegistries.ITEMS.getKey(this.editorItem.getItem()).toString();
+        String value;
+        if (this.editorMode == EditorMode.TAG) {
+            value = this.editorTag != null ? ("#" + this.editorTag) : "<tag>";
+            this.selectItemButton.setMessage(Component.literal("Tag: " + value));
+            return;
         }
 
+        if (this.editorMode == EditorMode.TABLE) {
+            value = this.editorReferenceTable != null ? this.editorReferenceTable.toString() : "<tabela>";
+            this.selectItemButton.setMessage(Component.literal("Tabela: " + value));
+            return;
+        }
+
+        value = "<item>";
+        if (this.editorItem != null && !this.editorItem.isEmpty()) {
+            value = this.editorItem.getHoverName().getString();
+        }
         this.selectItemButton.setMessage(Component.literal("Item: " + value));
     }
 
@@ -763,10 +1018,27 @@ public class LootStudioScreen extends Screen {
         LootDropDTO dto = this.lootDrops.get(index);
         this.editingDropIndex = index;
 
-        this.editorItem = dto.getItem() != null && !dto.getItem().isEmpty()
-            ? dto.getItem().copy()
-            : new ItemStack(Items.DIAMOND);
+        if (dto.getTag() != null) {
+            this.editorMode = EditorMode.TAG;
+            this.editorTag = dto.getTag();
+            this.editorReferenceTable = null;
+            this.editorItem = new ItemStack(Items.CHEST);
+        } else if (dto.getReferenceTable() != null) {
+            this.editorMode = EditorMode.TABLE;
+            this.editorReferenceTable = dto.getReferenceTable();
+            this.editorTag = null;
+            this.editorItem = new ItemStack(Items.CHEST);
+        } else {
+            this.editorMode = EditorMode.ITEM;
+            this.editorItem = dto.getItem() != null && !dto.getItem().isEmpty()
+                ? dto.getItem().copy()
+                : new ItemStack(Items.DIAMOND);
+            this.editorTag = null;
+            this.editorReferenceTable = null;
+        }
+
         this.editorItem.setCount(1);
+        if (this.editModeCycle != null) this.editModeCycle.setValue(this.editorMode);
         updateSelectItemButtonLabel();
 
         if (this.chanceSlider != null) this.chanceSlider.setCurrentValue(dto.getChance());
@@ -788,14 +1060,34 @@ public class LootStudioScreen extends Screen {
             if (this.maxSlider != null) this.maxSlider.setCurrentValue(max);
         }
 
+        ItemStack resultItem = this.editorItem != null ? this.editorItem.copy() : ItemStack.EMPTY;
+        ResourceLocation resultTag = null;
+        ResourceLocation resultReference = null;
+
+        if (this.editorMode == EditorMode.TAG) {
+            if (this.editorTag == null) {
+                return;
+            }
+            resultTag = this.editorTag;
+            resultItem = new ItemStack(Items.CHEST);
+        } else if (this.editorMode == EditorMode.TABLE) {
+            if (this.editorReferenceTable == null) {
+                return;
+            }
+            resultReference = this.editorReferenceTable;
+            resultItem = new ItemStack(Items.CHEST);
+        }
+
         LootDropDTO dto = new LootDropDTO(
-            this.editorItem != null ? this.editorItem.copy() : new ItemStack(Items.DIAMOND),
+            resultItem,
             this.chanceSlider != null ? this.chanceSlider.getCurrentValue() : 100.0D,
             min,
             max,
             this.requirePlayerKillCheckbox != null && this.requirePlayerKillCheckbox.isSelected(),
             this.affectedByLootingCheckbox != null && this.affectedByLootingCheckbox.isSelected(),
-            false
+            false,
+            resultTag,
+            resultReference
         );
 
         dto.getItem().setCount(1);
@@ -835,8 +1127,40 @@ public class LootStudioScreen extends Screen {
             dto.getMax(),
             dto.isRequirePlayerKill(),
             dto.isAffectedByLooting(),
-            dto.isComplex()
+            dto.isComplex(),
+            dto.getTag(),
+            dto.getReferenceTable()
         );
+    }
+
+    private void refreshAvailableItemTags() {
+        this.availableItemTags.clear();
+
+        try {
+            Object tagManager = ForgeRegistries.ITEMS.tags();
+            if (tagManager != null) {
+                Method getTagNames = tagManager.getClass().getMethod("getTagNames");
+                Object streamObj = getTagNames.invoke(tagManager);
+                if (streamObj instanceof java.util.stream.Stream<?> stream) {
+                    stream.forEach(tagKey -> {
+                        try {
+                            Method locationMethod = tagKey.getClass().getMethod("location");
+                            Object loc = locationMethod.invoke(tagKey);
+                            if (loc instanceof ResourceLocation rl) {
+                                this.availableItemTags.add(rl);
+                            }
+                        } catch (Throwable ignored) {
+                        }
+                    });
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+
+        this.availableItemTags.sort(Comparator.comparing(ResourceLocation::toString));
+        if (!this.availableItemTags.isEmpty() && this.editorTag == null) {
+            this.editorTag = this.availableItemTags.get(0);
+        }
     }
 
     //==================== Nested helper classes ====================
@@ -958,6 +1282,18 @@ public class LootStudioScreen extends Screen {
         private static double normalize(int value, int min, int max) {
             if (max <= min) return 0.0D;
             return Mth.clamp((double) (value - min) / (double) (max - min), 0.0D, 1.0D);
+        }
+    }
+
+    private enum EditorMode {
+        ITEM(Component.literal("[ ITEM ]")),
+        TAG(Component.literal("[ TAG ]")),
+        TABLE(Component.literal("[ TABELA ]"));
+
+        private final Component label;
+
+        EditorMode(Component label) {
+            this.label = label;
         }
     }
 

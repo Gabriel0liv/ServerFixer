@@ -70,6 +70,18 @@ public final class LootStudioPacketCodec {
         buf.writeBoolean(safe.isRequirePlayerKill());
         buf.writeBoolean(safe.isAffectedByLooting());
         buf.writeBoolean(safe.isComplex());
+
+        boolean hasTag = safe.getTag() != null;
+        buf.writeBoolean(hasTag);
+        if (hasTag) {
+            buf.writeResourceLocation(safe.getTag());
+        }
+
+        boolean hasRef = safe.getReferenceTable() != null;
+        buf.writeBoolean(hasRef);
+        if (hasRef) {
+            buf.writeResourceLocation(safe.getReferenceTable());
+        }
     }
 
     private static LootDropDTO readLootDrop(FriendlyByteBuf buf) {
@@ -80,6 +92,10 @@ public final class LootStudioPacketCodec {
         boolean requirePlayerKill = buf.readBoolean();
         boolean affectedByLooting = buf.readBoolean();
         boolean complex = buf.readBoolean();
-        return new LootDropDTO(stack, chance, min, max, requirePlayerKill, affectedByLooting, complex);
+
+        ResourceLocation tag = buf.readBoolean() ? buf.readResourceLocation() : null;
+        ResourceLocation referenceTable = buf.readBoolean() ? buf.readResourceLocation() : null;
+
+        return new LootDropDTO(stack, chance, min, max, requirePlayerKill, affectedByLooting, complex, tag, referenceTable);
     }
 }

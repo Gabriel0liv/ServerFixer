@@ -1,5 +1,6 @@
 package com.gabri.serverfixes.client.gui;
 
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 
 @SuppressWarnings("unused")
@@ -11,8 +12,14 @@ public class LootDropDTO {
     private boolean requirePlayerKill;
     private boolean affectedByLooting;
     private boolean isComplex;
+    private ResourceLocation tag;
+    private ResourceLocation referenceTable;
 
     public LootDropDTO(ItemStack item, double chance, int min, int max, boolean requirePlayerKill, boolean affectedByLooting, boolean isComplex) {
+        this(item, chance, min, max, requirePlayerKill, affectedByLooting, isComplex, null, null);
+    }
+
+    public LootDropDTO(ItemStack item, double chance, int min, int max, boolean requirePlayerKill, boolean affectedByLooting, boolean isComplex, ResourceLocation tag, ResourceLocation referenceTable) {
         this.item = item;
         this.chance = chance;
         this.min = min;
@@ -20,6 +27,8 @@ public class LootDropDTO {
         this.requirePlayerKill = requirePlayerKill;
         this.affectedByLooting = affectedByLooting;
         this.isComplex = isComplex;
+        this.tag = tag;
+        this.referenceTable = referenceTable;
     }
 
     public ItemStack getItem() {
@@ -76,5 +85,21 @@ public class LootDropDTO {
 
     public void setComplex(boolean complex) {
         isComplex = complex;
+    }
+
+    public ResourceLocation getTag() {
+        return tag;
+    }
+
+    public void setTag(ResourceLocation tag) {
+        this.tag = tag;
+    }
+
+    public ResourceLocation getReferenceTable() {
+        return referenceTable;
+    }
+
+    public void setReferenceTable(ResourceLocation referenceTable) {
+        this.referenceTable = referenceTable;
     }
 }
