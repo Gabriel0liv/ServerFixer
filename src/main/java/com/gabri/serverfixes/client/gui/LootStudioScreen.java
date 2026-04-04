@@ -6,6 +6,8 @@ import com.gabri.serverfixes.network.RequestLootDataPacket;
 import com.gabri.serverfixes.network.RequestLootTablePacket;
 import com.gabri.serverfixes.network.ResetLootTablePacket;
 import com.gabri.serverfixes.network.SaveLootTablePacket;
+import com.mojang.blaze3d.systems.RenderSystem;
+import org.lwjgl.opengl.GL11;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractSliderButton;
@@ -300,7 +302,8 @@ public class LootStudioScreen extends Screen {
         int rows = this.availableNamespaces.size() + this.availableCategories.size() + 4;
         int h = Math.min(this.leftH - 40, 22 + rows * 14);
 
-        graphics.fill(x, y, x + w, y + h, 0xFB1A2434);
+        // make filter panel fully opaque so underlying text/items don't bleed through
+        graphics.fill(x, y, x + w, y + h, 0xFF1A2434);
         graphics.fill(x, y, x + w, y + 1, 0xFF4E6B8D);
         graphics.fill(x, y + h - 1, x + w, y + h, 0xFF4E6B8D);
         graphics.fill(x, y, x + 1, y + h, 0xFF4E6B8D);
@@ -638,7 +641,15 @@ public class LootStudioScreen extends Screen {
         renderRightScrollbar(graphics);
         renderCenterScrollbar(graphics);
 
-        renderFilterOverlay(graphics, mouseX, mouseY);
+        if (this.filterOverlayOpen) {
+            RenderSystem.disableDepthTest();
+            // ensure overlay draws above previously rendered items
+            GL11.glClear(GL11.GL_DEPTH_BUFFER_BIT);
+            renderFilterOverlay(graphics, mouseX, mouseY);
+            RenderSystem.enableDepthTest();
+        } else {
+            renderFilterOverlay(graphics, mouseX, mouseY);
+        }
 
         if (hideModalBeforeSuper) {
             for (AbstractWidget widget : this.editorModal.getWidgets()) {
@@ -646,7 +657,11 @@ public class LootStudioScreen extends Screen {
             }
         }
         if (this.editorModal != null && this.editorModal.isOpen()) {
+            RenderSystem.disableDepthTest();
+            // clear any depth values written by earlier item renders so modal is always on top
+            GL11.glClear(GL11.GL_DEPTH_BUFFER_BIT);
             this.editorModal.render(graphics, mouseX, mouseY, partialTick);
+            RenderSystem.enableDepthTest();
         }
     }
 
@@ -1135,8 +1150,10 @@ public class LootStudioScreen extends Screen {
 
             updateLayout();
 
-            graphics.fill(0, 0, LootStudioScreen.this.width, LootStudioScreen.this.height, 0xAA000000);
-            graphics.fill(this.modalX, this.modalY, this.modalX + this.modalW, this.modalY + this.modalH, 0xFB1A2434);
+            // less transparent overlay so modal content doesn't blend with underlying text
+            graphics.fill(0, 0, LootStudioScreen.this.width, LootStudioScreen.this.height, 0xCC000000);
+            // make modal panel fully opaque to avoid bleed-through
+            graphics.fill(this.modalX, this.modalY, this.modalX + this.modalW, this.modalY + this.modalH, 0xFF1A2434);
             graphics.fill(this.modalX, this.modalY, this.modalX + this.modalW, this.modalY + 1, 0xFF4E6B8D);
             graphics.fill(this.modalX, this.modalY + this.modalH - 1, this.modalX + this.modalW, this.modalY + this.modalH, 0xFF4E6B8D);
             graphics.fill(this.modalX, this.modalY, this.modalX + 1, this.modalY + this.modalH, 0xFF4E6B8D);
