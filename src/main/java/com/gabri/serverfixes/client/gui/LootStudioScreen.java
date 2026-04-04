@@ -478,7 +478,11 @@ public class LootStudioScreen extends Screen {
 
             int textX = iconX + 20;
             if (dto.isComplex()) {
-                graphics.drawString(this.font, "[Drop Complexo - Apenas Leitura]", textX, currentY + 4, 0xFFFF8A8A);
+                if (dto.getItem() != null && dto.getItem().is(Items.CHEST)) {
+                    graphics.drawString(this.font, "\u00A76[\u00A7eEstrutura de Loot Original\u00A76]", textX, currentY + 4, 0xFFFFD866);
+                } else {
+                    graphics.drawString(this.font, "[Drop Complexo - Apenas Leitura]", textX, currentY + 4, 0xFFFF8A8A);
+                }
             } else {
                 String displayName = dto.getItem() != null && !dto.getItem().isEmpty()
                     ? dto.getItem().getHoverName().getString()
