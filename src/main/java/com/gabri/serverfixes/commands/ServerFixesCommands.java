@@ -281,6 +281,10 @@ public class ServerFixesCommands {
         root.then(Commands.literal("particle_studio")
             .executes(ctx -> openParticleStudio(ctx.getSource())));
 
+        // /serverfixes sound_studio
+        root.then(Commands.literal("sound_studio")
+            .executes(ctx -> openSoundStudio(ctx.getSource())));
+
         dispatcher.register(root);
 
         dispatcher.register(Commands.literal("particle_studio")
@@ -290,13 +294,40 @@ public class ServerFixesCommands {
         dispatcher.register(Commands.literal("particlestudio")
             .requires(source -> source.hasPermission(2))
             .executes(ctx -> openParticleStudio(ctx.getSource())));
+
+        dispatcher.register(Commands.literal("sound_studio")
+            .requires(source -> source.hasPermission(2))
+            .executes(ctx -> openSoundStudio(ctx.getSource())));
+
+        dispatcher.register(Commands.literal("soundstudio")
+            .requires(source -> source.hasPermission(2))
+            .executes(ctx -> openSoundStudio(ctx.getSource())));
     }
 
     private static int openParticleStudio(CommandSourceStack source) {
         if (source.getEntity() instanceof Player player) {
+            if (!player.isCreative()) {
+                source.sendFailure(Component.literal("Este comando só pode ser usado no modo Criativo."));
+                return 0;
+            }
             com.gabri.serverfixes.network.NetworkHandler.sendToPlayer((net.minecraft.server.level.ServerPlayer) player,
                 new com.gabri.serverfixes.network.OpenParticleStudioPacket());
             source.sendSuccess(() -> Component.literal("Abrindo Particle Studio...").withStyle(ChatFormatting.GREEN), false);
+            return 1;
+        }
+        source.sendFailure(Component.literal("Este comando só pode ser usado por jogadores."));
+        return 0;
+    }
+
+    private static int openSoundStudio(CommandSourceStack source) {
+        if (source.getEntity() instanceof Player player) {
+            if (!player.isCreative()) {
+                source.sendFailure(Component.literal("Este comando só pode ser usado no modo Criativo."));
+                return 0;
+            }
+            com.gabri.serverfixes.network.NetworkHandler.sendToPlayer((net.minecraft.server.level.ServerPlayer) player,
+                new com.gabri.serverfixes.network.OpenSoundStudioPacket());
+            source.sendSuccess(() -> Component.literal("Abrindo Sound Studio...").withStyle(ChatFormatting.GREEN), false);
             return 1;
         }
         source.sendFailure(Component.literal("Este comando só pode ser usado por jogadores."));

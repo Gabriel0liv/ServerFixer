@@ -143,8 +143,8 @@ public class ContextKeybindHandler {
 
     private static void handleOpenParticleStudio(net.minecraft.client.player.LocalPlayer player) {
         Minecraft minecraft = Minecraft.getInstance();
-        if (!canUseOperatorOnly(minecraft)) {
-            player.displayClientMessage(Component.literal("§cAcesso negado: requer OP."), true);
+        if (!canUsePrivilegedEditor(minecraft)) {
+            player.displayClientMessage(Component.literal("§cAcesso negado: requer OP e modo Criativo."), true);
             return;
         }
 

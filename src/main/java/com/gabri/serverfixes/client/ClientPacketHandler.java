@@ -2,7 +2,9 @@ package com.gabri.serverfixes.client;
 
 import com.gabri.serverfixes.network.ContextTargetType;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
 import net.minecraft.nbt.CompoundTag;
 
 public class ClientPacketHandler {
@@ -37,6 +39,28 @@ public class ClientPacketHandler {
     }
 
     public static void handleOpenParticleStudio() {
-        Minecraft.getInstance().setScreen(new com.gabri.serverfixes.client.gui.ParticleStudioScreen());
+        Minecraft minecraft = Minecraft.getInstance();
+        LocalPlayer player = minecraft.player;
+        if (player == null || !player.isCreative() || !player.hasPermissions(2)) {
+            if (player != null) {
+                player.displayClientMessage(Component.literal("§cAcesso negado: requer OP e modo Criativo."), true);
+            }
+            return;
+        }
+
+        minecraft.setScreen(new com.gabri.serverfixes.client.gui.ParticleStudioScreen());
+    }
+
+    public static void handleOpenSoundStudio() {
+        Minecraft minecraft = Minecraft.getInstance();
+        LocalPlayer player = minecraft.player;
+        if (player == null || !player.isCreative() || !player.hasPermissions(2)) {
+            if (player != null) {
+                player.displayClientMessage(Component.literal("§cAcesso negado: requer OP e modo Criativo."), true);
+            }
+            return;
+        }
+
+        minecraft.setScreen(new com.gabri.serverfixes.client.gui.SoundStudioScreen());
     }
 }
