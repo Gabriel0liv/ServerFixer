@@ -74,6 +74,42 @@ public class NetworkHandler {
                 .consumerMainThread(OpenLootStudioPacket::handle)
                 .add();
 
+        INSTANCE.messageBuilder(RequestLootDataPacket.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
+                .decoder(RequestLootDataPacket::new)
+                .encoder(RequestLootDataPacket::toBytes)
+                .consumerMainThread(RequestLootDataPacket::handle)
+                .add();
+
+        INSTANCE.messageBuilder(SPSendLootListPacket.class, packetId++, NetworkDirection.PLAY_TO_CLIENT)
+                .decoder(SPSendLootListPacket::new)
+                .encoder(SPSendLootListPacket::toBytes)
+                .consumerMainThread(SPSendLootListPacket::handle)
+                .add();
+
+        INSTANCE.messageBuilder(RequestLootTablePacket.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
+                .decoder(RequestLootTablePacket::new)
+                .encoder(RequestLootTablePacket::toBytes)
+                .consumerMainThread(RequestLootTablePacket::handle)
+                .add();
+
+        INSTANCE.messageBuilder(SPSendLootDropsPacket.class, packetId++, NetworkDirection.PLAY_TO_CLIENT)
+                .decoder(SPSendLootDropsPacket::new)
+                .encoder(SPSendLootDropsPacket::toBytes)
+                .consumerMainThread(SPSendLootDropsPacket::handle)
+                .add();
+
+        INSTANCE.messageBuilder(SaveLootTablePacket.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
+                .decoder(SaveLootTablePacket::new)
+                .encoder(SaveLootTablePacket::toBytes)
+                .consumerMainThread(SaveLootTablePacket::handle)
+                .add();
+
+        INSTANCE.messageBuilder(ResetLootTablePacket.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
+                .decoder(ResetLootTablePacket::new)
+                .encoder(ResetLootTablePacket::toBytes)
+                .consumerMainThread(ResetLootTablePacket::handle)
+                .add();
+
         INSTANCE.messageBuilder(RequestOpenContextEditorPacket.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
                 .decoder(RequestOpenContextEditorPacket::new)
                 .encoder(RequestOpenContextEditorPacket::toBytes)

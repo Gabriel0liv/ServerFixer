@@ -6,6 +6,9 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.ResourceLocation;
+
+import java.util.List;
 
 public class ClientPacketHandler {
     public static void handleOpenEditor(CompoundTag itemTag) {
@@ -75,5 +78,19 @@ public class ClientPacketHandler {
         }
 
         minecraft.setScreen(new com.gabri.serverfixes.client.gui.LootStudioScreen());
+    }
+
+    public static void handleLootTableList(List<ResourceLocation> tableIds) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.screen instanceof com.gabri.serverfixes.client.gui.LootStudioScreen lootStudioScreen) {
+            lootStudioScreen.applyLootTableListFromServer(tableIds);
+        }
+    }
+
+    public static void handleLootDrops(ResourceLocation tableId, List<com.gabri.serverfixes.client.gui.LootDropDTO> drops) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.screen instanceof com.gabri.serverfixes.client.gui.LootStudioScreen lootStudioScreen) {
+            lootStudioScreen.applyLootDropsFromServer(tableId, drops);
+        }
     }
 }
