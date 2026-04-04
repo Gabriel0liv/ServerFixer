@@ -17,8 +17,10 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraftforge.registries.ForgeRegistries;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
@@ -302,8 +304,7 @@ public class LootStudioScreen extends Screen {
         int rows = this.availableNamespaces.size() + this.availableCategories.size() + 4;
         int h = Math.min(this.leftH - 40, 22 + rows * 14);
 
-        // make filter panel fully opaque so underlying text/items don't bleed through
-        graphics.fill(x, y, x + w, y + h, 0xFF1A2434);
+        graphics.fill(x, y, x + w, y + h, 0xFB1A2434);
         graphics.fill(x, y, x + w, y + 1, 0xFF4E6B8D);
         graphics.fill(x, y + h - 1, x + w, y + h, 0xFF4E6B8D);
         graphics.fill(x, y, x + 1, y + h, 0xFF4E6B8D);
@@ -709,7 +710,14 @@ public class LootStudioScreen extends Screen {
                         : "<vazio>";
                 }
                 graphics.drawString(this.font, displayName, textX, currentY + 2, 0xFFB8C8DE);
-                String meta = String.format(Locale.ROOT, "Chance: %.2f%% | %d a %d | PK: %s", dto.getChance(), dto.getMin(), dto.getMax(), dto.isRequirePlayerKill() ? "Sim" : "Nao");
+                String enchantMeta = "";
+                if (dto.isEnchantWithLevels()) {
+                    LootDropDTO.Range levels = dto.getEnchantLevelsRange() != null ? dto.getEnchantLevelsRange() : new LootDropDTO.Range(10, 30);
+                    enchantMeta = " | Enc Niveis: " + levels.getMin() + "-" + levels.getMax();
+                } else if (dto.isEnchantRandomly()) {
+                    enchantMeta = " | Enc Aleatorio";
+                }
+                String meta = String.format(Locale.ROOT, "Chance: %.2f%% | %d a %d | PK: %s%s", dto.getChance(), dto.getMin(), dto.getMax(), dto.isRequirePlayerKill() ? "Sim" : "Nao", enchantMeta);
                 graphics.drawString(this.font, meta, textX, currentY + 14, 0xFF9FB0C5);
 
                 // draw edit/delete icons on the right
@@ -954,7 +962,12 @@ public class LootStudioScreen extends Screen {
             dto.isAffectedByLooting(),
             dto.isComplex(),
             dto.getTag(),
-            dto.getReferenceTable()
+            dto.getReferenceTable(),
+            dto.isEnchantRandomly(),
+            dto.isEnchantWithLevels(),
+            dto.getEnchantLevelsRange() != null
+                ? new LootDropDTO.Range(dto.getEnchantLevelsRange().getMin(), dto.getEnchantLevelsRange().getMax())
+                : null
         );
     }
 
@@ -1012,53 +1025,61 @@ public class LootStudioScreen extends Screen {
 
     private final class LootDropEditorModal {
         private final List<AbstractWidget> widgets = new ArrayList<>();
-        private Button modeCycleButton;
-        private SelectableEditBox tagInput;
-        private SelectableEditBox referenceTableInput;
+        private SelectableEditBox idInput;
         private DoubleParameterSlider chanceSlider;
         private IntParameterSlider minSlider;
         private IntParameterSlider maxSlider;
         private TextureCheckbox requirePlayerKillCheckbox;
         private TextureCheckbox affectedByLootingCheckbox;
+        private TextureCheckbox enchantRandomlyCheckbox;
+        private TextureCheckbox enchantWithLevelsCheckbox;
+        private IntParameterSlider enchantLevelsMinSlider;
+        private IntParameterSlider enchantLevelsMaxSlider;
         private Button confirmButton;
         private Button cancelButton;
 
         private boolean open = false;
         private int editingIndex = -1;
-        private EditorMode mode = EditorMode.ITEM;
-        private ItemStack itemStack = new ItemStack(Items.DIAMOND);
+
+        private ItemStack previewItem = new ItemStack(Items.DIAMOND);
+        private boolean previewValid = true;
+        private String previewHint = "";
 
         private int modalX, modalY, modalW, modalH;
-        private int slotX, slotY, slotSize;
+        private int previewSlotX, previewSlotY, previewSlotSize;
 
         private void init() {
-            this.modalW = 300;
-            this.modalH = 206;
-            this.slotSize = 24;
+            this.modalW = 340;
+            this.modalH = 250;
+            this.previewSlotSize = 24;
 
-            this.modeCycleButton = Button.builder(this.mode.label, btn -> cycleMode()).bounds(0, 0, 88, 20).build();
-            this.tagInput = new SelectableEditBox(LootStudioScreen.this.font, 0, 0, 10, 18, Component.literal("tag"));
-            this.tagInput.setMaxLength(120);
-            this.referenceTableInput = new SelectableEditBox(LootStudioScreen.this.font, 0, 0, 10, 18, Component.literal("table"));
-            this.referenceTableInput.setMaxLength(120);
+            this.idInput = new SelectableEditBox(LootStudioScreen.this.font, 0, 0, 10, 18, Component.literal("item/tag"));
+            this.idInput.setMaxLength(140);
+            this.idInput.setResponder(value -> refreshPreview());
 
             this.chanceSlider = new DoubleParameterSlider(0, 0, 10, 18, "Chance", 0.0D, 100.0D, 50.0D, 1, value -> {});
             this.minSlider = new IntParameterSlider(0, 0, 10, 18, "Min", 1, 64, 1, value -> {});
             this.maxSlider = new IntParameterSlider(0, 0, 10, 18, "Max", 1, 64, 1, value -> {});
             this.requirePlayerKillCheckbox = new TextureCheckbox(0, 0, false, Component.literal("PK"), v -> {});
             this.affectedByLootingCheckbox = new TextureCheckbox(0, 0, false, Component.literal("Looting"), v -> {});
+            this.enchantRandomlyCheckbox = new TextureCheckbox(0, 0, false, Component.literal("EnchantRand"), v -> {});
+            this.enchantWithLevelsCheckbox = new TextureCheckbox(0, 0, false, Component.literal("EnchantLvl"), v -> updateEnchantControlsVisibility());
+            this.enchantLevelsMinSlider = new IntParameterSlider(0, 0, 10, 18, "Enc Min", 1, 100, 10, value -> {});
+            this.enchantLevelsMaxSlider = new IntParameterSlider(0, 0, 10, 18, "Enc Max", 1, 100, 30, value -> {});
 
             this.confirmButton = Button.builder(Component.literal("Confirmar"), btn -> confirm()).bounds(0, 0, 80, 20).build();
             this.cancelButton = Button.builder(Component.literal("Cancelar"), btn -> close()).bounds(0, 0, 80, 20).build();
 
-            register(this.modeCycleButton);
-            register(this.tagInput);
-            register(this.referenceTableInput);
+            register(this.idInput);
             register(this.chanceSlider);
             register(this.minSlider);
             register(this.maxSlider);
             register(this.requirePlayerKillCheckbox);
             register(this.affectedByLootingCheckbox);
+            register(this.enchantRandomlyCheckbox);
+            register(this.enchantWithLevelsCheckbox);
+            register(this.enchantLevelsMinSlider);
+            register(this.enchantLevelsMaxSlider);
             register(this.confirmButton);
             register(this.cancelButton);
 
@@ -1080,61 +1101,56 @@ public class LootStudioScreen extends Screen {
 
         private void openForCreate() {
             this.editingIndex = -1;
-            this.mode = EditorMode.ITEM;
-            this.itemStack = getCarriedOrFallbackItem();
-            this.tagInput.setValue("");
-            this.referenceTableInput.setValue("");
+            this.idInput.setValue(getCarriedOrFallbackId());
             this.chanceSlider.setCurrentValue(50.0D);
             this.minSlider.setCurrentValue(1);
             this.maxSlider.setCurrentValue(1);
             this.requirePlayerKillCheckbox.setSelected(false);
             this.affectedByLootingCheckbox.setSelected(false);
+            this.enchantRandomlyCheckbox.setSelected(false);
+            this.enchantWithLevelsCheckbox.setSelected(false);
+            this.enchantLevelsMinSlider.setCurrentValue(10);
+            this.enchantLevelsMaxSlider.setCurrentValue(30);
+            refreshPreview();
             this.open = true;
             updateLayout();
-            updateModeVisibility();
             setWidgetsVisible(true);
         }
 
         private void openForEdit(int index, LootDropDTO dto) {
             this.editingIndex = index;
-            this.mode = EditorMode.ITEM;
-            this.itemStack = dto != null && dto.getItem() != null && !dto.getItem().isEmpty() ? dto.getItem().copy() : getCarriedOrFallbackItem();
+
             if (dto != null && dto.getTag() != null) {
-                this.mode = EditorMode.TAG;
-                this.tagInput.setValue(dto.getTag().toString());
-                this.referenceTableInput.setValue("");
+                this.idInput.setValue("#" + dto.getTag());
             } else if (dto != null && dto.getReferenceTable() != null) {
-                this.mode = EditorMode.TABLE;
-                this.referenceTableInput.setValue(dto.getReferenceTable().toString());
-                this.tagInput.setValue("");
+                this.idInput.setValue("@" + dto.getReferenceTable());
+            } else if (dto != null && dto.getItem() != null && !dto.getItem().isEmpty()) {
+                ResourceLocation key = ForgeRegistries.ITEMS.getKey(dto.getItem().getItem());
+                this.idInput.setValue(key != null ? key.toString() : "minecraft:diamond");
             } else {
-                this.tagInput.setValue("");
-                this.referenceTableInput.setValue("");
+                this.idInput.setValue(getCarriedOrFallbackId());
             }
-            this.itemStack.setCount(1);
+
             this.chanceSlider.setCurrentValue(dto != null ? dto.getChance() : 50.0D);
             this.minSlider.setCurrentValue(dto != null ? dto.getMin() : 1);
             this.maxSlider.setCurrentValue(dto != null ? dto.getMax() : 1);
             this.requirePlayerKillCheckbox.setSelected(dto != null && dto.isRequirePlayerKill());
             this.affectedByLootingCheckbox.setSelected(dto != null && dto.isAffectedByLooting());
+            this.enchantRandomlyCheckbox.setSelected(dto != null && dto.isEnchantRandomly());
+            this.enchantWithLevelsCheckbox.setSelected(dto != null && dto.isEnchantWithLevels());
+            LootDropDTO.Range levels = dto != null && dto.getEnchantLevelsRange() != null ? dto.getEnchantLevelsRange() : new LootDropDTO.Range(10, 30);
+            this.enchantLevelsMinSlider.setCurrentValue(levels.getMin());
+            this.enchantLevelsMaxSlider.setCurrentValue(levels.getMax());
+
+            refreshPreview();
             this.open = true;
             updateLayout();
-            updateModeVisibility();
             setWidgetsVisible(true);
         }
 
         private boolean mouseClicked(double mouseX, double mouseY, int button) {
             if (!this.open) return false;
             updateLayout();
-
-            if (this.mode == EditorMode.ITEM && mouseX >= this.slotX && mouseX < this.slotX + this.slotSize && mouseY >= this.slotY && mouseY < this.slotY + this.slotSize) {
-                ItemStack carried = getCarriedItem();
-                if (!carried.isEmpty()) {
-                    this.itemStack = carried.copy();
-                    this.itemStack.setCount(1);
-                }
-                return true;
-            }
 
             for (AbstractWidget widget : this.widgets) {
                 if (widget.mouseClicked(mouseX, mouseY, button)) {
@@ -1160,26 +1176,25 @@ public class LootStudioScreen extends Screen {
             graphics.fill(this.modalX + this.modalW - 1, this.modalY, this.modalX + this.modalW, this.modalY + this.modalH, 0xFF4E6B8D);
 
             graphics.drawString(LootStudioScreen.this.font, "Editor de Drop", this.modalX + 8, this.modalY + 8, 0xFFF4F7FF);
-            if (this.mode == EditorMode.ITEM) {
-                graphics.drawString(LootStudioScreen.this.font, "Item (clique usa item no cursor)", this.modalX + 8, this.modalY + 24, 0xFFD4E0F0);
-                graphics.fill(this.slotX, this.slotY, this.slotX + this.slotSize, this.slotY + this.slotSize, 0xFF4E6B8D);
-                graphics.fill(this.slotX + 1, this.slotY + 1, this.slotX + this.slotSize - 1, this.slotY + this.slotSize - 1, 0xFF1A2434);
-                if (this.itemStack != null && !this.itemStack.isEmpty()) {
-                    graphics.renderItem(this.itemStack, this.slotX + 4, this.slotY + 4);
-                    graphics.renderItemDecorations(LootStudioScreen.this.font, this.itemStack, this.slotX + 4, this.slotY + 4);
-                }
-            } else if (this.mode == EditorMode.TAG) {
-                graphics.drawString(LootStudioScreen.this.font, "Tag (ex: minecraft:planks)", this.modalX + 8, this.modalY + 24, 0xFFD4E0F0);
-            } else {
-                graphics.drawString(LootStudioScreen.this.font, "Tabela (ex: minecraft:chests/simple_dungeon)", this.modalX + 8, this.modalY + 24, 0xFFD4E0F0);
-            }
+            graphics.drawString(LootStudioScreen.this.font, "ID do Item/Tag (ex: minecraft:diamond, #forge:ingots)", this.modalX + 8, this.modalY + 24, 0xFFD4E0F0);
 
             for (AbstractWidget widget : this.widgets) {
                 widget.render(graphics, mouseX, mouseY, partialTick);
             }
 
+            graphics.fill(this.previewSlotX, this.previewSlotY, this.previewSlotX + this.previewSlotSize, this.previewSlotY + this.previewSlotSize, 0xFF4E6B8D);
+            graphics.fill(this.previewSlotX + 1, this.previewSlotY + 1, this.previewSlotX + this.previewSlotSize - 1, this.previewSlotY + this.previewSlotSize - 1, 0xFF1A2434);
+            if (this.previewItem != null && !this.previewItem.isEmpty()) {
+                graphics.renderItem(this.previewItem, this.previewSlotX + 4, this.previewSlotY + 4);
+                graphics.renderItemDecorations(LootStudioScreen.this.font, this.previewItem, this.previewSlotX + 4, this.previewSlotY + 4);
+            }
+
+            int hintColor = this.previewValid ? 0xFF9FC4EA : 0xFFFF7B7B;
+            graphics.drawString(LootStudioScreen.this.font, this.previewHint, this.modalX + 12, this.modalY + 68, hintColor);
             graphics.drawString(LootStudioScreen.this.font, "Exigir Morte por Jogador", this.requirePlayerKillCheckbox.getX() + 18, this.requirePlayerKillCheckbox.getY() + 3, 0xFFD4E0F0);
             graphics.drawString(LootStudioScreen.this.font, "Afetado por Pilhagem", this.affectedByLootingCheckbox.getX() + 18, this.affectedByLootingCheckbox.getY() + 3, 0xFFD4E0F0);
+            graphics.drawString(LootStudioScreen.this.font, "Encantamento Aleatorio", this.enchantRandomlyCheckbox.getX() + 18, this.enchantRandomlyCheckbox.getY() + 3, 0xFFD4E0F0);
+            graphics.drawString(LootStudioScreen.this.font, "Encantamento por Niveis", this.enchantWithLevelsCheckbox.getX() + 18, this.enchantWithLevelsCheckbox.getY() + 3, 0xFFD4E0F0);
         }
 
         private void updateLayout() {
@@ -1188,41 +1203,50 @@ public class LootStudioScreen extends Screen {
 
             int bodyX = this.modalX + 12;
             int bodyY = this.modalY + 42;
-            this.modeCycleButton.setX(this.modalX + this.modalW - 96);
-            this.modeCycleButton.setY(this.modalY + 6);
-            this.modeCycleButton.setMessage(this.mode.label);
 
-            this.slotX = bodyX;
-            this.slotY = bodyY;
+            this.idInput.setX(bodyX);
+            this.idInput.setY(bodyY);
+            this.idInput.setWidth(this.modalW - 24 - this.previewSlotSize - 8);
 
-            this.tagInput.setX(bodyX);
-            this.tagInput.setY(bodyY + 3);
-            this.tagInput.setWidth(this.modalW - 24);
+            this.previewSlotX = this.idInput.getX() + this.idInput.getWidth() + 8;
+            this.previewSlotY = bodyY - 3;
 
-            this.referenceTableInput.setX(bodyX);
-            this.referenceTableInput.setY(bodyY + 3);
-            this.referenceTableInput.setWidth(this.modalW - 24);
-
-            int sliderX = this.mode == EditorMode.ITEM ? bodyX + this.slotSize + 10 : bodyX;
-            int sliderW = this.modalW - (sliderX - this.modalX) - 12;
+            int sliderX = bodyX;
+            int sliderW = this.modalW - 24;
 
             this.chanceSlider.setX(sliderX);
-            this.chanceSlider.setY(bodyY);
+            this.chanceSlider.setY(bodyY + 32);
             this.chanceSlider.setWidth(sliderW);
 
             this.minSlider.setX(sliderX);
-            this.minSlider.setY(bodyY + 24);
+            this.minSlider.setY(bodyY + 56);
             this.minSlider.setWidth(sliderW);
 
             this.maxSlider.setX(sliderX);
-            this.maxSlider.setY(bodyY + 48);
+            this.maxSlider.setY(bodyY + 80);
             this.maxSlider.setWidth(sliderW);
 
             this.requirePlayerKillCheckbox.setX(bodyX);
-            this.requirePlayerKillCheckbox.setY(bodyY + 82);
+            this.requirePlayerKillCheckbox.setY(bodyY + 104);
 
             this.affectedByLootingCheckbox.setX(bodyX);
-            this.affectedByLootingCheckbox.setY(bodyY + 102);
+            this.affectedByLootingCheckbox.setY(bodyY + 124);
+
+            this.enchantRandomlyCheckbox.setX(bodyX);
+            this.enchantRandomlyCheckbox.setY(bodyY + 144);
+
+            this.enchantWithLevelsCheckbox.setX(bodyX);
+            this.enchantWithLevelsCheckbox.setY(bodyY + 164);
+
+            this.enchantLevelsMinSlider.setX(bodyX + 18);
+            this.enchantLevelsMinSlider.setY(bodyY + 184);
+            this.enchantLevelsMinSlider.setWidth((sliderW - 22) / 2);
+
+            this.enchantLevelsMaxSlider.setX(this.enchantLevelsMinSlider.getX() + this.enchantLevelsMinSlider.getWidth() + 4);
+            this.enchantLevelsMaxSlider.setY(bodyY + 184);
+            this.enchantLevelsMaxSlider.setWidth((sliderW - 22) / 2);
+
+            updateEnchantControlsVisibility();
 
             int buttonY = this.modalY + this.modalH - 28;
             int buttonW = (this.modalW - 30) / 2;
@@ -1234,71 +1258,95 @@ public class LootStudioScreen extends Screen {
             this.cancelButton.setWidth(buttonW);
         }
 
-        private void cycleMode() {
-            if (this.mode == EditorMode.ITEM) {
-                this.mode = EditorMode.TAG;
-            } else if (this.mode == EditorMode.TAG) {
-                this.mode = EditorMode.TABLE;
-            } else {
-                this.mode = EditorMode.ITEM;
-            }
-            updateLayout();
-            updateModeVisibility();
+        private void updateEnchantControlsVisibility() {
+            boolean levels = this.enchantWithLevelsCheckbox.isSelected();
+            this.enchantLevelsMinSlider.visible = levels;
+            this.enchantLevelsMinSlider.active = levels;
+            this.enchantLevelsMaxSlider.visible = levels;
+            this.enchantLevelsMaxSlider.active = levels;
         }
 
-        private void updateModeVisibility() {
-            this.modeCycleButton.visible = true;
-            this.modeCycleButton.active = true;
-
-            boolean itemMode = this.mode == EditorMode.ITEM;
-            boolean tagMode = this.mode == EditorMode.TAG;
-            boolean tableMode = this.mode == EditorMode.TABLE;
-
-            this.tagInput.visible = tagMode;
-            this.tagInput.active = tagMode;
-
-            this.referenceTableInput.visible = tableMode;
-            this.referenceTableInput.active = tableMode;
-
-            if (itemMode) {
-                this.tagInput.setValue("");
-                this.referenceTableInput.setValue("");
+        private void refreshPreview() {
+            ParsedInputTarget target = parseInputTarget(this.idInput.getValue());
+            if (target == null) {
+                this.previewValid = false;
+                this.previewItem = new ItemStack(Items.BARRIER);
+                this.previewHint = "ID invalido";
+                return;
             }
+
+            this.previewValid = true;
+            this.previewItem = target.preview;
+            this.previewHint = target.hint;
         }
 
         private ResourceLocation tryParseResource(String value) {
             if (value == null) return null;
             String cleaned = value.trim();
             if (cleaned.isEmpty()) return null;
-            if (cleaned.startsWith("#") || cleaned.startsWith("@")) {
-                cleaned = cleaned.substring(1);
-            }
             return ResourceLocation.tryParse(cleaned);
         }
 
+        private ParsedInputTarget parseInputTarget(String input) {
+            if (input == null) {
+                return null;
+            }
+            String raw = input.trim();
+            if (raw.isEmpty()) {
+                return null;
+            }
+
+            if (raw.startsWith("#")) {
+                ResourceLocation tag = tryParseResource(raw.substring(1));
+                if (tag == null) return null;
+                return new ParsedInputTarget(TargetType.TAG, null, tag, null, new ItemStack(Items.CHEST), "Tag: #" + tag);
+            }
+
+            if (raw.startsWith("@")) {
+                ResourceLocation table = tryParseResource(raw.substring(1));
+                if (table == null) return null;
+                return new ParsedInputTarget(TargetType.TABLE, null, null, table, new ItemStack(Items.CHEST), "Tabela: @" + table);
+            }
+
+            ResourceLocation itemId = tryParseResource(raw);
+            if (itemId == null) return null;
+            Item item = ForgeRegistries.ITEMS.getValue(itemId);
+            if (item == null || item == Items.AIR) {
+                return null;
+            }
+
+            ItemStack stack = new ItemStack(item);
+            stack.setCount(1);
+            return new ParsedInputTarget(TargetType.ITEM, stack, null, null, stack.copy(), "Item: " + itemId);
+        }
+
         private void confirm() {
+            ParsedInputTarget target = parseInputTarget(this.idInput.getValue());
+            if (target == null) {
+                return;
+            }
+
             int min = this.minSlider.getCurrentValue();
             int max = Math.max(min, this.maxSlider.getCurrentValue());
             this.maxSlider.setCurrentValue(max);
 
-            ItemStack result = ItemStack.EMPTY;
+            int enchantMin = this.enchantLevelsMinSlider.getCurrentValue();
+            int enchantMax = Math.max(enchantMin, this.enchantLevelsMaxSlider.getCurrentValue());
+            this.enchantLevelsMaxSlider.setCurrentValue(enchantMax);
+
+            ItemStack result = target.item != null ? target.item.copy() : new ItemStack(Items.CHEST);
             ResourceLocation tag = null;
             ResourceLocation reference = null;
-
-            if (this.mode == EditorMode.ITEM) {
-                result = this.itemStack != null && !this.itemStack.isEmpty() ? this.itemStack.copy() : getCarriedOrFallbackItem();
-                result.setCount(1);
-            } else if (this.mode == EditorMode.TAG) {
-                tag = tryParseResource(this.tagInput.getValue());
-                if (tag == null) {
-                    return;
-                }
+            if (target.type == TargetType.TAG) {
+                tag = target.tag;
+            } else if (target.type == TargetType.TABLE) {
+                reference = target.table;
             } else {
-                reference = tryParseResource(this.referenceTableInput.getValue());
-                if (reference == null) {
-                    return;
-                }
+                result.setCount(1);
             }
+
+            boolean enchantWithLevels = this.enchantWithLevelsCheckbox.isSelected();
+            LootDropDTO.Range enchantRange = enchantWithLevels ? new LootDropDTO.Range(enchantMin, enchantMax) : null;
 
             LootDropDTO dto = new LootDropDTO(
                 result,
@@ -1309,7 +1357,10 @@ public class LootStudioScreen extends Screen {
                 this.affectedByLootingCheckbox.isSelected(),
                 false,
                 tag,
-                reference
+                reference,
+                this.enchantRandomlyCheckbox.isSelected(),
+                enchantWithLevels,
+                enchantRange
             );
 
             if (this.editingIndex >= 0 && this.editingIndex < LootStudioScreen.this.lootDrops.size()) {
@@ -1336,18 +1387,29 @@ public class LootStudioScreen extends Screen {
                 widget.active = visible;
             }
             if (visible) {
-                updateModeVisibility();
+                updateEnchantControlsVisibility();
             }
         }
 
-        private ItemStack getCarriedOrFallbackItem() {
+        private String getCarriedOrFallbackId() {
+            ItemStack carried = getCarriedItemOrMainHand();
+            if (!carried.isEmpty()) {
+                ResourceLocation carriedId = ForgeRegistries.ITEMS.getKey(carried.getItem());
+                if (carriedId != null) {
+                    return carriedId.toString();
+                }
+            }
+            return "minecraft:diamond";
+        }
+
+        private ItemStack getCarriedItemOrMainHand() {
             ItemStack carried = getCarriedItem();
             if (!carried.isEmpty()) return carried;
             if (LootStudioScreen.this.minecraft != null && LootStudioScreen.this.minecraft.player != null) {
                 ItemStack hand = LootStudioScreen.this.minecraft.player.getMainHandItem();
                 if (!hand.isEmpty()) return hand.copy();
             }
-            return new ItemStack(Items.DIAMOND);
+            return ItemStack.EMPTY;
         }
 
         private ItemStack getCarriedItem() {
@@ -1359,6 +1421,15 @@ public class LootStudioScreen extends Screen {
             ItemStack copy = carried.copy();
             copy.setCount(1);
             return copy;
+        }
+
+        private enum TargetType {
+            ITEM,
+            TAG,
+            TABLE
+        }
+
+        private record ParsedInputTarget(TargetType type, ItemStack item, ResourceLocation tag, ResourceLocation table, ItemStack preview, String hint) {
         }
     }
 
@@ -1481,18 +1552,6 @@ public class LootStudioScreen extends Screen {
         private static double normalize(int value, int min, int max) {
             if (max <= min) return 0.0D;
             return Mth.clamp((double) (value - min) / (double) (max - min), 0.0D, 1.0D);
-        }
-    }
-
-    private enum EditorMode {
-        ITEM(Component.literal("[ ITEM ]")),
-        TAG(Component.literal("[ TAG ]")),
-        TABLE(Component.literal("[ TABELA ]"));
-
-        private final Component label;
-
-        EditorMode(Component label) {
-            this.label = label;
         }
     }
 

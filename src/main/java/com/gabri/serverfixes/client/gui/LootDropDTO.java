@@ -14,12 +14,21 @@ public class LootDropDTO {
     private boolean isComplex;
     private ResourceLocation tag;
     private ResourceLocation referenceTable;
+    private boolean enchantRandomly;
+    private boolean enchantWithLevels;
+    private Range enchantLevelsRange;
 
     public LootDropDTO(ItemStack item, double chance, int min, int max, boolean requirePlayerKill, boolean affectedByLooting, boolean isComplex) {
-        this(item, chance, min, max, requirePlayerKill, affectedByLooting, isComplex, null, null);
+        this(item, chance, min, max, requirePlayerKill, affectedByLooting, isComplex, null, null, false, false, null);
     }
 
     public LootDropDTO(ItemStack item, double chance, int min, int max, boolean requirePlayerKill, boolean affectedByLooting, boolean isComplex, ResourceLocation tag, ResourceLocation referenceTable) {
+        this(item, chance, min, max, requirePlayerKill, affectedByLooting, isComplex, tag, referenceTable, false, false, null);
+    }
+
+    public LootDropDTO(ItemStack item, double chance, int min, int max, boolean requirePlayerKill, boolean affectedByLooting, boolean isComplex,
+                       ResourceLocation tag, ResourceLocation referenceTable,
+                       boolean enchantRandomly, boolean enchantWithLevels, Range enchantLevelsRange) {
         this.item = item;
         this.chance = chance;
         this.min = min;
@@ -29,6 +38,9 @@ public class LootDropDTO {
         this.isComplex = isComplex;
         this.tag = tag;
         this.referenceTable = referenceTable;
+        this.enchantRandomly = enchantRandomly;
+        this.enchantWithLevels = enchantWithLevels;
+        this.enchantLevelsRange = enchantLevelsRange;
     }
 
     public ItemStack getItem() {
@@ -101,5 +113,55 @@ public class LootDropDTO {
 
     public void setReferenceTable(ResourceLocation referenceTable) {
         this.referenceTable = referenceTable;
+    }
+
+    public boolean isEnchantRandomly() {
+        return enchantRandomly;
+    }
+
+    public void setEnchantRandomly(boolean enchantRandomly) {
+        this.enchantRandomly = enchantRandomly;
+    }
+
+    public boolean isEnchantWithLevels() {
+        return enchantWithLevels;
+    }
+
+    public void setEnchantWithLevels(boolean enchantWithLevels) {
+        this.enchantWithLevels = enchantWithLevels;
+    }
+
+    public Range getEnchantLevelsRange() {
+        return enchantLevelsRange;
+    }
+
+    public void setEnchantLevelsRange(Range enchantLevelsRange) {
+        this.enchantLevelsRange = enchantLevelsRange;
+    }
+
+    public static final class Range {
+        private int min;
+        private int max;
+
+        public Range(int min, int max) {
+            this.min = min;
+            this.max = max;
+        }
+
+        public int getMin() {
+            return min;
+        }
+
+        public void setMin(int min) {
+            this.min = min;
+        }
+
+        public int getMax() {
+            return max;
+        }
+
+        public void setMax(int max) {
+            this.max = max;
+        }
     }
 }

@@ -31,7 +31,12 @@ public class SPSendLootDropsPacket {
                     dto.isAffectedByLooting(),
                     dto.isComplex(),
                     dto.getTag(),
-                    dto.getReferenceTable()
+                    dto.getReferenceTable(),
+                    dto.isEnchantRandomly(),
+                    dto.isEnchantWithLevels(),
+                    dto.getEnchantLevelsRange() != null
+                        ? new LootDropDTO.Range(dto.getEnchantLevelsRange().getMin(), dto.getEnchantLevelsRange().getMax())
+                        : null
                 ));
             }
         }

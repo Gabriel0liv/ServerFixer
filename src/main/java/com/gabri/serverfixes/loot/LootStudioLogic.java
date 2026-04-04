@@ -18,6 +18,8 @@ import net.minecraft.world.level.storage.loot.LootDataType;
 import net.minecraft.world.level.storage.loot.LootPool;
 import net.minecraft.world.level.storage.loot.LootTable;
 import net.minecraft.world.level.storage.loot.entries.*;
+import net.minecraft.world.level.storage.loot.functions.EnchantRandomlyFunction;
+import net.minecraft.world.level.storage.loot.functions.EnchantWithLevelsFunction;
 import net.minecraft.world.level.storage.loot.functions.LootItemFunction;
 import net.minecraft.world.level.storage.loot.functions.SetItemCountFunction;
 import net.minecraft.world.level.storage.loot.predicates.LootItemCondition;
@@ -241,6 +243,9 @@ public final class LootStudioLogic {
         int min = countRange != null ? countRange.min : 1;
         int max = countRange != null ? countRange.max : 1;
 
+        // --- Enchant settings ---
+        EnchantSettings enchant = extractEnchantSettings(entryFunctions, poolFunctions);
+
         // --- Complexidade ---
         boolean unknownFunction = hasUnknownFunction(entryFunctions) || hasUnknownFunction(poolFunctions);
         boolean isTagOrReference = tagId != null || referenceTableId != null;
@@ -257,7 +262,20 @@ public final class LootStudioLogic {
         } else {
             stack = new ItemStack(unsupportedEntryType ? Items.CHEST : Items.BARRIER);
         }
-        return new LootDropDTO(stack, chance, min, max, requirePlayerKill, affectedByLooting, complex, tagId, referenceTableId);
+        return new LootDropDTO(
+                stack,
+                chance,
+                min,
+                max,
+                requirePlayerKill,
+                affectedByLooting,
+                complex,
+                tagId,
+                referenceTableId,
+                enchant.enchantRandomly,
+                enchant.enchantWithLevels,
+                enchant.levelsRange != null ? new LootDropDTO.Range(enchant.levelsRange.min, enchant.levelsRange.max) : null
+        );
     }
 
     // ====================================================================
@@ -310,6 +328,58 @@ public final class LootStudioLogic {
                 }
             } catch (Throwable t) {
                 LOGGER.debug("[LootStudio] Falha ao extrair count de SetItemCountFunction: {}", t.getMessage());
+            }
+        }
+        return null;
+    }
+
+    private static EnchantSettings extractEnchantSettings(List<LootItemFunction> entryFunctions, List<LootItemFunction> poolFunctions) {
+        boolean enchantRandomly = containsEnchantRandomly(entryFunctions) || containsEnchantRandomly(poolFunctions);
+        boolean enchantWithLevels = containsEnchantWithLevels(entryFunctions) || containsEnchantWithLevels(poolFunctions);
+
+        Range levelRange = extractEnchantLevelsRange(entryFunctions);
+        if (levelRange == null) {
+            levelRange = extractEnchantLevelsRange(poolFunctions);
+        }
+        if (enchantWithLevels && levelRange == null) {
+            levelRange = new Range(10, 30);
+        }
+
+        return new EnchantSettings(enchantRandomly, enchantWithLevels, levelRange);
+    }
+
+    private static boolean containsEnchantRandomly(List<LootItemFunction> functions) {
+        if (functions == null) return false;
+        for (LootItemFunction function : functions) {
+            if (function instanceof EnchantRandomlyFunction) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean containsEnchantWithLevels(List<LootItemFunction> functions) {
+        if (functions == null) return false;
+        for (LootItemFunction function : functions) {
+            if (function instanceof EnchantWithLevelsFunction) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Range extractEnchantLevelsRange(List<LootItemFunction> functions) {
+        if (functions == null) return null;
+        for (LootItemFunction function : functions) {
+            if (!(function instanceof EnchantWithLevelsFunction withLevels)) continue;
+            try {
+                NumberProvider levels = ((EnchantWithLevelsFunctionAccessor) (Object) withLevels).sf_getLevels();
+                Range range = parseNumberProvider(levels);
+                if (range != null) {
+                    return new Range(Math.max(1, range.min), Math.max(1, range.max));
+                }
+            } catch (Throwable t) {
+                LOGGER.debug("[LootStudio] Falha ao extrair levels de EnchantWithLevelsFunction: {}", t.getMessage());
             }
         }
         return null;
@@ -379,8 +449,12 @@ public final class LootStudioLogic {
         if (functions == null) return false;
         for (Object function : functions) {
             if (function == null) continue;
-            String n = function.getClass().getSimpleName().toLowerCase(Locale.ROOT);
-            if (!n.contains("setitemcount") && !n.contains("setcount")) return true;
+            if (function instanceof SetItemCountFunction
+                    || function instanceof EnchantRandomlyFunction
+                    || function instanceof EnchantWithLevelsFunction) {
+                continue;
+            }
+            return true;
         }
         return false;
     }
@@ -407,11 +481,23 @@ public final class LootStudioLogic {
                     Math.max(1, Math.min(64, dto.getMin())),
                     Math.max(1, Math.min(64, dto.getMax())),
                     dto.isRequirePlayerKill(), dto.isAffectedByLooting(), false,
-                    dto.getTag(), dto.getReferenceTable());
+                    dto.getTag(), dto.getReferenceTable(),
+                    dto.isEnchantRandomly(),
+                    dto.isEnchantWithLevels(),
+                    sanitizeEnchantRange(dto.getEnchantLevelsRange()));
             if (normalized.getMax() < normalized.getMin()) normalized.setMax(normalized.getMin());
             out.add(normalized);
         }
         return out;
+    }
+
+    private static LootDropDTO.Range sanitizeEnchantRange(LootDropDTO.Range range) {
+        if (range == null) {
+            return new LootDropDTO.Range(10, 30);
+        }
+        int min = Math.max(1, Math.min(100, range.getMin()));
+        int max = Math.max(min, Math.min(100, range.getMax()));
+        return new LootDropDTO.Range(min, max);
     }
 
     private static JsonObject buildLootTableJson(List<LootDropDTO> drops) {
@@ -459,6 +545,28 @@ public final class LootStudioLogic {
                 setCount.add("count", countRange);
             }
             functions.add(setCount);
+
+            if (dto.isEnchantRandomly()) {
+                JsonObject enchantRandomly = new JsonObject();
+                enchantRandomly.addProperty("function", "minecraft:enchant_randomly");
+                functions.add(enchantRandomly);
+            }
+
+            if (dto.isEnchantWithLevels()) {
+                LootDropDTO.Range levels = sanitizeEnchantRange(dto.getEnchantLevelsRange());
+                JsonObject enchantWithLevels = new JsonObject();
+                enchantWithLevels.addProperty("function", "minecraft:enchant_with_levels");
+                if (levels.getMin() == levels.getMax()) {
+                    enchantWithLevels.addProperty("levels", levels.getMin());
+                } else {
+                    JsonObject levelsRange = new JsonObject();
+                    levelsRange.addProperty("min", levels.getMin());
+                    levelsRange.addProperty("max", levels.getMax());
+                    enchantWithLevels.add("levels", levelsRange);
+                }
+                functions.add(enchantWithLevels);
+            }
+
             pool.add("functions", functions);
 
             JsonArray conditions = new JsonArray();
@@ -519,6 +627,9 @@ public final class LootStudioLogic {
     }
 
     private record Range(int min, int max) {
+    }
+
+    private record EnchantSettings(boolean enchantRandomly, boolean enchantWithLevels, Range levelsRange) {
     }
 
     private static void collectLootIds(Object source, Set<ResourceLocation> out) {

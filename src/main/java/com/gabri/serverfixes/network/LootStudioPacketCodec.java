@@ -82,6 +82,14 @@ public final class LootStudioPacketCodec {
         if (hasRef) {
             buf.writeResourceLocation(safe.getReferenceTable());
         }
+
+        buf.writeBoolean(safe.isEnchantRandomly());
+        buf.writeBoolean(safe.isEnchantWithLevels());
+        LootDropDTO.Range levels = safe.getEnchantLevelsRange() != null
+            ? safe.getEnchantLevelsRange()
+            : new LootDropDTO.Range(10, 30);
+        buf.writeVarInt(Math.max(1, levels.getMin()));
+        buf.writeVarInt(Math.max(1, Math.max(levels.getMin(), levels.getMax())));
     }
 
     private static LootDropDTO readLootDrop(FriendlyByteBuf buf) {
@@ -96,6 +104,12 @@ public final class LootStudioPacketCodec {
         ResourceLocation tag = buf.readBoolean() ? buf.readResourceLocation() : null;
         ResourceLocation referenceTable = buf.readBoolean() ? buf.readResourceLocation() : null;
 
-        return new LootDropDTO(stack, chance, min, max, requirePlayerKill, affectedByLooting, complex, tag, referenceTable);
+        boolean enchantRandomly = buf.readBoolean();
+        boolean enchantWithLevels = buf.readBoolean();
+        int enchantMin = Math.max(1, buf.readVarInt());
+        int enchantMax = Math.max(enchantMin, buf.readVarInt());
+        LootDropDTO.Range levels = enchantWithLevels ? new LootDropDTO.Range(enchantMin, enchantMax) : null;
+
+        return new LootDropDTO(stack, chance, min, max, requirePlayerKill, affectedByLooting, complex, tag, referenceTable, enchantRandomly, enchantWithLevels, levels);
     }
 }
