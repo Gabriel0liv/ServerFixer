@@ -8,17 +8,24 @@ import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.LongArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import com.mojang.brigadier.tree.LiteralCommandNode;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.ChatFormatting;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.entity.player.Player;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 @SuppressWarnings("all")
 public class ServerFixesCommands {
+
+    private static final Logger LOGGER = LogManager.getLogger("ServerFixes/Commands");
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher, net.minecraft.commands.CommandBuildContext buildContext) {
+        // Nível 3 = Admin. Corresponde ao @a[level=3] no Arclight/Spigot.
         LiteralArgumentBuilder<CommandSourceStack> root = Commands.literal("serverfixes")
-            .requires(source -> source.hasPermission(2));
+            .requires(source -> source.hasPermission(3));
 
         // /serverfixes status ...
         root.then(Commands.literal("status")
@@ -267,6 +274,19 @@ public class ServerFixesCommands {
         // /serverfixes effect ...
         EffectCommands.register(root, buildContext);
 
+        // ================================================================
+        // /serverfixes reload <categoria>
+        // Reload Cirúrgico: recarrega apenas a categoria alvo do datapack
+        // sem acionar o /reload global e sem travar o servidor.
+        // ================================================================
+        root.then(Commands.literal("reload")
+            .then(Commands.literal("recipes")
+                .executes(ctx -> executeReload(ctx.getSource(), "recipes")))
+            .then(Commands.literal("loot")
+                .executes(ctx -> executeReload(ctx.getSource(), "loot")))
+            .then(Commands.literal("functions")
+                .executes(ctx -> executeReload(ctx.getSource(), "functions"))));
+
         // /serverfixes admin_ui
         root.then(Commands.literal("admin_ui")
             .executes(ctx -> {
@@ -285,7 +305,19 @@ public class ServerFixesCommands {
         root.then(Commands.literal("sound_studio")
             .executes(ctx -> openSoundStudio(ctx.getSource())));
 
-        dispatcher.register(root);
+        // Registra o nó raiz e guarda referência para o redirect do alias
+        LiteralCommandNode<CommandSourceStack> baseNode = dispatcher.register(root);
+
+        // ================================================================
+        // Alias /sfx -> redireciona para /serverfixes sem duplicar a árvore
+        // O redirect do Brigadier mantém um único nó de fonte de verdade.
+        // Ambos os comandos ficam 100% sincronizados automaticamente.
+        // ================================================================
+        dispatcher.register(
+            Commands.literal("sfx")
+                .requires(source -> source.hasPermission(3))
+                .redirect(baseNode)
+        );
 
         dispatcher.register(Commands.literal("particle_studio")
             .requires(source -> source.hasPermission(2))
@@ -302,6 +334,60 @@ public class ServerFixesCommands {
         dispatcher.register(Commands.literal("soundstudio")
             .requires(source -> source.hasPermission(2))
             .executes(ctx -> openSoundStudio(ctx.getSource())));
+    }
+
+    /**
+     * Ponto de entrada para os subcomandos /sfx reload <categoria>.
+     *
+     * Envia feedback imediato ao admin (amarelo = "a recarregar...") antes de
+     * iniciar o processo assíncrono. Quando o reload completa (ou falha), o
+     * resultado final é enviado ao servidor no contexto da main thread.
+     *
+     * @param source   Fonte do comando (admin)
+     * @param category "recipes", "loot", ou "functions"
+     */
+    private static int executeReload(CommandSourceStack source, String category) {
+        MinecraftServer server = source.getServer();
+
+        // Feedback imediato antes do processamento assíncrono
+        source.sendSuccess(() -> Component.literal("[ServerFixes] ")
+            .withStyle(ChatFormatting.DARK_AQUA)
+            .append(Component.literal("Iniciando reload cirúrgico de: ")
+                .withStyle(ChatFormatting.GRAY))
+            .append(Component.literal(category.toUpperCase())
+                .withStyle(ChatFormatting.YELLOW)), false);
+
+        java.util.concurrent.CompletableFuture<Void> reloadFuture;
+
+        switch (category) {
+            case "recipes"   -> reloadFuture = SurgicalReloadHandler.reloadRecipes(server);
+            case "loot"      -> reloadFuture = SurgicalReloadHandler.reloadLootTables(server);
+            case "functions" -> reloadFuture = SurgicalReloadHandler.reloadFunctions(server);
+            default -> {
+                source.sendFailure(Component.literal("Categoria desconhecida: " + category));
+                return 0;
+            }
+        }
+
+        // Resposta final na main thread após o reload assíncrono completar
+        reloadFuture.thenRunAsync(() ->
+            source.sendSuccess(() -> Component.literal("[ServerFixes] ")
+                .withStyle(ChatFormatting.DARK_AQUA)
+                .append(Component.literal("✔ Reload de ")
+                    .withStyle(ChatFormatting.GREEN))
+                .append(Component.literal(category.toUpperCase())
+                    .withStyle(ChatFormatting.GOLD))
+                .append(Component.literal(" concluído com sucesso!")
+                    .withStyle(ChatFormatting.GREEN)), true),
+            server::execute
+        ).exceptionally(ex -> {
+            source.sendFailure(Component.literal(
+                "[ServerFixes] Falha no reload de " + category + ": " + ex.getMessage()));
+            LOGGER.error("[SurgicalReload] Erro ao recarregar '{}':", category, ex);
+            return null;
+        });
+
+        return 1;
     }
 
     private static int openParticleStudio(CommandSourceStack source) {
