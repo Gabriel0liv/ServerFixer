@@ -7,8 +7,12 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.world.item.alchemy.Potion;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -20,8 +24,13 @@ import net.minecraft.world.level.storage.loot.LootTable;
 import net.minecraft.world.level.storage.loot.entries.*;
 import net.minecraft.world.level.storage.loot.functions.EnchantRandomlyFunction;
 import net.minecraft.world.level.storage.loot.functions.EnchantWithLevelsFunction;
+import net.minecraft.world.level.storage.loot.functions.ExplorationMapFunction;
 import net.minecraft.world.level.storage.loot.functions.LootItemFunction;
+import net.minecraft.world.level.storage.loot.functions.SetEnchantmentsFunction;
 import net.minecraft.world.level.storage.loot.functions.SetItemCountFunction;
+import net.minecraft.world.level.storage.loot.functions.SetNbtFunction;
+import net.minecraft.world.level.storage.loot.functions.SetNameFunction;
+import net.minecraft.world.level.storage.loot.functions.SetPotionFunction;
 import net.minecraft.world.level.storage.loot.predicates.LootItemCondition;
 import net.minecraft.world.level.storage.loot.providers.number.ConstantValue;
 import net.minecraft.world.level.storage.loot.providers.number.NumberProvider;
@@ -247,6 +256,10 @@ public final class LootStudioLogic {
 
         // --- Enchant settings ---
         EnchantSettings enchant = extractEnchantSettings(entryFunctions, poolFunctions);
+        ParsedExtraFunctions extraFunctions = extractExtraFunctions(entryFunctions, poolFunctions);
+        if (extraFunctions.enchantmentsFunctionDetected) {
+            enchant = new EnchantSettings(true, enchant.enchantWithLevels, enchant.levelsRange);
+        }
 
         // --- Complexidade ---
         boolean unknownFunction = hasUnknownFunction(entryFunctions) || hasUnknownFunction(poolFunctions);
@@ -276,7 +289,11 @@ public final class LootStudioLogic {
                 referenceTableId,
                 enchant.enchantRandomly,
                 enchant.enchantWithLevels,
-                enchant.levelsRange != null ? new LootDropDTO.Range(enchant.levelsRange.min, enchant.levelsRange.max) : null
+                enchant.levelsRange != null ? new LootDropDTO.Range(enchant.levelsRange.min, enchant.levelsRange.max) : null,
+                extraFunctions.potionId,
+                extraFunctions.nbtData,
+                extraFunctions.customNameJson,
+                extraFunctions.explorationMap
         );
     }
 
@@ -387,6 +404,69 @@ public final class LootStudioLogic {
         return null;
     }
 
+    private static ParsedExtraFunctions extractExtraFunctions(List<LootItemFunction> entryFunctions, List<LootItemFunction> poolFunctions) {
+        ResourceLocation potionId = null;
+        String nbtData = null;
+        String customNameJson = null;
+        boolean explorationMap = false;
+        boolean enchantmentsFunctionDetected = false;
+
+        List<LootItemFunction> merged = new ArrayList<>();
+        if (entryFunctions != null) merged.addAll(entryFunctions);
+        if (poolFunctions != null) merged.addAll(poolFunctions);
+
+        for (LootItemFunction function : merged) {
+            if (function == null) continue;
+
+            if (function instanceof SetPotionFunction potionFunction) {
+                try {
+                    Potion potion = ((SetPotionFunctionAccessor) (Object) potionFunction).sf_getPotion();
+                    if (potion != null) {
+                        potionId = ForgeRegistries.POTIONS.getKey(potion);
+                    }
+                } catch (Throwable t) {
+                    LOGGER.debug("[LootStudio] Falha ao extrair potion de SetPotionFunction: {}", t.getMessage());
+                }
+                continue;
+            }
+
+            if (function instanceof SetNbtFunction nbtFunction) {
+                try {
+                    CompoundTag tag = ((SetNbtFunctionAccessor) (Object) nbtFunction).sf_getTag();
+                    if (tag != null && !tag.isEmpty()) {
+                        nbtData = tag.toString();
+                    }
+                } catch (Throwable t) {
+                    LOGGER.debug("[LootStudio] Falha ao extrair tag de SetNbtFunction: {}", t.getMessage());
+                }
+                continue;
+            }
+
+            if (function instanceof SetNameFunction nameFunction) {
+                try {
+                    Component name = ((SetNameFunctionAccessor) (Object) nameFunction).sf_getName();
+                    if (name != null) {
+                        customNameJson = Component.Serializer.toJson(name);
+                    }
+                } catch (Throwable t) {
+                    LOGGER.debug("[LootStudio] Falha ao extrair name de SetNameFunction: {}", t.getMessage());
+                }
+                continue;
+            }
+
+            if (function instanceof ExplorationMapFunction) {
+                explorationMap = true;
+                continue;
+            }
+
+            if (function instanceof SetEnchantmentsFunction) {
+                enchantmentsFunctionDetected = true;
+            }
+        }
+
+        return new ParsedExtraFunctions(potionId, nbtData, customNameJson, explorationMap, enchantmentsFunctionDetected);
+    }
+
     /**
      * Converte um NumberProvider em Range de min/max.
      * Usa instanceof tipado para ConstantValue e UniformGenerator.
@@ -473,7 +553,10 @@ public final class LootStudioLogic {
             boolean known = n.contains("setitemcount") || n.contains("setcount")
                     || n.contains("lootingenchant") || n.contains("smeltitem")
                     || n.contains("loaddamage") || n.contains("limitcount")
-                    || n.contains("applybonus") || n.contains("explosiondecay");
+                    || n.contains("applybonus") || n.contains("explosiondecay")
+                    || n.contains("setpotion") || n.contains("setnbt")
+                    || n.contains("setname") || n.contains("explorationmap")
+                    || n.contains("setenchantments");
             if (known) {
                 continue;
             }
@@ -507,7 +590,11 @@ public final class LootStudioLogic {
                     dto.getTag(), dto.getReferenceTable(),
                     dto.isEnchantRandomly(),
                     dto.isEnchantWithLevels(),
-                    sanitizeEnchantRange(dto.getEnchantLevelsRange()));
+                    sanitizeEnchantRange(dto.getEnchantLevelsRange()),
+                    dto.getPotionId(),
+                    dto.getNbtData(),
+                    dto.getCustomNameJson(),
+                    dto.isExplorationMap());
             if (normalized.getMax() < normalized.getMin()) normalized.setMax(normalized.getMin());
             out.add(normalized);
         }
@@ -593,6 +680,37 @@ public final class LootStudioLogic {
                 functions.add(enchantWithLevels);
             }
 
+            if (dto.getPotionId() != null) {
+                JsonObject setPotion = new JsonObject();
+                setPotion.addProperty("function", "minecraft:set_potion");
+                setPotion.addProperty("id", dto.getPotionId().toString());
+                functions.add(setPotion);
+            }
+
+            if (dto.getNbtData() != null && !dto.getNbtData().isEmpty()) {
+                JsonObject setNbt = new JsonObject();
+                setNbt.addProperty("function", "minecraft:set_nbt");
+                setNbt.addProperty("tag", dto.getNbtData());
+                functions.add(setNbt);
+            }
+
+            if (dto.isExplorationMap()) {
+                JsonObject explorationMap = new JsonObject();
+                explorationMap.addProperty("function", "minecraft:exploration_map");
+                functions.add(explorationMap);
+            }
+
+            if (dto.getCustomNameJson() != null && !dto.getCustomNameJson().isEmpty()) {
+                try {
+                    JsonObject setName = new JsonObject();
+                    setName.addProperty("function", "minecraft:set_name");
+                    setName.add("name", JsonParser.parseString(dto.getCustomNameJson()));
+                    functions.add(setName);
+                } catch (Throwable t) {
+                    LOGGER.debug("[LootStudio] customNameJson invalido, ignorando: {}", t.getMessage());
+                }
+            }
+
             pool.add("functions", functions);
 
             JsonArray conditions = new JsonArray();
@@ -656,6 +774,9 @@ public final class LootStudioLogic {
     }
 
     private record EnchantSettings(boolean enchantRandomly, boolean enchantWithLevels, Range levelsRange) {
+    }
+
+    private record ParsedExtraFunctions(ResourceLocation potionId, String nbtData, String customNameJson, boolean explorationMap, boolean enchantmentsFunctionDetected) {
     }
 
     private static void collectLootIds(Object source, Set<ResourceLocation> out) {

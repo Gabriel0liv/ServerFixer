@@ -90,6 +90,26 @@ public final class LootStudioPacketCodec {
             : new LootDropDTO.Range(10, 30);
         buf.writeVarInt(Math.max(1, levels.getMin()));
         buf.writeVarInt(Math.max(1, Math.max(levels.getMin(), levels.getMax())));
+
+        boolean hasPotion = safe.getPotionId() != null;
+        buf.writeBoolean(hasPotion);
+        if (hasPotion) {
+            buf.writeResourceLocation(safe.getPotionId());
+        }
+
+        boolean hasNbtData = safe.getNbtData() != null && !safe.getNbtData().isEmpty();
+        buf.writeBoolean(hasNbtData);
+        if (hasNbtData) {
+            buf.writeUtf(safe.getNbtData(), 32767);
+        }
+
+        boolean hasCustomName = safe.getCustomNameJson() != null && !safe.getCustomNameJson().isEmpty();
+        buf.writeBoolean(hasCustomName);
+        if (hasCustomName) {
+            buf.writeUtf(safe.getCustomNameJson(), 32767);
+        }
+
+        buf.writeBoolean(safe.isExplorationMap());
     }
 
     private static LootDropDTO readLootDrop(FriendlyByteBuf buf) {
@@ -110,6 +130,28 @@ public final class LootStudioPacketCodec {
         int enchantMax = Math.max(enchantMin, buf.readVarInt());
         LootDropDTO.Range levels = enchantWithLevels ? new LootDropDTO.Range(enchantMin, enchantMax) : null;
 
-        return new LootDropDTO(stack, chance, min, max, requirePlayerKill, affectedByLooting, complex, tag, referenceTable, enchantRandomly, enchantWithLevels, levels);
+        ResourceLocation potionId = buf.readBoolean() ? buf.readResourceLocation() : null;
+        String nbtData = buf.readBoolean() ? buf.readUtf(32767) : null;
+        String customNameJson = buf.readBoolean() ? buf.readUtf(32767) : null;
+        boolean explorationMap = buf.readBoolean();
+
+        return new LootDropDTO(
+            stack,
+            chance,
+            min,
+            max,
+            requirePlayerKill,
+            affectedByLooting,
+            complex,
+            tag,
+            referenceTable,
+            enchantRandomly,
+            enchantWithLevels,
+            levels,
+            potionId,
+            nbtData,
+            customNameJson,
+            explorationMap
+        );
     }
 }

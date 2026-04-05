@@ -36,7 +36,11 @@ public class SPSendLootDropsPacket {
                     dto.isEnchantWithLevels(),
                     dto.getEnchantLevelsRange() != null
                         ? new LootDropDTO.Range(dto.getEnchantLevelsRange().getMin(), dto.getEnchantLevelsRange().getMax())
-                        : null
+                        : null,
+                    dto.getPotionId(),
+                    dto.getNbtData(),
+                    dto.getCustomNameJson(),
+                    dto.isExplorationMap()
                 ));
             }
         }

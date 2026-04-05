@@ -542,17 +542,18 @@ public class LootStudioScreen extends Screen {
 
             int editX = this.centerX + this.centerW - 40;
             int delX = this.centerX + this.centerW - 18;
+            if (mouseX >= delX && mouseX < delX + 14 && mouseY >= rowY && mouseY < rowY + 14) {
+                this.lootDrops.remove(i);
+                this.editingDropIndex = -1;
+                this.isDirty = true;
+                return true;
+            }
+
             if (!dto.isComplex()) {
                 if (mouseX >= editX && mouseX < editX + 14 && mouseY >= rowY && mouseY < rowY + 14) {
                     if (this.editorModal != null) {
                         this.editorModal.openForEdit(i, dto);
                     }
-                    return true;
-                }
-                if (mouseX >= delX && mouseX < delX + 14 && mouseY >= rowY && mouseY < rowY + 14) {
-                    this.lootDrops.remove(i);
-                    this.editingDropIndex = -1;
-                    this.isDirty = true;
                     return true;
                 }
                 if (this.editorModal != null) {
@@ -729,10 +730,12 @@ public class LootStudioScreen extends Screen {
                 });
                 editBtn.render(graphics, mouseX, mouseY, partialTick);
 
-                IconButton delBtn = new IconButton(delX, currentY, iconW, iconW, ResourceLocation.fromNamespaceAndPath("serverfixes", "textures/gui/xmark-solid.png"), 12, 12, 0xFF2E3A42, 0xFF3E4A52, 0xFF1E262A, b -> {
-                });
-                delBtn.render(graphics, mouseX, mouseY, partialTick);
             }
+
+            int delX = this.centerX + this.centerW - 18;
+            IconButton delBtn = new IconButton(delX, currentY, 14, 14, ResourceLocation.fromNamespaceAndPath("serverfixes", "textures/gui/xmark-solid.png"), 12, 12, 0xFF2E3A42, 0xFF3E4A52, 0xFF1E262A, b -> {
+            });
+            delBtn.render(graphics, mouseX, mouseY, partialTick);
 
             currentY += rowH;
         }
@@ -967,7 +970,11 @@ public class LootStudioScreen extends Screen {
             dto.isEnchantWithLevels(),
             dto.getEnchantLevelsRange() != null
                 ? new LootDropDTO.Range(dto.getEnchantLevelsRange().getMin(), dto.getEnchantLevelsRange().getMax())
-                : null
+                : null,
+            dto.getPotionId(),
+            dto.getNbtData(),
+            dto.getCustomNameJson(),
+            dto.isExplorationMap()
         );
     }
 

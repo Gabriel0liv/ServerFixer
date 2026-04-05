@@ -17,6 +17,10 @@ public class LootDropDTO {
     private boolean enchantRandomly;
     private boolean enchantWithLevels;
     private Range enchantLevelsRange;
+    private ResourceLocation potionId;
+    private String nbtData;
+    private String customNameJson;
+    private boolean explorationMap;
 
     public LootDropDTO(ItemStack item, double chance, int min, int max, boolean requirePlayerKill, boolean affectedByLooting, boolean isComplex) {
         this(item, chance, min, max, requirePlayerKill, affectedByLooting, isComplex, null, null, false, false, null);
@@ -29,6 +33,16 @@ public class LootDropDTO {
     public LootDropDTO(ItemStack item, double chance, int min, int max, boolean requirePlayerKill, boolean affectedByLooting, boolean isComplex,
                        ResourceLocation tag, ResourceLocation referenceTable,
                        boolean enchantRandomly, boolean enchantWithLevels, Range enchantLevelsRange) {
+        this(item, chance, min, max, requirePlayerKill, affectedByLooting, isComplex,
+            tag, referenceTable,
+            enchantRandomly, enchantWithLevels, enchantLevelsRange,
+            null, null, null, false);
+        }
+
+        public LootDropDTO(ItemStack item, double chance, int min, int max, boolean requirePlayerKill, boolean affectedByLooting, boolean isComplex,
+                   ResourceLocation tag, ResourceLocation referenceTable,
+                   boolean enchantRandomly, boolean enchantWithLevels, Range enchantLevelsRange,
+                   ResourceLocation potionId, String nbtData, String customNameJson, boolean explorationMap) {
         this.item = item;
         this.chance = chance;
         this.min = min;
@@ -41,6 +55,10 @@ public class LootDropDTO {
         this.enchantRandomly = enchantRandomly;
         this.enchantWithLevels = enchantWithLevels;
         this.enchantLevelsRange = enchantLevelsRange;
+        this.potionId = potionId;
+        this.nbtData = nbtData;
+        this.customNameJson = customNameJson;
+        this.explorationMap = explorationMap;
     }
 
     public ItemStack getItem() {
@@ -137,6 +155,38 @@ public class LootDropDTO {
 
     public void setEnchantLevelsRange(Range enchantLevelsRange) {
         this.enchantLevelsRange = enchantLevelsRange;
+    }
+
+    public ResourceLocation getPotionId() {
+        return potionId;
+    }
+
+    public void setPotionId(ResourceLocation potionId) {
+        this.potionId = potionId;
+    }
+
+    public String getNbtData() {
+        return nbtData;
+    }
+
+    public void setNbtData(String nbtData) {
+        this.nbtData = nbtData;
+    }
+
+    public String getCustomNameJson() {
+        return customNameJson;
+    }
+
+    public void setCustomNameJson(String customNameJson) {
+        this.customNameJson = customNameJson;
+    }
+
+    public boolean isExplorationMap() {
+        return explorationMap;
+    }
+
+    public void setExplorationMap(boolean explorationMap) {
+        this.explorationMap = explorationMap;
     }
 
     public static final class Range {
