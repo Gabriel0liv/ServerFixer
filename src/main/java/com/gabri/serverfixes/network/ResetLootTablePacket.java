@@ -44,10 +44,8 @@ public class ResetLootTablePacket {
                         sender.sendSystemMessage(net.minecraft.network.chat.Component.literal("§cFalha ao resetar loot table: " + this.tableId));
                         return;
                     }
-
-                    List<LootDropDTO> refreshed = LootStudioLogic.parseLootTable(server, this.tableId);
-                    NetworkHandler.sendToPlayer(sender, new SPSendLootDropsPacket(this.tableId, refreshed));
-                    sender.sendSystemMessage(net.minecraft.network.chat.Component.literal("§aLoot table resetada: " + this.tableId));
+                    // Do NOT send drops back automatically — client must request reload explicitly
+                    sender.sendSystemMessage(net.minecraft.network.chat.Component.literal("§aLoot table resetada: " + this.tableId + " — Clique em salvar para aplicar."));
                 }));
         });
         context.setPacketHandled(true);

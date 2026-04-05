@@ -37,7 +37,12 @@ public class RequestLootTablePacket {
             }
 
             List<LootDropDTO> drops = LootStudioLogic.parseLootTable(sender.server, this.tableId);
-            NetworkHandler.sendToPlayer(sender, new SPSendLootDropsPacket(this.tableId, drops));
+            LootStudioLogic.getNonGeneratedDrops(sender.server, this.tableId)
+                    .thenAccept(cleanDrops -> {
+                        sender.server.execute(() ->
+                            NetworkHandler.sendToPlayer(sender, new SPSendLootDropsPacket(this.tableId, drops, cleanDrops))
+                        );
+                    });
         });
         context.setPacketHandled(true);
     }

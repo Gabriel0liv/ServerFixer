@@ -2,7 +2,6 @@ package com.gabri.serverfixes.client;
 
 import com.gabri.serverfixes.ServerFixes;
 import com.gabri.serverfixes.client.gui.ItemEditorScreen;
-import com.gabri.serverfixes.client.gui.ParticleStudioScreen;
 import com.gabri.serverfixes.mixin.AbstractContainerScreenAccessor;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.gabri.serverfixes.network.ContextTargetType;
@@ -47,10 +46,6 @@ public class ContextKeybindHandler {
 
         while (ServerFixesKeybinds.CONTEXT_EDITOR.consumeClick()) {
             handleOpenContextEditor(minecraft, minecraft.player, minecraft.level);
-        }
-
-        while (ServerFixesKeybinds.PARTICLE_STUDIO.consumeClick()) {
-            handleOpenParticleStudio(minecraft.player);
         }
     }
 
@@ -139,20 +134,6 @@ public class ContextKeybindHandler {
         }
 
         player.displayClientMessage(Component.literal("§7Nenhum alvo contextual disponível."), true);
-    }
-
-    private static void handleOpenParticleStudio(net.minecraft.client.player.LocalPlayer player) {
-        Minecraft minecraft = Minecraft.getInstance();
-        if (!canUsePrivilegedEditor(minecraft)) {
-            player.displayClientMessage(Component.literal("§cAcesso negado: requer OP e modo Criativo."), true);
-            return;
-        }
-
-        try {
-            minecraft.setScreen(new ParticleStudioScreen());
-        } catch (Exception e) {
-            player.displayClientMessage(Component.literal("§cFalha ao abrir Particle Studio: " + e.getClass().getSimpleName()), true);
-        }
     }
 
     private static Slot resolveHoveredSlot(AbstractContainerScreen<?> screen) {

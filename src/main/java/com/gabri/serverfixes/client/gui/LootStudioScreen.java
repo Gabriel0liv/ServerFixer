@@ -4,7 +4,6 @@ import com.gabri.serverfixes.client.gui.editor.SelectableEditBox;
 import com.gabri.serverfixes.network.NetworkHandler;
 import com.gabri.serverfixes.network.RequestLootDataPacket;
 import com.gabri.serverfixes.network.RequestLootTablePacket;
-import com.gabri.serverfixes.network.ResetLootTablePacket;
 import com.gabri.serverfixes.network.SaveLootTablePacket;
 import com.mojang.blaze3d.systems.RenderSystem;
 import org.lwjgl.opengl.GL11;
@@ -52,6 +51,7 @@ public class LootStudioScreen extends Screen {
 
     // center loot list
     private final List<LootDropDTO> lootDrops = new ArrayList<>();
+    private final List<LootDropDTO> cleanLootDrops = new ArrayList<>();
     private double centerScrollAmount = 0.0D;
     private int maxCenterScroll = 0;
     private boolean isDirty = false;
@@ -99,6 +99,8 @@ public class LootStudioScreen extends Screen {
 
         this.centerScrollAmount = 0.0D;
         this.maxCenterScroll = 0;
+        this.lootDrops.clear();
+        this.cleanLootDrops.clear();
 
         this.rightPanelWidgets.clear();
         this.widgetOriginalY.clear();
@@ -230,16 +232,28 @@ public class LootStudioScreen extends Screen {
     }
 
     public void applyLootDropsFromServer(ResourceLocation tableId, List<LootDropDTO> drops) {
+        applyLootDropsFromServer(tableId, drops, null);
+    }
+
+    public void applyLootDropsFromServer(ResourceLocation tableId, List<LootDropDTO> drops, List<LootDropDTO> cleanDrops) {
         if (tableId == null || !Objects.equals(tableId, this.selectedTableId)) {
             return;
         }
 
         this.lootDrops.clear();
+        this.cleanLootDrops.clear();
         this.centerScrollAmount = 0.0D;
         if (drops != null) {
             for (LootDropDTO dto : drops) {
                 if (dto != null) {
                     this.lootDrops.add(copyDrop(dto));
+                }
+            }
+        }
+        if (cleanDrops != null) {
+            for (LootDropDTO dto : cleanDrops) {
+                if (dto != null) {
+                    this.cleanLootDrops.add(copyDrop(dto));
                 }
             }
         }
@@ -253,6 +267,11 @@ public class LootStudioScreen extends Screen {
         if (this.saveApplyButton == null) return;
         if (success) {
             this.saveApplyButton.setDirty(false);
+            // Atualiza o backup clean para o estado recém-salvo
+            this.cleanLootDrops.clear();
+            for (LootDropDTO dto : this.lootDrops) {
+                this.cleanLootDrops.add(copyDrop(dto));
+            }
         } else {
             // flash red for 900ms
             this.saveApplyButton.pulseError(900);
@@ -944,7 +963,15 @@ public class LootStudioScreen extends Screen {
         if (this.selectedTableId == null) {
             return;
         }
-        NetworkHandler.sendToServer(new ResetLootTablePacket(this.selectedTableId));
+        // Revert visualmente para o estado sem o arquivo gerado pelo mod
+        // (respeitando outros datapacks e mods)
+        this.lootDrops.clear();
+        for (LootDropDTO dto : this.cleanLootDrops) {
+            this.lootDrops.add(copyDrop(dto));
+        }
+        this.centerScrollAmount = 0.0D;
+        this.isDirty = true; // marca como sujo para habilitar salvar
+        this.editingDropIndex = -1;
     }
 
     private LootDropDTO copyDrop(LootDropDTO dto) {
@@ -988,7 +1015,7 @@ public class LootStudioScreen extends Screen {
         private TextureCheckbox enchantWithLevelsCheckbox;
         private IntParameterSlider enchantLevelsMinSlider;
         private IntParameterSlider enchantLevelsMaxSlider;
-        private Button confirmButton;
+        private PulsingButton confirmButton;
         private Button cancelButton;
 
         private boolean open = false;
@@ -1019,7 +1046,7 @@ public class LootStudioScreen extends Screen {
             this.enchantLevelsMinSlider = new IntParameterSlider(0, 0, 10, 18, "Enc Min", 1, 100, 10, value -> {});
             this.enchantLevelsMaxSlider = new IntParameterSlider(0, 0, 10, 18, "Enc Max", 1, 100, 30, value -> {});
 
-            this.confirmButton = Button.builder(Component.literal("Confirmar"), btn -> confirm()).bounds(0, 0, 80, 20).build();
+            this.confirmButton = new PulsingButton(0, 0, 80, 20, Component.literal("Confirmar"), btn -> confirm());
             this.cancelButton = Button.builder(Component.literal("Cancelar"), btn -> close()).bounds(0, 0, 80, 20).build();
 
             register(this.idInput);
@@ -1176,19 +1203,6 @@ public class LootStudioScreen extends Screen {
             this.confirmButton.render(graphics, mouseX, mouseY, partialTick);
             this.cancelButton.render(graphics, mouseX, mouseY, partialTick);
 
-            // highlight the id input when the parsed preview is invalid
-            if (!this.previewValid && this.idInput != null) {
-                int ix = this.idInput.getX();
-                int iy = this.idInput.getY();
-                int iw = this.idInput.getWidth();
-                int ih = this.idInput.getHeight();
-                int border = 0xFFFF7B7B; // red
-                graphics.fill(ix, iy, ix + iw, iy + 1, border);
-                graphics.fill(ix, iy + ih - 1, ix + iw, iy + ih, border);
-                graphics.fill(ix, iy, ix + 1, iy + ih, border);
-                graphics.fill(ix + iw - 1, iy, ix + iw, iy + ih, border);
-            }
-
             graphics.fill(this.previewSlotX, this.previewSlotY, this.previewSlotX + this.previewSlotSize, this.previewSlotY + this.previewSlotSize, 0xFF4E6B8D);
             graphics.fill(this.previewSlotX + 1, this.previewSlotY + 1, this.previewSlotX + this.previewSlotSize - 1, this.previewSlotY + this.previewSlotSize - 1, 0xFF1A2434);
             if (this.previewItem != null && !this.previewItem.isEmpty()) {
@@ -1292,14 +1306,13 @@ public class LootStudioScreen extends Screen {
 
         private void refreshPreview() {
             ParsedInputTarget target = parseInputTarget(this.idInput.getValue());
-            if (target == null) {
-                this.previewValid = false;
-                this.previewItem = new ItemStack(Items.BARRIER);
-                return;
+            boolean invalid = target == null;
+            this.previewValid = !invalid;
+            this.previewItem = invalid ? new ItemStack(Items.BARRIER) : target.preview;
+            this.idInput.setInvalidState(invalid);
+            if (this.confirmButton != null) {
+                this.confirmButton.setError(invalid);
             }
-
-            this.previewValid = true;
-            this.previewItem = target.preview;
         }
 
         private ResourceLocation tryParseResource(String value) {
@@ -1345,6 +1358,10 @@ public class LootStudioScreen extends Screen {
         private void confirm() {
             ParsedInputTarget target = parseInputTarget(this.idInput.getValue());
             if (target == null) {
+                if (this.confirmButton != null) {
+                    this.confirmButton.setError(true);
+                    this.confirmButton.pulseError(1500);
+                }
                 return;
             }
 

@@ -309,43 +309,14 @@ public class ServerFixesCommands {
         root.then(Commands.literal("loot_studio")
             .executes(ctx -> openLootStudio(ctx.getSource())));
 
-        // Registra o nó raiz e guarda referência para o redirect do alias
         LiteralCommandNode<CommandSourceStack> baseNode = dispatcher.register(root);
 
-        // ================================================================
         // Alias /sfx -> redireciona para /serverfixes sem duplicar a árvore
-        // O redirect do Brigadier mantém um único nó de fonte de verdade.
-        // Ambos os comandos ficam 100% sincronizados automaticamente.
-        // ================================================================
         dispatcher.register(
             Commands.literal("sfx")
                 .requires(source -> source.hasPermission(3))
                 .redirect(baseNode)
         );
-
-        dispatcher.register(Commands.literal("particle_studio")
-            .requires(source -> source.hasPermission(2))
-            .executes(ctx -> openParticleStudio(ctx.getSource())));
-
-        dispatcher.register(Commands.literal("particlestudio")
-            .requires(source -> source.hasPermission(2))
-            .executes(ctx -> openParticleStudio(ctx.getSource())));
-
-        dispatcher.register(Commands.literal("sound_studio")
-            .requires(source -> source.hasPermission(2))
-            .executes(ctx -> openSoundStudio(ctx.getSource())));
-
-        dispatcher.register(Commands.literal("soundstudio")
-            .requires(source -> source.hasPermission(2))
-            .executes(ctx -> openSoundStudio(ctx.getSource())));
-
-        dispatcher.register(Commands.literal("loot_studio")
-            .requires(source -> source.hasPermission(3))
-            .executes(ctx -> openLootStudio(ctx.getSource())));
-
-        dispatcher.register(Commands.literal("lootstudio")
-            .requires(source -> source.hasPermission(3))
-            .executes(ctx -> openLootStudio(ctx.getSource())));
     }
 
     /**

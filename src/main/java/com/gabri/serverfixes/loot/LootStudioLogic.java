@@ -221,6 +221,65 @@ public final class LootStudioLogic {
         return drops;
     }
 
+    /**
+     * Obtém os drops da loot table SEM o arquivo gerado pelo mod.
+     * Move temporariamente o arquivo, recarrega, lê os drops, e restaura.
+     * Isso respeita outros datapacks e mods que modifiquem a loot table.
+     * Retorna CompletableFuture para não bloquear a main thread do servidor.
+     */
+    public static CompletableFuture<List<LootDropDTO>> getNonGeneratedDrops(MinecraftServer server, ResourceLocation tableId) {
+        if (tableId == null) return CompletableFuture.completedFuture(new ArrayList<>());
+
+        Path jsonPath = getGeneratedLootTablePath(server, tableId);
+        Path backupPath = null;
+        boolean fileExisted = false;
+
+        try {
+            // Temporariamente move o arquivo JSON gerado (se existir)
+            if (Files.exists(jsonPath)) {
+                fileExisted = true;
+                backupPath = jsonPath.resolveSibling(jsonPath.getFileName().toString() + ".sf_reset_backup");
+                Files.move(jsonPath, backupPath);
+            }
+        } catch (Throwable t) {
+            LOGGER.error("[LootStudio] Falha ao mover arquivo gerado da tabela {}", tableId, t);
+            return CompletableFuture.completedFuture(new ArrayList<>());
+        }
+
+        final boolean finalFileExisted = fileExisted;
+        final Path finalBackupPath = backupPath;
+
+        CompletableFuture<List<LootDropDTO>> dropsFuture = SurgicalReloadHandler.reloadLootTables(server)
+                .thenComposeAsync(v -> {
+                    List<LootDropDTO> drops;
+                    try {
+                        drops = parseLootTable(server, tableId);
+                    } catch (Throwable t) {
+                        LOGGER.error("[LootStudio] Falha ao obter drops sem geração da tabela {}", tableId, t);
+                        drops = new ArrayList<>();
+                    }
+                    final List<LootDropDTO> finalDrops = drops;
+                    // Restaura o arquivo JSON e recarrega
+                    return CompletableFuture.supplyAsync(() -> {
+                        try {
+                            if (finalFileExisted && finalBackupPath != null && Files.exists(finalBackupPath)) {
+                                Files.move(finalBackupPath, jsonPath);
+                            }
+                        } catch (Throwable t) {
+                            LOGGER.error("[LootStudio] Falha ao restaurar arquivo após leitura clean {}", tableId, t);
+                        }
+                        SurgicalReloadHandler.reloadLootTables(server)
+                                .exceptionally(ex -> {
+                                    LOGGER.error("[LootStudio] Falha ao restaurar reload após leitura clean {}", tableId, ex);
+                                    return null;
+                                });
+                        return finalDrops;
+                    }, server::execute);
+                }, server::execute);
+
+        return dropsFuture;
+    }
+
     public static CompletableFuture<Boolean> saveToDatapack(MinecraftServer server, ResourceLocation tableId, List<LootDropDTO> rawDrops) {
         if (tableId == null) return CompletableFuture.completedFuture(false);
 

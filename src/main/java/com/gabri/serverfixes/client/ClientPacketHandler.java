@@ -94,6 +94,13 @@ public class ClientPacketHandler {
         }
     }
 
+    public static void handleLootDropsWithClean(ResourceLocation tableId, List<com.gabri.serverfixes.client.gui.LootDropDTO> drops, List<com.gabri.serverfixes.client.gui.LootDropDTO> cleanDrops) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.screen instanceof com.gabri.serverfixes.client.gui.LootStudioScreen lootStudioScreen) {
+            lootStudioScreen.applyLootDropsFromServer(tableId, drops, cleanDrops);
+        }
+    }
+
     public static void handleSaveResult(boolean success, ResourceLocation tableId, String message) {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.screen instanceof com.gabri.serverfixes.client.gui.LootStudioScreen lootStudioScreen) {

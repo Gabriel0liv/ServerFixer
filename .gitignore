@@ -46,6 +46,11 @@ dev/
 Thumbs.db
 desktop.ini
 
+# qwen
+.qwen/
+QWEN.md
+
+
 # Agent-specific
 .github/
 .github/agents/
