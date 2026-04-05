@@ -230,7 +230,9 @@ public final class LootStudioLogic {
         List<LootItemFunction> entryFunctions = getEntryFunctions(entry);
 
         boolean requirePlayerKill = poolRequirePlayerKill || hasConditionLike(entryConditions, "killedbyplayer");
-        boolean affectedByLooting = poolAffectedByLooting || hasConditionLike(entryConditions, "looting");
+        boolean lootingFromEntryFunction = hasFunctionLike(entryFunctions, "lootingenchant") || hasFunctionLike(entryFunctions, "applybonus");
+        boolean lootingFromPoolFunction = hasFunctionLike(poolFunctions, "lootingenchant") || hasFunctionLike(poolFunctions, "applybonus");
+        boolean affectedByLooting = poolAffectedByLooting || hasConditionLike(entryConditions, "looting") || lootingFromEntryFunction || lootingFromPoolFunction;
         boolean unknownCondition = hasUnknownCondition(poolConditions) || hasUnknownCondition(entryConditions);
 
         // --- Weight & Chance ---
@@ -439,8 +441,21 @@ public final class LootStudioLogic {
             if (condition == null) continue;
             String n = condition.getClass().getSimpleName().toLowerCase(Locale.ROOT);
             boolean known = n.contains("killedbyplayer") || n.contains("randomchance")
-                    || n.contains("looting") || n.contains("bonuslevel") || n.contains("inverted");
+                    || n.contains("looting") || n.contains("bonuslevel") || n.contains("inverted")
+                    || n.contains("entityproperties") || n.contains("matchtool")
+                    || n.contains("survivesexplosion") || n.contains("damagesourceproperties")
+                    || n.contains("locationcheck");
             if (!known) return true;
+        }
+        return false;
+    }
+
+    private static boolean hasFunctionLike(Collection<?> functions, String marker) {
+        if (functions == null || marker == null) return false;
+        String needle = marker.toLowerCase(Locale.ROOT);
+        for (Object function : functions) {
+            if (function == null) continue;
+            if (function.getClass().getSimpleName().toLowerCase(Locale.ROOT).contains(needle)) return true;
         }
         return false;
     }
@@ -452,6 +467,14 @@ public final class LootStudioLogic {
             if (function instanceof SetItemCountFunction
                     || function instanceof EnchantRandomlyFunction
                     || function instanceof EnchantWithLevelsFunction) {
+                continue;
+            }
+            String n = function.getClass().getSimpleName().toLowerCase(Locale.ROOT);
+            boolean known = n.contains("setitemcount") || n.contains("setcount")
+                    || n.contains("lootingenchant") || n.contains("smeltitem")
+                    || n.contains("loaddamage") || n.contains("limitcount")
+                    || n.contains("applybonus") || n.contains("explosiondecay");
+            if (known) {
                 continue;
             }
             return true;
@@ -506,6 +529,9 @@ public final class LootStudioLogic {
         JsonArray poolsArray = new JsonArray();
 
         for (LootDropDTO dto : drops) {
+            if (dto == null || dto.isComplex()) {
+                continue;
+            }
             ResourceLocation itemId = dto.getItem() != null && !dto.getItem().isEmpty()
                     ? ForgeRegistries.ITEMS.getKey(dto.getItem().getItem())
                     : null;

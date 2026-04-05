@@ -1050,7 +1050,7 @@ public class LootStudioScreen extends Screen {
 
         private void init() {
             this.modalW = 340;
-            this.modalH = 250;
+            this.modalH = 292;
             this.previewSlotSize = 24;
 
             this.idInput = new SelectableEditBox(LootStudioScreen.this.font, 0, 0, 10, 18, Component.literal("item/tag"));
@@ -1179,8 +1179,13 @@ public class LootStudioScreen extends Screen {
             graphics.drawString(LootStudioScreen.this.font, "ID do Item/Tag (ex: minecraft:diamond, #forge:ingots)", this.modalX + 8, this.modalY + 24, 0xFFD4E0F0);
 
             for (AbstractWidget widget : this.widgets) {
+                if (widget == this.confirmButton || widget == this.cancelButton) {
+                    continue;
+                }
                 widget.render(graphics, mouseX, mouseY, partialTick);
             }
+            this.confirmButton.render(graphics, mouseX, mouseY, partialTick);
+            this.cancelButton.render(graphics, mouseX, mouseY, partialTick);
 
             graphics.fill(this.previewSlotX, this.previewSlotY, this.previewSlotX + this.previewSlotSize, this.previewSlotY + this.previewSlotSize, 0xFF4E6B8D);
             graphics.fill(this.previewSlotX + 1, this.previewSlotY + 1, this.previewSlotX + this.previewSlotSize - 1, this.previewSlotY + this.previewSlotSize - 1, 0xFF1A2434);
@@ -1213,42 +1218,60 @@ public class LootStudioScreen extends Screen {
 
             int sliderX = bodyX;
             int sliderW = this.modalW - 24;
+            int currentY = bodyY + 32;
 
             this.chanceSlider.setX(sliderX);
-            this.chanceSlider.setY(bodyY + 32);
+            this.chanceSlider.setY(currentY);
             this.chanceSlider.setWidth(sliderW);
+            currentY += 24;
 
             this.minSlider.setX(sliderX);
-            this.minSlider.setY(bodyY + 56);
+            this.minSlider.setY(currentY);
             this.minSlider.setWidth(sliderW);
+            currentY += 24;
 
             this.maxSlider.setX(sliderX);
-            this.maxSlider.setY(bodyY + 80);
+            this.maxSlider.setY(currentY);
             this.maxSlider.setWidth(sliderW);
+            currentY += 24;
 
             this.requirePlayerKillCheckbox.setX(bodyX);
-            this.requirePlayerKillCheckbox.setY(bodyY + 104);
+            this.requirePlayerKillCheckbox.setY(currentY);
+            currentY += 20;
 
             this.affectedByLootingCheckbox.setX(bodyX);
-            this.affectedByLootingCheckbox.setY(bodyY + 124);
+            this.affectedByLootingCheckbox.setY(currentY);
+            currentY += 20;
 
             this.enchantRandomlyCheckbox.setX(bodyX);
-            this.enchantRandomlyCheckbox.setY(bodyY + 144);
+            this.enchantRandomlyCheckbox.setY(currentY);
+            currentY += 20;
 
             this.enchantWithLevelsCheckbox.setX(bodyX);
-            this.enchantWithLevelsCheckbox.setY(bodyY + 164);
+            this.enchantWithLevelsCheckbox.setY(currentY);
+            currentY += 20;
+
+            boolean showEnchantLevels = this.enchantWithLevelsCheckbox.isSelected();
 
             this.enchantLevelsMinSlider.setX(bodyX + 18);
-            this.enchantLevelsMinSlider.setY(bodyY + 184);
+            this.enchantLevelsMinSlider.setY(currentY);
             this.enchantLevelsMinSlider.setWidth((sliderW - 22) / 2);
 
             this.enchantLevelsMaxSlider.setX(this.enchantLevelsMinSlider.getX() + this.enchantLevelsMinSlider.getWidth() + 4);
-            this.enchantLevelsMaxSlider.setY(bodyY + 184);
+            this.enchantLevelsMaxSlider.setY(currentY);
             this.enchantLevelsMaxSlider.setWidth((sliderW - 22) / 2);
+
+            if (showEnchantLevels) {
+                currentY += 24;
+            }
 
             updateEnchantControlsVisibility();
 
-            int buttonY = this.modalY + this.modalH - 28;
+            int buttonY = currentY + 8;
+            int maxButtonY = this.modalY + this.modalH - 26;
+            if (buttonY > maxButtonY) {
+                buttonY = maxButtonY;
+            }
             int buttonW = (this.modalW - 30) / 2;
             this.confirmButton.setX(this.modalX + 10);
             this.confirmButton.setY(buttonY);
