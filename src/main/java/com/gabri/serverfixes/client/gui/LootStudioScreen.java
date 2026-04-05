@@ -542,6 +542,8 @@ public class LootStudioScreen extends Screen {
 
             int editX = this.centerX + this.centerW - 40;
             int delX = this.centerX + this.centerW - 18;
+
+            // delete always works
             if (mouseX >= delX && mouseX < delX + 14 && mouseY >= rowY && mouseY < rowY + 14) {
                 this.lootDrops.remove(i);
                 this.editingDropIndex = -1;
@@ -549,19 +551,13 @@ public class LootStudioScreen extends Screen {
                 return true;
             }
 
-            if (!dto.isComplex()) {
-                if (mouseX >= editX && mouseX < editX + 14 && mouseY >= rowY && mouseY < rowY + 14) {
-                    if (this.editorModal != null) {
-                        this.editorModal.openForEdit(i, dto);
-                    }
-                    return true;
-                }
-                if (this.editorModal != null) {
-                    this.editorModal.openForEdit(i, dto);
-                }
+            // edit always opens modal for any drop
+            if (mouseX >= editX && mouseX < editX + 14 && mouseY >= rowY && mouseY < rowY + 14) {
+                if (this.editorModal != null) this.editorModal.openForEdit(i, dto);
                 return true;
             }
 
+            // clicking elsewhere selects the row for focus but allows editing/deleting later
             this.editingDropIndex = i;
             return true;
         }
@@ -693,46 +689,37 @@ public class LootStudioScreen extends Screen {
             }
 
             int textX = iconX + 20;
-            if (dto.isComplex()) {
-                if (dto.getItem() != null && dto.getItem().is(Items.CHEST)) {
-                    graphics.drawString(this.font, "\u00A76[\u00A7eEstrutura de Loot Original\u00A76]", textX, currentY + 4, 0xFFFFD866);
-                } else {
-                    graphics.drawString(this.font, "[Drop Complexo - Apenas Leitura]", textX, currentY + 4, 0xFFFF8A8A);
-                }
+
+            String displayName;
+            if (dto.getTag() != null) {
+                displayName = "#" + dto.getTag();
+            } else if (dto.getReferenceTable() != null) {
+                displayName = "@" + dto.getReferenceTable();
             } else {
-                String displayName;
-                if (dto.getTag() != null) {
-                    displayName = "#" + dto.getTag();
-                } else if (dto.getReferenceTable() != null) {
-                    displayName = "@" + dto.getReferenceTable();
-                } else {
-                    displayName = dto.getItem() != null && !dto.getItem().isEmpty()
-                        ? dto.getItem().getHoverName().getString()
-                        : "<vazio>";
-                }
-                graphics.drawString(this.font, displayName, textX, currentY + 2, 0xFFB8C8DE);
-                String enchantMeta = "";
-                if (dto.isEnchantWithLevels()) {
-                    LootDropDTO.Range levels = dto.getEnchantLevelsRange() != null ? dto.getEnchantLevelsRange() : new LootDropDTO.Range(10, 30);
-                    enchantMeta = " | Enc Niveis: " + levels.getMin() + "-" + levels.getMax();
-                } else if (dto.isEnchantRandomly()) {
-                    enchantMeta = " | Enc Aleatorio";
-                }
-                String meta = String.format(Locale.ROOT, "Chance: %.2f%% | %d a %d | PK: %s%s", dto.getChance(), dto.getMin(), dto.getMax(), dto.isRequirePlayerKill() ? "Sim" : "Nao", enchantMeta);
-                graphics.drawString(this.font, meta, textX, currentY + 14, 0xFF9FB0C5);
-
-                // draw edit/delete icons on the right
-                int iconW = 14;
-                int editX = this.centerX + this.centerW - 40;
-                int delX = this.centerX + this.centerW - 18;
-
-                IconButton editBtn = new IconButton(editX, currentY, iconW, iconW, ResourceLocation.fromNamespaceAndPath("serverfixes", "textures/gui/pen-to-square-solid.png"), 12, 12, 0xFF2E3A42, 0xFF3E4A52, 0xFF1E262A, b -> {
-                });
-                editBtn.render(graphics, mouseX, mouseY, partialTick);
-
+                displayName = dto.getItem() != null && !dto.getItem().isEmpty()
+                    ? dto.getItem().getHoverName().getString()
+                    : "<vazio>";
             }
+            graphics.drawString(this.font, displayName, textX, currentY + 2, 0xFFB8C8DE);
+            String enchantMeta = "";
+            if (dto.isEnchantWithLevels()) {
+                LootDropDTO.Range levels = dto.getEnchantLevelsRange() != null ? dto.getEnchantLevelsRange() : new LootDropDTO.Range(10, 30);
+                enchantMeta = " | Enc Niveis: " + levels.getMin() + "-" + levels.getMax();
+            } else if (dto.isEnchantRandomly()) {
+                enchantMeta = " | Enc Aleatorio";
+            }
+            String meta = String.format(Locale.ROOT, "Chance: %.2f%% | %d a %d | PK: %s%s", dto.getChance(), dto.getMin(), dto.getMax(), dto.isRequirePlayerKill() ? "Sim" : "Nao", enchantMeta);
+            graphics.drawString(this.font, meta, textX, currentY + 14, 0xFF9FB0C5);
 
+            // draw edit/delete icons on the right for all drops
+            int iconW = 14;
+            int editX = this.centerX + this.centerW - 40;
             int delX = this.centerX + this.centerW - 18;
+
+            IconButton editBtn = new IconButton(editX, currentY, iconW, iconW, ResourceLocation.fromNamespaceAndPath("serverfixes", "textures/gui/pen-to-square-solid.png"), 12, 12, 0xFF2E3A42, 0xFF3E4A52, 0xFF1E262A, b -> {
+            });
+            editBtn.render(graphics, mouseX, mouseY, partialTick);
+
             IconButton delBtn = new IconButton(delX, currentY, 14, 14, ResourceLocation.fromNamespaceAndPath("serverfixes", "textures/gui/xmark-solid.png"), 12, 12, 0xFF2E3A42, 0xFF3E4A52, 0xFF1E262A, b -> {
             });
             delBtn.render(graphics, mouseX, mouseY, partialTick);

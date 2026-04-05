@@ -516,17 +516,7 @@ public final class LootStudioLogic {
     }
 
     private static boolean hasUnknownCondition(Collection<?> conditions) {
-        if (conditions == null) return false;
-        for (Object condition : conditions) {
-            if (condition == null) continue;
-            String n = condition.getClass().getSimpleName().toLowerCase(Locale.ROOT);
-            boolean known = n.contains("killedbyplayer") || n.contains("randomchance")
-                    || n.contains("looting") || n.contains("bonuslevel") || n.contains("inverted")
-                    || n.contains("entityproperties") || n.contains("matchtool")
-                    || n.contains("survivesexplosion") || n.contains("damagesourceproperties")
-                    || n.contains("locationcheck");
-            if (!known) return true;
-        }
+        // Treat all conditions as known/ignorable for UI purposes; do not block editing.
         return false;
     }
 
@@ -541,27 +531,7 @@ public final class LootStudioLogic {
     }
 
     private static boolean hasUnknownFunction(Collection<?> functions) {
-        if (functions == null) return false;
-        for (Object function : functions) {
-            if (function == null) continue;
-            if (function instanceof SetItemCountFunction
-                    || function instanceof EnchantRandomlyFunction
-                    || function instanceof EnchantWithLevelsFunction) {
-                continue;
-            }
-            String n = function.getClass().getSimpleName().toLowerCase(Locale.ROOT);
-            boolean known = n.contains("setitemcount") || n.contains("setcount")
-                    || n.contains("lootingenchant") || n.contains("smeltitem")
-                    || n.contains("loaddamage") || n.contains("limitcount")
-                    || n.contains("applybonus") || n.contains("explosiondecay")
-                    || n.contains("setpotion") || n.contains("setnbt")
-                    || n.contains("setname") || n.contains("explorationmap")
-                    || n.contains("setenchantments");
-            if (known) {
-                continue;
-            }
-            return true;
-        }
+        // Treat all functions as known/ignorable for UI purposes; do not block editing.
         return false;
     }
 
@@ -575,13 +545,30 @@ public final class LootStudioLogic {
         int limit = Math.min(input.size(), 512);
         for (int i = 0; i < limit; i++) {
             LootDropDTO dto = input.get(i);
-                if (dto == null || dto.isComplex()) continue;
+                if (dto == null) continue;
                 boolean hasTag = dto.getTag() != null;
                 boolean hasRef = dto.getReferenceTable() != null;
                 boolean hasItem = dto.getItem() != null && !dto.getItem().isEmpty();
+
+                // If extraction failed but we have extra function info, try to create a sensible base item
+                if (!hasTag && !hasRef && !hasItem) {
+                    if (dto.getPotionId() != null) {
+                        dto.setItem(new ItemStack(Items.POTION));
+                        hasItem = true;
+                    } else if (dto.isExplorationMap()) {
+                        dto.setItem(new ItemStack(Items.FILLED_MAP));
+                        hasItem = true;
+                    } else if (dto.getNbtData() != null && !dto.getNbtData().isEmpty()) {
+                        dto.setItem(new ItemStack(Items.CHEST));
+                        hasItem = true;
+                    } else if (dto.getCustomNameJson() != null && !dto.getCustomNameJson().isEmpty()) {
+                        dto.setItem(new ItemStack(Items.CHEST));
+                        hasItem = true;
+                    }
+                }
                 if (!hasTag && !hasRef && !hasItem) continue;
 
-            LootDropDTO normalized = new LootDropDTO(
+                LootDropDTO normalized = new LootDropDTO(
                     dto.getItem() != null ? dto.getItem().copy() : ItemStack.EMPTY,
                     clamp(dto.getChance(), 0.0D, 100.0D),
                     Math.max(1, Math.min(64, dto.getMin())),
@@ -616,9 +603,7 @@ public final class LootStudioLogic {
         JsonArray poolsArray = new JsonArray();
 
         for (LootDropDTO dto : drops) {
-            if (dto == null || dto.isComplex()) {
-                continue;
-            }
+            if (dto == null) continue;
             ResourceLocation itemId = dto.getItem() != null && !dto.getItem().isEmpty()
                     ? ForgeRegistries.ITEMS.getKey(dto.getItem().getItem())
                     : null;
