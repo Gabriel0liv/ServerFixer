@@ -8,6 +8,7 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraftforge.network.NetworkEvent;
+import net.minecraft.resources.ResourceLocation;
 
 import java.util.function.Supplier;
 
@@ -69,41 +70,49 @@ public class SaveContextNbtPacket {
 
     private void saveContainerSlot(net.minecraft.server.level.ServerPlayer sender) {
         if (sender.containerMenu == null || sender.containerMenu.containerId != this.containerId) {
+            NetworkHandler.sendToPlayer(sender, new SPSaveResultPacket(false, new ResourceLocation("serverfixes", "unknown"), "Falha ao salvar: inventário alvo não disponível."));
             return;
         }
         if (this.slotIndex < 0 || this.slotIndex >= sender.containerMenu.slots.size()) {
+            NetworkHandler.sendToPlayer(sender, new SPSaveResultPacket(false, new ResourceLocation("serverfixes", "unknown"), "Falha ao salvar: slot inválido."));
             return;
         }
 
         Slot slot = sender.containerMenu.slots.get(this.slotIndex);
         ItemStack stack = slot.getItem();
         if (stack.isEmpty()) {
+            NetworkHandler.sendToPlayer(sender, new SPSaveResultPacket(false, new ResourceLocation("serverfixes", "unknown"), "Falha ao salvar: item vazio no slot."));
             return;
         }
 
         stack.setTag(this.nbtTag.isEmpty() ? null : this.nbtTag.copy());
         slot.setChanged();
         sender.containerMenu.broadcastChanges();
+        NetworkHandler.sendToPlayer(sender, new SPSaveResultPacket(true, new ResourceLocation("serverfixes", "unknown"), "Alterações salvas no inventário."));
     }
 
     private void saveEntity(net.minecraft.server.level.ServerPlayer sender) {
         Entity entity = sender.level().getEntity(this.entityId);
         if (entity == null || entity.distanceToSqr(sender) > 144.0D) {
+            NetworkHandler.sendToPlayer(sender, new SPSaveResultPacket(false, new ResourceLocation("serverfixes", "unknown"), "Falha ao salvar: entidade não encontrada ou muito longe."));
             return;
         }
 
         CompoundTag merged = entity.serializeNBT();
         merged.merge(this.nbtTag);
         entity.deserializeNBT(merged);
+        NetworkHandler.sendToPlayer(sender, new SPSaveResultPacket(true, new ResourceLocation("serverfixes", "unknown"), "Alterações salvas na entidade."));
     }
 
     private void saveBlockEntity(net.minecraft.server.level.ServerPlayer sender) {
         if (sender.distanceToSqr(this.blockPos.getX() + 0.5D, this.blockPos.getY() + 0.5D, this.blockPos.getZ() + 0.5D) > 144.0D) {
+            NetworkHandler.sendToPlayer(sender, new SPSaveResultPacket(false, new ResourceLocation("serverfixes", "unknown"), "Falha ao salvar: bloco muito distante."));
             return;
         }
 
         BlockEntity blockEntity = sender.level().getBlockEntity(this.blockPos);
         if (blockEntity == null) {
+            NetworkHandler.sendToPlayer(sender, new SPSaveResultPacket(false, new ResourceLocation("serverfixes", "unknown"), "Falha ao salvar: block entity não encontrado."));
             return;
         }
 
@@ -114,5 +123,6 @@ public class SaveContextNbtPacket {
 
         net.minecraft.world.level.block.state.BlockState state = sender.level().getBlockState(this.blockPos);
         sender.level().sendBlockUpdated(this.blockPos, state, state, 3);
+        NetworkHandler.sendToPlayer(sender, new SPSaveResultPacket(true, new ResourceLocation("serverfixes", "unknown"), "Alterações salvas no bloco."));
     }
 }

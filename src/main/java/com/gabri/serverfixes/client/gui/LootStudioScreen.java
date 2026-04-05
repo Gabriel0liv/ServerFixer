@@ -75,7 +75,7 @@ public class LootStudioScreen extends Screen {
 
     // right panel controls
     private Button addNewDropButton;
-    private SaveApplyButton saveApplyButton;
+    private PulsingButton saveApplyButton;
     private IconButton resetButton;
     private LootDropEditorModal editorModal;
 
@@ -142,7 +142,7 @@ public class LootStudioScreen extends Screen {
         }).bounds(0, 0, actionW, 20).build();
         registerRightPanelWidget(this.addNewDropButton);
 
-        this.saveApplyButton = new SaveApplyButton(0, 0, actionW, 22, Component.literal("SALVAR E APLICAR"), btn -> saveCurrentTableToServer());
+        this.saveApplyButton = new PulsingButton(0, 0, actionW, 22, Component.literal("SALVAR E APLICAR"), btn -> saveCurrentTableToServer());
         registerRightPanelWidget(this.saveApplyButton);
 
         this.resetButton = new IconButton(0, 0, 12, 12,
@@ -246,6 +246,17 @@ public class LootStudioScreen extends Screen {
 
         this.isDirty = false;
         this.editingDropIndex = -1;
+    }
+
+    // Called from client packet handler when server reports save result
+    public void handleSaveResult(boolean success) {
+        if (this.saveApplyButton == null) return;
+        if (success) {
+            this.saveApplyButton.setDirty(false);
+        } else {
+            // flash red for 900ms
+            this.saveApplyButton.pulseError(900);
+        }
     }
 
     private void rebuildFilterOptions() {
@@ -963,57 +974,7 @@ public class LootStudioScreen extends Screen {
         );
     }
 
-    private static final class SaveApplyButton extends Button {
-        private boolean dirty;
-
-        private SaveApplyButton(int x, int y, int width, int height, Component message, OnPress onPress) {
-            super(x, y, width, height, message, onPress, DEFAULT_NARRATION);
-        }
-
-        private void setDirty(boolean dirty) {
-            this.dirty = dirty;
-        }
-
-        @Override
-        protected void renderWidget(@NotNull GuiGraphics graphics, int mouseX, int mouseY, float partialTicks) {
-            int x = this.getX();
-            int y = this.getY();
-            int w = this.getWidth();
-            int h = this.getHeight();
-
-            int baseColor = this.dirty ? 0xFF2D6A3E : 0xFF2E3A42;
-            if (this.dirty) {
-                double t = (System.currentTimeMillis() % 900L) / 900.0D;
-                int pulse = (int) (20.0D + 35.0D * Math.sin(t * Math.PI * 2.0D));
-                int r = Math.min(255, 0x2D + pulse / 3);
-                int g = Math.min(255, 0x6A + pulse / 2);
-                int b = Math.min(255, 0x3E + pulse / 4);
-                baseColor = (0xFF << 24) | (r << 16) | (g << 8) | b;
-            }
-
-            int fill = !this.active ? 0xFF2B2B2B : (this.isHoveredOrFocused() ? lighten(baseColor, 0x18) : baseColor);
-            int border = this.dirty ? 0xFF8EE6A0 : 0xFF4E6B8D;
-
-            graphics.fill(x, y, x + w, y + h, fill);
-            graphics.fill(x, y, x + w, y + 1, border);
-            graphics.fill(x, y + h - 1, x + w, y + h, border);
-            graphics.fill(x, y, x + 1, y + h, border);
-            graphics.fill(x + w - 1, y, x + w, y + h, border);
-
-            int textColor = 0xFFF4F7FF;
-            int textX = x + (w - Minecraft.getInstance().font.width(this.getMessage())) / 2;
-            int textY = y + (h - 8) / 2;
-            graphics.drawString(Minecraft.getInstance().font, this.getMessage(), textX, textY, textColor);
-        }
-
-        private static int lighten(int argb, int delta) {
-            int a = (argb >>> 24) & 0xFF;
-            int r = Math.min(255, ((argb >>> 16) & 0xFF) + delta);
-            int g = Math.min(255, ((argb >>> 8) & 0xFF) + delta);
-            int b = Math.min(255, (argb & 0xFF) + delta);
-            return (a << 24) | (r << 16) | (g << 8) | b;
-        }
-    }
+    
 
     private final class LootDropEditorModal {
         private final List<AbstractWidget> widgets = new ArrayList<>();
@@ -1035,7 +996,6 @@ public class LootStudioScreen extends Screen {
 
         private ItemStack previewItem = new ItemStack(Items.DIAMOND);
         private boolean previewValid = true;
-        private String previewHint = "";
 
         private int modalX, modalY, modalW, modalH;
         private int previewSlotX, previewSlotY, previewSlotSize;
@@ -1107,8 +1067,14 @@ public class LootStudioScreen extends Screen {
             this.open = true;
             updateLayout();
             setWidgetsVisible(true);
-            this.idInput.setFocused(true);
-            LootStudioScreen.this.setFocused(this.idInput);
+            // Defer focus to next tick to ensure widgets are fully laid out
+            LootStudioScreen.this.minecraft.tell(() -> {
+                this.idInput.setFocused(true);
+                LootStudioScreen.this.setFocused(this.idInput);
+                int len = this.idInput.getValue() != null ? this.idInput.getValue().length() : 0;
+                this.idInput.setCursorPosition(len);
+                this.idInput.setHighlightPos(0);
+            });
         }
 
         private void openForEdit(int index, LootDropDTO dto) {
@@ -1230,8 +1196,7 @@ public class LootStudioScreen extends Screen {
                 graphics.renderItemDecorations(LootStudioScreen.this.font, this.previewItem, this.previewSlotX + 4, this.previewSlotY + 4);
             }
 
-            int hintColor = this.previewValid ? 0xFF9FC4EA : 0xFFFF7B7B;
-            graphics.drawString(LootStudioScreen.this.font, this.previewHint, this.modalX + 12, this.modalY + 68, hintColor);
+            // previewHint removed — we only render the preview icon and input outline
             graphics.drawString(LootStudioScreen.this.font, "Exigir Morte por Jogador", this.requirePlayerKillCheckbox.getX() + 18, this.requirePlayerKillCheckbox.getY() + 3, 0xFFD4E0F0);
             graphics.drawString(LootStudioScreen.this.font, "Afetado por Pilhagem", this.affectedByLootingCheckbox.getX() + 18, this.affectedByLootingCheckbox.getY() + 3, 0xFFD4E0F0);
             graphics.drawString(LootStudioScreen.this.font, "Encantamento Aleatorio", this.enchantRandomlyCheckbox.getX() + 18, this.enchantRandomlyCheckbox.getY() + 3, 0xFFD4E0F0);
@@ -1330,13 +1295,11 @@ public class LootStudioScreen extends Screen {
             if (target == null) {
                 this.previewValid = false;
                 this.previewItem = new ItemStack(Items.BARRIER);
-                this.previewHint = "ID invalido";
                 return;
             }
 
             this.previewValid = true;
             this.previewItem = target.preview;
-            this.previewHint = target.hint;
         }
 
         private ResourceLocation tryParseResource(String value) {

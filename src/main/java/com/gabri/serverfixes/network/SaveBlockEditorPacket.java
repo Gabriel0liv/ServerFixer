@@ -8,6 +8,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.Property;
 import net.minecraftforge.network.NetworkEvent;
+import net.minecraft.resources.ResourceLocation;
 
 import java.util.Optional;
 import java.util.function.Supplier;
@@ -45,10 +46,12 @@ public class SaveBlockEditorPacket {
         context.enqueueWork(() -> {
             net.minecraft.server.level.ServerPlayer sender = context.getSender();
             if (sender == null || !sender.isCreative() || !sender.hasPermissions(2)) {
+                NetworkHandler.sendToPlayer(sender, new SPSaveResultPacket(false, new ResourceLocation("serverfixes", "unknown"), "Acesso negado: requer OP e modo Criativo."));
                 return;
             }
 
             if (sender.distanceToSqr(this.blockPos.getX() + 0.5D, this.blockPos.getY() + 0.5D, this.blockPos.getZ() + 0.5D) > 144.0D) {
+                NetworkHandler.sendToPlayer(sender, new SPSaveResultPacket(false, new ResourceLocation("serverfixes", "unknown"), "Falha ao salvar: bloco muito distante."));
                 return;
             }
 
@@ -64,10 +67,14 @@ public class SaveBlockEditorPacket {
                 merged.merge(this.blockEntityTag);
                 blockEntity.deserializeNBT(merged);
                 blockEntity.setChanged();
+            } else {
+                NetworkHandler.sendToPlayer(sender, new SPSaveResultPacket(false, new ResourceLocation("serverfixes", "unknown"), "Falha ao salvar: block entity não encontrado."));
+                return;
             }
 
             BlockState currentState = sender.level().getBlockState(this.blockPos);
             sender.level().sendBlockUpdated(this.blockPos, oldState, currentState, 3);
+            NetworkHandler.sendToPlayer(sender, new SPSaveResultPacket(true, new ResourceLocation("serverfixes", "unknown"), "Alterações salvas no bloco."));
         });
         context.setPacketHandled(true);
     }

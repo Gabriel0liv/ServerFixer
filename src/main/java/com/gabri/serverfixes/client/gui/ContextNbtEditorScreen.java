@@ -87,8 +87,26 @@ public class ContextNbtEditorScreen extends AbstractEditorScreen {
         int saveX = frameX + frameW / 2 + 6;
         this.addRenderableWidget(Button.builder(Component.literal("§cFechar"), btn -> onClose())
             .bounds(closeX, footerY, 90, 20).build());
-        this.addRenderableWidget(Button.builder(Component.literal("§bSalvar"), btn -> saveToServer())
-            .bounds(saveX, footerY, 90, 20).build());
+        this.addRenderableWidget(new PulsingButton(saveX, footerY, 90, 20, Component.literal("§bSalvar"), (btn) -> {
+            try {
+                CompoundTag parsed = parseCurrentSnbt();
+                this.workingTag = parsed.copy();
+                this.parseError = null;
+                this.statusMessage = "Alterações enviadas ao servidor.";
+                NetworkHandler.sendToServer(new SaveContextNbtPacket(
+                    this.targetType,
+                    this.containerId,
+                    this.slotIndex,
+                    this.entityId,
+                    this.blockPos,
+                    this.workingTag
+                ));
+            } catch (Exception e) {
+                this.parseError = e.getMessage();
+                this.statusMessage = "Não foi possível salvar.";
+                ((PulsingButton)btn).pulseError(1200);
+            }
+        }));
     }
 
     @Override

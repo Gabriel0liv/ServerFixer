@@ -132,10 +132,14 @@ public class AddAttributeScreen extends Screen {
         int saveX = midX - BUTTON_WIDTH - 10;
         int cancelX = midX + 10;
 
-        this.addRenderableWidget(Button.builder(Component.literal(this.editingEntry == null ? "Salvar" : "Salvar alterações"), (btn) -> {
+        this.addRenderableWidget(new PulsingButton(saveX, buttonY, BUTTON_WIDTH, 20, Component.literal(this.editingEntry == null ? "Salvar" : "Salvar alterações"), (btn) -> {
             try {
                 double amount = Double.parseDouble(this.amountBox.getValue());
                 String attrName = this.nameBox.getValue();
+                if (attrName == null || attrName.isBlank()) {
+                    ((PulsingButton)btn).pulseError(1000);
+                    return;
+                }
                 if (!attrName.contains(":")) attrName = "minecraft:" + attrName;
 
                 int op = this.operation;
@@ -152,9 +156,9 @@ public class AddAttributeScreen extends Screen {
                 this.parent.upsertAttribute(this.editingEntry, newAttr, targetIsCurio);
                 this.minecraft.setScreen(this.parent);
             } catch (Exception ignored) {
-                // Ignore invalid numbers
+                ((PulsingButton)btn).pulseError(1000);
             }
-        }).bounds(saveX, buttonY, BUTTON_WIDTH, 20).build());
+        }));
 
         this.addRenderableWidget(Button.builder(Component.literal("Cancelar"), (btn) -> this.minecraft.setScreen(this.parent))
             .bounds(cancelX, buttonY, BUTTON_WIDTH, 20).build());

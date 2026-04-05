@@ -323,25 +323,27 @@ public class ItemEditorScreen extends Screen {
 
         int bottomY = this.height - 30;
         if (currentCategory == Category.GENERAL) {
-            this.addRenderableWidget(Button.builder(Component.literal("Salvar no Item"), (btn) -> {
+            PulsingButton saveBtn = new PulsingButton(contentMidX - 105, bottomY, 100, 20, Component.literal("Salvar no Item"), (btn) -> {
                 applyDisplayChanges();
                 applyGeneralChanges();
                 normalizePotionEffectsForCompatibility();
                 NetworkHandler.sendToServer(createSavePacket());
                 this.minecraft.setScreen(null);
-            }).bounds(contentMidX - 105, bottomY, 100, 20).build());
+            });
+            this.addRenderableWidget(saveBtn);
 
             this.addRenderableWidget(Button.builder(Component.literal("Cancelar"), (btn) -> this.minecraft.setScreen(null))
                 .bounds(contentMidX + 5, bottomY, 100, 20).build());
         } else if (currentCategory == Category.DISPLAY) {
-            this.addRenderableWidget(Button.builder(Component.literal("Salvar no Item"), (btn) -> {
+            PulsingButton saveBtn = new PulsingButton(contentMidX - 105, bottomY, 100, 20, Component.literal("Salvar no Item"), (btn) -> {
                 applyDisplayChanges();
                 applyGeneralChanges();
                 normalizePotionEffectsForCompatibility();
                 NetworkHandler.sendToServer(createSavePacket());
                 // Close the screen after saving (match MENU behavior)
                 this.minecraft.setScreen(null);
-            }).bounds(contentMidX - 105, bottomY, 100, 20).build());
+            });
+            this.addRenderableWidget(saveBtn);
 
             this.addRenderableWidget(Button.builder(Component.literal("Voltar"), (btn) -> {
                 applyDisplayChanges();
@@ -350,20 +352,23 @@ public class ItemEditorScreen extends Screen {
             }).bounds(contentMidX + 5, bottomY, 100, 20).build());
         } else if (currentCategory == Category.ATTRIBUTES) {
             // On attributes screen show Save and Back
-            this.addRenderableWidget(Button.builder(Component.literal("Salvar no Item"), (btn) -> {
+            PulsingButton saveBtn = new PulsingButton(contentMidX - 105, bottomY, 100, 20, Component.literal("Salvar no Item"), (btn) -> {
                 applyGeneralChanges();
                 normalizePotionEffectsForCompatibility();
                 NetworkHandler.sendToServer(createSavePacket());
                 this.minecraft.setScreen(null);
-            }).bounds(contentMidX - 105, bottomY, 100, 20).build());
+            });
+            this.addRenderableWidget(saveBtn);
 
             this.addRenderableWidget(Button.builder(Component.literal("Voltar"), (btn) -> {
                 this.currentCategory = Category.GENERAL;
                 this.init();
             }).bounds(contentMidX + 5, bottomY, 100, 20).build());
         } else {
-            this.addRenderableWidget(Button.builder(Component.literal("Salvar no Item"), (btn) -> {
+            PulsingButton saveBtn = new PulsingButton(contentMidX - 105, bottomY, 100, 20, Component.literal("Salvar no Item"), (btn) -> {
                 if (this.currentCategory == Category.RAW_NBT && !applyRawNbtIfValid()) {
+                    // pulse red to indicate validation failure
+                    ((PulsingButton)btn).pulseError(1200);
                     this.init();
                     return;
                 }
@@ -371,7 +376,8 @@ public class ItemEditorScreen extends Screen {
                 normalizePotionEffectsForCompatibility();
                 NetworkHandler.sendToServer(createSavePacket());
                 this.minecraft.setScreen(null);
-            }).bounds(contentMidX - 105, bottomY, 100, 20).build());
+            });
+            this.addRenderableWidget(saveBtn);
 
             this.addRenderableWidget(Button.builder(Component.literal("Voltar"), (btn) -> {
                 if (this.currentCategory == Category.RAW_NBT && !applyRawNbtIfValid()) {

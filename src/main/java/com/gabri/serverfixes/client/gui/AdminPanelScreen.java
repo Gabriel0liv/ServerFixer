@@ -105,9 +105,13 @@ public class AdminPanelScreen extends AbstractEditorScreen {
             }
         }).bounds(leftX, this.footerY, FOOTER_BUTTON_WIDTH, 20).build());
 
-        Button saveBtn = Button.builder(Component.literal("§bSalvar"), (btn) -> savePendingChanges())
-            .bounds(rightX, this.footerY, FOOTER_BUTTON_WIDTH, 20)
-            .build();
+        PulsingButton saveBtn = new PulsingButton(rightX, this.footerY, FOOTER_BUTTON_WIDTH, 20, Component.literal("§bSalvar"), (btn) -> {
+            if (!hasPendingChanges()) {
+                ((PulsingButton)btn).pulseError(800);
+                return;
+            }
+            savePendingChanges();
+        });
         saveBtn.active = this.currentCategory != Category.MAIN && hasPendingChanges();
         this.addRenderableWidget(saveBtn);
     }

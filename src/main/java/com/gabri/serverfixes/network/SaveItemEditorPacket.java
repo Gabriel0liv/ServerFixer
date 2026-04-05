@@ -6,6 +6,7 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.network.NetworkEvent;
+import net.minecraft.resources.ResourceLocation;
 
 import java.util.function.Supplier;
 
@@ -77,13 +78,17 @@ public class SaveItemEditorPacket {
                 if (updated) {
                     net.minecraft.network.chat.Component msg = net.minecraft.network.chat.Component.literal("§aModificações salvas com sucesso no item.");
                     if (msg != null) sender.sendSystemMessage(msg);
+                    // notify client UI about save result
+                    NetworkHandler.sendToPlayer(sender, new SPSaveResultPacket(true, new ResourceLocation("serverfixes", "unknown"), "Modificações salvas com sucesso no item."));
                 } else if (hasExplicitSlotTarget) {
                     net.minecraft.network.chat.Component msg = net.minecraft.network.chat.Component.literal("§cFalha ao salvar: alvo do inventário não está mais disponível.");
                     if (msg != null) sender.sendSystemMessage(msg);
+                    NetworkHandler.sendToPlayer(sender, new SPSaveResultPacket(false, new ResourceLocation("serverfixes", "unknown"), "Falha ao salvar: alvo do inventário não está mais disponível."));
                 }
             } else if (sender != null) {
                 net.minecraft.network.chat.Component msg = net.minecraft.network.chat.Component.literal("§cAcesso negado: requer OP e modo Criativo.");
                 if (msg != null) sender.sendSystemMessage(msg);
+                NetworkHandler.sendToPlayer(sender, new SPSaveResultPacket(false, new ResourceLocation("serverfixes", "unknown"), "Acesso negado: requer OP e modo Criativo."));
             }
         });
         context.setPacketHandled(true);

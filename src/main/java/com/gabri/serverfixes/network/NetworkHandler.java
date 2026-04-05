@@ -104,6 +104,12 @@ public class NetworkHandler {
                 .consumerMainThread(SaveLootTablePacket::handle)
                 .add();
 
+        INSTANCE.messageBuilder(SPSaveResultPacket.class, packetId++, NetworkDirection.PLAY_TO_CLIENT)
+                .decoder(SPSaveResultPacket::new)
+                .encoder(SPSaveResultPacket::toBytes)
+                .consumerMainThread(SPSaveResultPacket::handle)
+                .add();
+
         INSTANCE.messageBuilder(ResetLootTablePacket.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
                 .decoder(ResetLootTablePacket::new)
                 .encoder(ResetLootTablePacket::toBytes)

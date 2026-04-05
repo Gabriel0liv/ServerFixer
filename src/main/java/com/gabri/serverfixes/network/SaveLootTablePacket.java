@@ -44,6 +44,9 @@ public class SaveLootTablePacket {
             MinecraftServer server = sender.server;
             LootStudioLogic.saveToDatapack(server, this.tableId, this.drops)
                 .thenAccept(success -> server.execute(() -> {
+                    // always notify client via SPSaveResultPacket so UI can react
+                    NetworkHandler.sendToPlayer(sender, new SPSaveResultPacket(success, this.tableId, success ? "Loot table salva: " + this.tableId : "Falha ao salvar loot table: " + this.tableId));
+
                     if (!success) {
                         sender.sendSystemMessage(net.minecraft.network.chat.Component.literal("§cFalha ao salvar loot table: " + this.tableId));
                         return;

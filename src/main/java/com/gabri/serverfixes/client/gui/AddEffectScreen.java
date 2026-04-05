@@ -362,8 +362,15 @@ public class AddEffectScreen extends Screen {
         }
 
         int buttonY = this.panelY + this.panelHeight - 32;
-        this.addRenderableWidget(Button.builder(Component.literal("Salvar"), (btn) -> addEffect())
-            .bounds(midX - BUTTON_WIDTH - 10, buttonY, BUTTON_WIDTH, 20).build());
+        this.addRenderableWidget(new PulsingButton(midX - BUTTON_WIDTH - 10, buttonY, BUTTON_WIDTH, 20, Component.literal("Salvar"), (btn) -> {
+            // basic validation before applying
+            updatePending();
+            if (!isValidSecondsInput(this.pendingDur)) {
+                ((PulsingButton)btn).pulseError(1200);
+                return;
+            }
+            addEffect();
+        }));
         this.addRenderableWidget(Button.builder(Component.literal("Cancelar"), (btn) -> this.minecraft.setScreen(this.parent))
             .bounds(midX + 10, buttonY, BUTTON_WIDTH, 20).build());
     }

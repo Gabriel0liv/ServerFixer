@@ -93,4 +93,14 @@ public class ClientPacketHandler {
             lootStudioScreen.applyLootDropsFromServer(tableId, drops);
         }
     }
+
+    public static void handleSaveResult(boolean success, ResourceLocation tableId, String message) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.screen instanceof com.gabri.serverfixes.client.gui.LootStudioScreen lootStudioScreen) {
+            lootStudioScreen.handleSaveResult(success);
+        }
+        if (minecraft.player != null && message != null && !message.isEmpty()) {
+            minecraft.player.displayClientMessage(Component.literal(message), false);
+        }
+    }
 }
