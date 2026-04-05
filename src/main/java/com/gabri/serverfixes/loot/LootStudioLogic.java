@@ -62,7 +62,7 @@ public final class LootStudioLogic {
     // API PÚBLICA
     // ====================================================================
 
-    public static List<ResourceLocation> listLootTableIds(MinecraftServer server) {
+    public static List<ResourceLocation> listLootTableIds(MinecraftServer server, String query, boolean searchMod, boolean searchEntity, boolean searchChest, boolean searchItem) {
         Set<ResourceLocation> result = new HashSet<>();
 
         try {
@@ -85,8 +85,93 @@ public final class LootStudioLogic {
 
         List<ResourceLocation> sorted = new ArrayList<>(result);
         sorted.removeIf(id -> id == null || id.getPath().startsWith("blocks/"));
+
+        boolean hasAnyFilter = searchMod || searchEntity || searchChest || searchItem;
+        if (!hasAnyFilter) {
+            searchMod = true;
+            searchEntity = true;
+            searchChest = true;
+            searchItem = true;
+        }
+
+        String q = query != null ? query.trim().toLowerCase(Locale.ROOT) : "";
+        boolean emptyQuery = q.isEmpty();
+
+        final boolean fSearchMod = searchMod;
+        final boolean fSearchEntity = searchEntity;
+        final boolean fSearchChest = searchChest;
+        final boolean fSearchItem = searchItem;
+
+        sorted.removeIf(id -> !matchesSearchContext(server, id, q, emptyQuery, fSearchMod, fSearchEntity, fSearchChest, fSearchItem));
         sorted.sort(Comparator.comparing(ResourceLocation::getNamespace).thenComparing(ResourceLocation::getPath));
         return sorted;
+    }
+
+    private static boolean matchesSearchContext(MinecraftServer server, ResourceLocation id, String query, boolean emptyQuery,
+                                                boolean searchMod, boolean searchEntity, boolean searchChest, boolean searchItem) {
+        if (id == null) return false;
+
+        String namespace = id.getNamespace().toLowerCase(Locale.ROOT);
+        String path = id.getPath().toLowerCase(Locale.ROOT);
+
+        boolean match = false;
+
+        if (searchMod) {
+            match |= emptyQuery || namespace.contains(query);
+        }
+
+        if (searchEntity) {
+            boolean entityPath = path.contains("entities/");
+            match |= entityPath && (emptyQuery || path.contains(query));
+        }
+
+        if (searchChest) {
+            boolean chestPath = path.contains("chests/");
+            match |= chestPath && (emptyQuery || path.contains(query));
+        }
+
+        if (searchItem) {
+            match |= matchesItemInTable(server, id, query, emptyQuery);
+        }
+
+        return match;
+    }
+
+    private static boolean matchesItemInTable(MinecraftServer server, ResourceLocation tableId, String query, boolean emptyQuery) {
+        try {
+            List<LootDropDTO> drops = parseLootTable(server, tableId);
+            if (drops == null || drops.isEmpty()) {
+                return false;
+            }
+
+            if (emptyQuery) {
+                return true;
+            }
+
+            for (LootDropDTO dto : drops) {
+                if (dto == null) continue;
+
+                if (dto.getTag() != null && dto.getTag().toString().toLowerCase(Locale.ROOT).contains(query)) {
+                    return true;
+                }
+
+                ItemStack stack = dto.getItem();
+                if (stack != null && !stack.isEmpty()) {
+                    ResourceLocation itemId = ForgeRegistries.ITEMS.getKey(stack.getItem());
+                    if (itemId != null && itemId.toString().toLowerCase(Locale.ROOT).contains(query)) {
+                        return true;
+                    }
+                    String hoverName = stack.getHoverName().getString();
+                    if (hoverName != null && hoverName.toLowerCase(Locale.ROOT).contains(query)) {
+                        return true;
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            LOGGER.debug("[LootStudio] Falha ao verificar busca por item na tabela {}: {}", tableId, t.getMessage());
+        }
+
+        return false;
     }
 
     public static List<LootDropDTO> parseLootTable(MinecraftServer server, ResourceLocation tableId) {
@@ -206,6 +291,7 @@ public final class LootStudioLogic {
         Item item = null;
         ResourceLocation tagId = null;
         ResourceLocation referenceTableId = null;
+        boolean emptyDrop = false;
         boolean unsupportedEntryType = false;
 
         if (entry instanceof LootItem lootItem) {
@@ -220,13 +306,16 @@ public final class LootStudioLogic {
                 tagId = ((TagEntryAccessor) (Object) tagEntry).sf_getTag().location();
             } catch (Throwable ignored) {
             }
-            item = Items.CHEST;
+            item = Items.NAME_TAG;
         } else if (entry instanceof LootTableReference lootTableReference) {
             try {
                 referenceTableId = ((LootTableReferenceAccessor) (Object) lootTableReference).sf_getName();
             } catch (Throwable ignored) {
             }
             item = Items.CHEST;
+        } else if (entry instanceof EmptyLootItem) {
+            item = Items.BARRIER;
+            emptyDrop = true;
         } else if (entry instanceof AlternativesEntry
                 || entry instanceof SequentialEntry
                 || entry instanceof EntryGroup
@@ -263,8 +352,8 @@ public final class LootStudioLogic {
 
         // --- Complexidade ---
         boolean unknownFunction = hasUnknownFunction(entryFunctions) || hasUnknownFunction(poolFunctions);
-        boolean isTagOrReference = tagId != null || referenceTableId != null;
-        boolean complex = isTagOrReference
+        boolean isRepresentableStructuredDrop = tagId != null || referenceTableId != null || emptyDrop;
+        boolean complex = isRepresentableStructuredDrop
             ? false
             : (item == null && tagId == null && referenceTableId == null)
                 || unknownCondition
@@ -293,7 +382,8 @@ public final class LootStudioLogic {
                 extraFunctions.potionId,
                 extraFunctions.nbtData,
                 extraFunctions.customNameJson,
-                extraFunctions.explorationMap
+                extraFunctions.explorationMap,
+                emptyDrop
         );
     }
 
@@ -549,9 +639,10 @@ public final class LootStudioLogic {
                 boolean hasTag = dto.getTag() != null;
                 boolean hasRef = dto.getReferenceTable() != null;
                 boolean hasItem = dto.getItem() != null && !dto.getItem().isEmpty();
+                boolean hasEmpty = dto.isEmptyDrop();
 
                 // If extraction failed but we have extra function info, try to create a sensible base item
-                if (!hasTag && !hasRef && !hasItem) {
+                if (!hasTag && !hasRef && !hasItem && !hasEmpty) {
                     if (dto.getPotionId() != null) {
                         dto.setItem(new ItemStack(Items.POTION));
                         hasItem = true;
@@ -566,7 +657,7 @@ public final class LootStudioLogic {
                         hasItem = true;
                     }
                 }
-                if (!hasTag && !hasRef && !hasItem) continue;
+                if (!hasTag && !hasRef && !hasItem && !hasEmpty) continue;
 
                 LootDropDTO normalized = new LootDropDTO(
                     dto.getItem() != null ? dto.getItem().copy() : ItemStack.EMPTY,
@@ -581,7 +672,8 @@ public final class LootStudioLogic {
                     dto.getPotionId(),
                     dto.getNbtData(),
                     dto.getCustomNameJson(),
-                    dto.isExplorationMap());
+                    dto.isExplorationMap(),
+                    dto.isEmptyDrop());
             if (normalized.getMax() < normalized.getMin()) normalized.setMax(normalized.getMin());
             out.add(normalized);
         }
@@ -604,20 +696,23 @@ public final class LootStudioLogic {
 
         for (LootDropDTO dto : drops) {
             if (dto == null) continue;
+
             ResourceLocation itemId = dto.getItem() != null && !dto.getItem().isEmpty()
-                    ? ForgeRegistries.ITEMS.getKey(dto.getItem().getItem())
-                    : null;
+                ? ForgeRegistries.ITEMS.getKey(dto.getItem().getItem())
+                : null;
             ResourceLocation tagId = dto.getTag();
             ResourceLocation refTable = dto.getReferenceTable();
 
-            if (itemId == null && tagId == null && refTable == null) continue;
+            if (itemId == null && tagId == null && refTable == null && !dto.isEmptyDrop()) continue;
 
             JsonObject pool = new JsonObject();
             pool.addProperty("rolls", 1);
 
             JsonArray entries = new JsonArray();
             JsonObject entry = new JsonObject();
-            if (tagId != null) {
+            if (dto.isEmptyDrop()) {
+                entry.addProperty("type", "minecraft:empty");
+            } else if (tagId != null) {
                 entry.addProperty("type", "minecraft:tag");
                 entry.addProperty("name", tagId.toString());
                 entry.addProperty("expand", false);
@@ -632,71 +727,75 @@ public final class LootStudioLogic {
             pool.add("entries", entries);
 
             JsonArray functions = new JsonArray();
-            JsonObject setCount = new JsonObject();
-            setCount.addProperty("function", "minecraft:set_count");
-            if (dto.getMin() == dto.getMax()) {
-                setCount.addProperty("count", dto.getMin());
-            } else {
-                JsonObject countRange = new JsonObject();
-                countRange.addProperty("min", dto.getMin());
-                countRange.addProperty("max", dto.getMax());
-                setCount.add("count", countRange);
-            }
-            functions.add(setCount);
-
-            if (dto.isEnchantRandomly()) {
-                JsonObject enchantRandomly = new JsonObject();
-                enchantRandomly.addProperty("function", "minecraft:enchant_randomly");
-                functions.add(enchantRandomly);
-            }
-
-            if (dto.isEnchantWithLevels()) {
-                LootDropDTO.Range levels = sanitizeEnchantRange(dto.getEnchantLevelsRange());
-                JsonObject enchantWithLevels = new JsonObject();
-                enchantWithLevels.addProperty("function", "minecraft:enchant_with_levels");
-                if (levels.getMin() == levels.getMax()) {
-                    enchantWithLevels.addProperty("levels", levels.getMin());
+            if (!dto.isEmptyDrop()) {
+                JsonObject setCount = new JsonObject();
+                setCount.addProperty("function", "minecraft:set_count");
+                if (dto.getMin() == dto.getMax()) {
+                    setCount.addProperty("count", dto.getMin());
                 } else {
-                    JsonObject levelsRange = new JsonObject();
-                    levelsRange.addProperty("min", levels.getMin());
-                    levelsRange.addProperty("max", levels.getMax());
-                    enchantWithLevels.add("levels", levelsRange);
+                    JsonObject countRange = new JsonObject();
+                    countRange.addProperty("min", dto.getMin());
+                    countRange.addProperty("max", dto.getMax());
+                    setCount.add("count", countRange);
                 }
-                functions.add(enchantWithLevels);
-            }
+                functions.add(setCount);
 
-            if (dto.getPotionId() != null) {
-                JsonObject setPotion = new JsonObject();
-                setPotion.addProperty("function", "minecraft:set_potion");
-                setPotion.addProperty("id", dto.getPotionId().toString());
-                functions.add(setPotion);
-            }
+                if (dto.isEnchantRandomly()) {
+                    JsonObject enchantRandomly = new JsonObject();
+                    enchantRandomly.addProperty("function", "minecraft:enchant_randomly");
+                    functions.add(enchantRandomly);
+                }
 
-            if (dto.getNbtData() != null && !dto.getNbtData().isEmpty()) {
-                JsonObject setNbt = new JsonObject();
-                setNbt.addProperty("function", "minecraft:set_nbt");
-                setNbt.addProperty("tag", dto.getNbtData());
-                functions.add(setNbt);
-            }
+                if (dto.isEnchantWithLevels()) {
+                    LootDropDTO.Range levels = sanitizeEnchantRange(dto.getEnchantLevelsRange());
+                    JsonObject enchantWithLevels = new JsonObject();
+                    enchantWithLevels.addProperty("function", "minecraft:enchant_with_levels");
+                    if (levels.getMin() == levels.getMax()) {
+                        enchantWithLevels.addProperty("levels", levels.getMin());
+                    } else {
+                        JsonObject levelsRange = new JsonObject();
+                        levelsRange.addProperty("min", levels.getMin());
+                        levelsRange.addProperty("max", levels.getMax());
+                        enchantWithLevels.add("levels", levelsRange);
+                    }
+                    functions.add(enchantWithLevels);
+                }
 
-            if (dto.isExplorationMap()) {
-                JsonObject explorationMap = new JsonObject();
-                explorationMap.addProperty("function", "minecraft:exploration_map");
-                functions.add(explorationMap);
-            }
+                if (dto.getPotionId() != null) {
+                    JsonObject setPotion = new JsonObject();
+                    setPotion.addProperty("function", "minecraft:set_potion");
+                    setPotion.addProperty("id", dto.getPotionId().toString());
+                    functions.add(setPotion);
+                }
 
-            if (dto.getCustomNameJson() != null && !dto.getCustomNameJson().isEmpty()) {
-                try {
-                    JsonObject setName = new JsonObject();
-                    setName.addProperty("function", "minecraft:set_name");
-                    setName.add("name", JsonParser.parseString(dto.getCustomNameJson()));
-                    functions.add(setName);
-                } catch (Throwable t) {
-                    LOGGER.debug("[LootStudio] customNameJson invalido, ignorando: {}", t.getMessage());
+                if (dto.getNbtData() != null && !dto.getNbtData().isEmpty()) {
+                    JsonObject setNbt = new JsonObject();
+                    setNbt.addProperty("function", "minecraft:set_nbt");
+                    setNbt.addProperty("tag", dto.getNbtData());
+                    functions.add(setNbt);
+                }
+
+                if (dto.isExplorationMap()) {
+                    JsonObject explorationMap = new JsonObject();
+                    explorationMap.addProperty("function", "minecraft:exploration_map");
+                    functions.add(explorationMap);
+                }
+
+                if (dto.getCustomNameJson() != null && !dto.getCustomNameJson().isEmpty()) {
+                    try {
+                        JsonObject setName = new JsonObject();
+                        setName.addProperty("function", "minecraft:set_name");
+                        setName.add("name", JsonParser.parseString(dto.getCustomNameJson()));
+                        functions.add(setName);
+                    } catch (Throwable t) {
+                        LOGGER.debug("[LootStudio] customNameJson invalido, ignorando: {}", t.getMessage());
+                    }
                 }
             }
 
-            pool.add("functions", functions);
+            if (!functions.isEmpty()) {
+                pool.add("functions", functions);
+            }
 
             JsonArray conditions = new JsonArray();
             if (dto.isRequirePlayerKill()) {

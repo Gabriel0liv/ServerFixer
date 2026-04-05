@@ -110,6 +110,7 @@ public final class LootStudioPacketCodec {
         }
 
         buf.writeBoolean(safe.isExplorationMap());
+        buf.writeBoolean(safe.isEmptyDrop());
     }
 
     private static LootDropDTO readLootDrop(FriendlyByteBuf buf) {
@@ -134,6 +135,7 @@ public final class LootStudioPacketCodec {
         String nbtData = buf.readBoolean() ? buf.readUtf(32767) : null;
         String customNameJson = buf.readBoolean() ? buf.readUtf(32767) : null;
         boolean explorationMap = buf.readBoolean();
+        boolean emptyDrop = buf.readBoolean();
 
         return new LootDropDTO(
             stack,
@@ -151,7 +153,8 @@ public final class LootStudioPacketCodec {
             potionId,
             nbtData,
             customNameJson,
-            explorationMap
+            explorationMap,
+            emptyDrop
         );
     }
 }

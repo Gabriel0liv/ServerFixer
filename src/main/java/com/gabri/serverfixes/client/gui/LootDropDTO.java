@@ -21,6 +21,7 @@ public class LootDropDTO {
     private String nbtData;
     private String customNameJson;
     private boolean explorationMap;
+    private boolean emptyDrop;
 
     public LootDropDTO(ItemStack item, double chance, int min, int max, boolean requirePlayerKill, boolean affectedByLooting, boolean isComplex) {
         this(item, chance, min, max, requirePlayerKill, affectedByLooting, isComplex, null, null, false, false, null);
@@ -36,13 +37,13 @@ public class LootDropDTO {
         this(item, chance, min, max, requirePlayerKill, affectedByLooting, isComplex,
             tag, referenceTable,
             enchantRandomly, enchantWithLevels, enchantLevelsRange,
-            null, null, null, false);
+            null, null, null, false, false);
         }
 
         public LootDropDTO(ItemStack item, double chance, int min, int max, boolean requirePlayerKill, boolean affectedByLooting, boolean isComplex,
                    ResourceLocation tag, ResourceLocation referenceTable,
                    boolean enchantRandomly, boolean enchantWithLevels, Range enchantLevelsRange,
-                   ResourceLocation potionId, String nbtData, String customNameJson, boolean explorationMap) {
+                   ResourceLocation potionId, String nbtData, String customNameJson, boolean explorationMap, boolean emptyDrop) {
         this.item = item;
         this.chance = chance;
         this.min = min;
@@ -59,6 +60,7 @@ public class LootDropDTO {
         this.nbtData = nbtData;
         this.customNameJson = customNameJson;
         this.explorationMap = explorationMap;
+        this.emptyDrop = emptyDrop;
     }
 
     public ItemStack getItem() {
@@ -187,6 +189,14 @@ public class LootDropDTO {
 
     public void setExplorationMap(boolean explorationMap) {
         this.explorationMap = explorationMap;
+    }
+
+    public boolean isEmptyDrop() {
+        return emptyDrop;
+    }
+
+    public void setEmptyDrop(boolean emptyDrop) {
+        this.emptyDrop = emptyDrop;
     }
 
     public static final class Range {

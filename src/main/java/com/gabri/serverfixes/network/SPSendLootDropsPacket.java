@@ -40,7 +40,8 @@ public class SPSendLootDropsPacket {
                     dto.getPotionId(),
                     dto.getNbtData(),
                     dto.getCustomNameJson(),
-                    dto.isExplorationMap()
+                    dto.isExplorationMap(),
+                    dto.isEmptyDrop()
                 ));
             }
         }

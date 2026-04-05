@@ -25,13 +25,11 @@ import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.function.DoubleConsumer;
 import java.util.function.IntConsumer;
 
@@ -57,10 +55,11 @@ public class LootStudioScreen extends Screen {
     private double centerScrollAmount = 0.0D;
     private int maxCenterScroll = 0;
     private boolean isDirty = false;
-    private final List<String> availableNamespaces = new ArrayList<>();
-    private final List<String> availableCategories = new ArrayList<>();
-    private final Set<String> selectedNamespaces = new HashSet<>();
-    private final Set<String> selectedCategories = new HashSet<>();
+    private boolean searchMod = true;
+    private boolean searchEntity = true;
+    private boolean searchChest = true;
+    private boolean searchItem = true;
+    private boolean suppressSearchRequest = false;
 
     // right panel widgets
     private final List<AbstractWidget> rightPanelWidgets = new ArrayList<>();
@@ -156,8 +155,6 @@ public class LootStudioScreen extends Screen {
         this.editorModal.init();
 
         recalculateRightPanel();
-
-        NetworkHandler.sendToServer(new RequestLootDataPacket());
     }
 
     private void updateLayout() {
@@ -191,28 +188,14 @@ public class LootStudioScreen extends Screen {
     }
 
     private void applySearchFilter() {
-        String query = this.searchBox != null ? this.searchBox.getValue().trim().toLowerCase(Locale.ROOT) : "";
-        this.filteredTables.clear();
+        String query = this.searchBox != null ? this.searchBox.getValue().trim() : "";
 
-        for (ResourceLocation id : this.allTables) {
-            if (id == null) continue;
-
-            String namespace = id.getNamespace().toLowerCase(Locale.ROOT);
-            String category = extractCategory(id);
-            String full = id.toString().toLowerCase(Locale.ROOT);
-
-            boolean matchesSearch = query.isEmpty()
-                || full.contains(query)
-                || namespace.contains(query)
-                || id.getPath().toLowerCase(Locale.ROOT).contains(query);
-
-            boolean matchesNamespace = this.selectedNamespaces.isEmpty() || this.selectedNamespaces.contains(namespace);
-            boolean matchesCategory = this.selectedCategories.isEmpty() || this.selectedCategories.contains(category);
-
-            if (matchesSearch && matchesNamespace && matchesCategory) {
-                this.filteredTables.add(id);
-            }
+        if (!this.suppressSearchRequest) {
+            NetworkHandler.sendToServer(new RequestLootDataPacket(query, this.searchMod, this.searchEntity, this.searchChest, this.searchItem));
         }
+
+        this.filteredTables.clear();
+        this.filteredTables.addAll(this.allTables);
 
         this.filteredTables.removeIf(Objects::isNull);
         ResourceLocation nextSelection = this.selectedTableId;
@@ -241,8 +224,9 @@ public class LootStudioScreen extends Screen {
         }
 
         this.allTables.sort(Comparator.comparing(ResourceLocation::getNamespace).thenComparing(ResourceLocation::getPath));
-        rebuildFilterOptions();
+        this.suppressSearchRequest = true;
         applySearchFilter();
+        this.suppressSearchRequest = false;
     }
 
     public void applyLootDropsFromServer(ResourceLocation tableId, List<LootDropDTO> drops) {
@@ -265,24 +249,7 @@ public class LootStudioScreen extends Screen {
     }
 
     private void rebuildFilterOptions() {
-        this.availableNamespaces.clear();
-        this.availableCategories.clear();
-
-        Set<String> namespaces = new HashSet<>();
-        Set<String> categories = new HashSet<>();
-        for (ResourceLocation id : this.allTables) {
-            if (id == null) continue;
-            namespaces.add(id.getNamespace().toLowerCase(Locale.ROOT));
-            categories.add(extractCategory(id));
-        }
-
-        this.availableNamespaces.addAll(namespaces);
-        this.availableCategories.addAll(categories);
-        this.availableNamespaces.sort(String::compareTo);
-        this.availableCategories.sort(String::compareTo);
-
-        this.selectedNamespaces.retainAll(namespaces);
-        this.selectedCategories.retainAll(categories);
+        // Legacy method kept for compatibility with prior flow.
     }
 
     private String extractCategory(ResourceLocation id) {
@@ -301,8 +268,7 @@ public class LootStudioScreen extends Screen {
         int y = this.filterButton.getY() + this.filterButton.getHeight() + 4;
         int w = Math.min(220, this.leftW - 16);
 
-        int rows = this.availableNamespaces.size() + this.availableCategories.size() + 4;
-        int h = Math.min(this.leftH - 40, 22 + rows * 14);
+        int h = 92;
 
         graphics.fill(x, y, x + w, y + h, 0xFB1A2434);
         graphics.fill(x, y, x + w, y + 1, 0xFF4E6B8D);
@@ -310,33 +276,24 @@ public class LootStudioScreen extends Screen {
         graphics.fill(x, y, x + 1, y + h, 0xFF4E6B8D);
         graphics.fill(x + w - 1, y, x + w, y + h, 0xFF4E6B8D);
 
-        int drawY = y + 6;
-        graphics.drawString(this.font, "Filtros", x + 6, drawY, 0xFFF4F7FF);
-        drawY += 14;
+        int rowY = y + 8;
+        graphics.drawString(this.font, "Contexto da Busca", x + 6, rowY, 0xFFF4F7FF);
+        rowY += 16;
 
-        graphics.drawString(this.font, "Mods", x + 6, drawY, 0xFFE8CC6D);
-        drawY += 12;
+        drawOverlayCheckbox(graphics, x + 8, rowY, this.searchMod);
+        graphics.drawString(this.font, "Mod (namespace)", x + 24, rowY + 2, 0xFFD4E0F0);
+        rowY += 16;
 
-        for (String namespace : this.availableNamespaces) {
-            if (drawY + 12 > y + h - 4) break;
-            boolean selected = this.selectedNamespaces.contains(namespace);
-            drawOverlayCheckbox(graphics, x + 8, drawY, selected);
-            graphics.drawString(this.font, namespace, x + 24, drawY + 2, 0xFFD4E0F0);
-            drawY += 14;
-        }
+        drawOverlayCheckbox(graphics, x + 8, rowY, this.searchEntity);
+        graphics.drawString(this.font, "Entidade (entities/)", x + 24, rowY + 2, 0xFFD4E0F0);
+        rowY += 16;
 
-        if (drawY + 14 <= y + h - 4) {
-            graphics.drawString(this.font, "Categorias", x + 6, drawY, 0xFFE8CC6D);
-            drawY += 12;
-        }
+        drawOverlayCheckbox(graphics, x + 8, rowY, this.searchChest);
+        graphics.drawString(this.font, "Bau (chests/)", x + 24, rowY + 2, 0xFFD4E0F0);
+        rowY += 16;
 
-        for (String category : this.availableCategories) {
-            if (drawY + 12 > y + h - 4) break;
-            boolean selected = this.selectedCategories.contains(category);
-            drawOverlayCheckbox(graphics, x + 8, drawY, selected);
-            graphics.drawString(this.font, category, x + 24, drawY + 2, 0xFFD4E0F0);
-            drawY += 14;
-        }
+        drawOverlayCheckbox(graphics, x + 8, rowY, this.searchItem);
+        graphics.drawString(this.font, "Item/Tag (conteudo)", x + 24, rowY + 2, 0xFFD4E0F0);
     }
 
     private void drawOverlayCheckbox(GuiGraphics graphics, int x, int y, boolean selected) {
@@ -355,8 +312,7 @@ public class LootStudioScreen extends Screen {
         int x = this.filterButton.getX() - 4;
         int y = this.filterButton.getY() + this.filterButton.getHeight() + 4;
         int w = Math.min(220, this.leftW - 16);
-        int rows = this.availableNamespaces.size() + this.availableCategories.size() + 4;
-        int h = Math.min(this.leftH - 40, 22 + rows * 14);
+        int h = 92;
 
         if (mouseX < x || mouseX >= x + w || mouseY < y || mouseY >= y + h) {
             if (!(mouseX >= this.filterButton.getX() && mouseX < this.filterButton.getX() + this.filterButton.getWidth()
@@ -366,37 +322,37 @@ public class LootStudioScreen extends Screen {
             return false;
         }
 
-        int drawY = y + 6 + 14 + 12;
-        for (String namespace : this.availableNamespaces) {
-            if (drawY + 12 > y + h - 4) break;
-            if (mouseY >= drawY && mouseY < drawY + 12 && mouseX >= x + 8 && mouseX < x + w - 8) {
-                toggleFilterValue(this.selectedNamespaces, namespace);
+        int rowY = y + 24;
+        if (mouseX >= x + 8 && mouseX < x + w - 8) {
+            if (mouseY >= rowY && mouseY < rowY + 12) {
+                this.searchMod = !this.searchMod;
                 applySearchFilter();
                 return true;
             }
-            drawY += 14;
-        }
+            rowY += 16;
 
-        if (drawY + 14 <= y + h - 4) {
-            drawY += 12;
-        }
-
-        for (String category : this.availableCategories) {
-            if (drawY + 12 > y + h - 4) break;
-            if (mouseY >= drawY && mouseY < drawY + 12 && mouseX >= x + 8 && mouseX < x + w - 8) {
-                toggleFilterValue(this.selectedCategories, category);
+            if (mouseY >= rowY && mouseY < rowY + 12) {
+                this.searchEntity = !this.searchEntity;
                 applySearchFilter();
                 return true;
             }
-            drawY += 14;
+            rowY += 16;
+
+            if (mouseY >= rowY && mouseY < rowY + 12) {
+                this.searchChest = !this.searchChest;
+                applySearchFilter();
+                return true;
+            }
+            rowY += 16;
+
+            if (mouseY >= rowY && mouseY < rowY + 12) {
+                this.searchItem = !this.searchItem;
+                applySearchFilter();
+                return true;
+            }
         }
 
         return true;
-    }
-
-    private void toggleFilterValue(Set<String> selectedSet, String value) {
-        if (selectedSet.contains(value)) selectedSet.remove(value);
-        else selectedSet.add(value);
     }
 
     private void rebuildTableButtons() {
@@ -454,7 +410,10 @@ public class LootStudioScreen extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (this.editorModal != null && this.editorModal.isOpen()) {
-            return this.editorModal.mouseClicked(mouseX, mouseY, button);
+            if (this.editorModal.mouseClicked(mouseX, mouseY, button)) {
+                return true;
+            }
+            return true;
         }
 
         if (handleFilterOverlayClick(mouseX, mouseY, button)) {
@@ -476,6 +435,22 @@ public class LootStudioScreen extends Screen {
         }
 
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (this.editorModal != null && this.editorModal.isOpen()) {
+            return this.editorModal.keyPressed(keyCode, scanCode, modifiers);
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    @Override
+    public boolean charTyped(char codePoint, int modifiers) {
+        if (this.editorModal != null && this.editorModal.isOpen()) {
+            return this.editorModal.charTyped(codePoint, modifiers);
+        }
+        return super.charTyped(codePoint, modifiers);
     }
 
     @Override
@@ -683,24 +658,44 @@ public class LootStudioScreen extends Screen {
             int rowColor = i == this.editingDropIndex ? 0x5533618E : 0x3324303F;
             graphics.fill(this.centerX + 6, currentY - 1, this.centerX + this.centerW - 6, currentY + rowH - 2, rowColor);
 
-            if (dto.getItem() != null && !dto.getItem().isEmpty()) {
-                graphics.renderItem(dto.getItem(), iconX, iconY);
-                graphics.renderItemDecorations(this.font, dto.getItem(), iconX, iconY);
+            ItemStack rowIcon = dto.getItem();
+            if (dto.isEmptyDrop()) {
+                rowIcon = new ItemStack(Items.BARRIER);
+            } else if ((rowIcon == null || rowIcon.isEmpty()) && dto.getTag() != null) {
+                rowIcon = new ItemStack(Items.NAME_TAG);
+            } else if ((rowIcon == null || rowIcon.isEmpty()) && dto.getReferenceTable() != null) {
+                rowIcon = new ItemStack(Items.CHEST);
+            }
+
+            if (rowIcon != null && !rowIcon.isEmpty()) {
+                graphics.renderItem(rowIcon, iconX, iconY);
+                graphics.renderItemDecorations(this.font, rowIcon, iconX, iconY);
             }
 
             int textX = iconX + 20;
 
-            String displayName;
-            if (dto.getTag() != null) {
+            // Only draw a textual label when we have a meaningful tag/table or a valid item.
+            boolean drawDisplayName = true;
+            String displayName = "";
+            if (dto.isEmptyDrop()) {
+                // show only the barrier icon for explicit empty drops
+                drawDisplayName = false;
+            } else if (dto.getTag() != null) {
                 displayName = "#" + dto.getTag();
             } else if (dto.getReferenceTable() != null) {
                 displayName = "@" + dto.getReferenceTable();
+            } else if (dto.getItem() != null && !dto.getItem().isEmpty()) {
+                displayName = dto.getItem().getHoverName().getString();
             } else {
-                displayName = dto.getItem() != null && !dto.getItem().isEmpty()
-                    ? dto.getItem().getHoverName().getString()
-                    : "<vazio>";
+                // invalid/unknown item without tag/ref: don't draw the id text
+                drawDisplayName = false;
             }
-            graphics.drawString(this.font, displayName, textX, currentY + 2, 0xFFB8C8DE);
+
+            int displayColor = 0xFFB8C8DE;
+            if (drawDisplayName) {
+                graphics.drawString(this.font, displayName, textX, currentY + 2, displayColor);
+            }
+
             String enchantMeta = "";
             if (dto.isEnchantWithLevels()) {
                 LootDropDTO.Range levels = dto.getEnchantLevelsRange() != null ? dto.getEnchantLevelsRange() : new LootDropDTO.Range(10, 30);
@@ -709,7 +704,9 @@ public class LootStudioScreen extends Screen {
                 enchantMeta = " | Enc Aleatorio";
             }
             String meta = String.format(Locale.ROOT, "Chance: %.2f%% | %d a %d | PK: %s%s", dto.getChance(), dto.getMin(), dto.getMax(), dto.isRequirePlayerKill() ? "Sim" : "Nao", enchantMeta);
-            graphics.drawString(this.font, meta, textX, currentY + 14, 0xFF9FB0C5);
+            // If we didn't draw a display name, move the meta line up to occupy the primary text line
+            int metaY = drawDisplayName ? (currentY + 14) : (currentY + 2);
+            graphics.drawString(this.font, meta, textX, metaY, 0xFF9FB0C5);
 
             // draw edit/delete icons on the right for all drops
             int iconW = 14;
@@ -961,7 +958,8 @@ public class LootStudioScreen extends Screen {
             dto.getPotionId(),
             dto.getNbtData(),
             dto.getCustomNameJson(),
-            dto.isExplorationMap()
+            dto.isExplorationMap(),
+            dto.isEmptyDrop()
         );
     }
 
@@ -1109,6 +1107,8 @@ public class LootStudioScreen extends Screen {
             this.open = true;
             updateLayout();
             setWidgetsVisible(true);
+            this.idInput.setFocused(true);
+            LootStudioScreen.this.setFocused(this.idInput);
         }
 
         private void openForEdit(int index, LootDropDTO dto) {
@@ -1140,6 +1140,8 @@ public class LootStudioScreen extends Screen {
             this.open = true;
             updateLayout();
             setWidgetsVisible(true);
+            this.idInput.setFocused(true);
+            LootStudioScreen.this.setFocused(this.idInput);
         }
 
         private boolean mouseClicked(double mouseX, double mouseY, int button) {
@@ -1153,6 +1155,33 @@ public class LootStudioScreen extends Screen {
             }
 
             return true;
+        }
+
+        public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+            if (!this.open) return false;
+
+            if (keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE) {
+                close();
+                return true;
+            }
+
+            for (AbstractWidget widget : this.widgets) {
+                if (widget.keyPressed(keyCode, scanCode, modifiers)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        public boolean charTyped(char codePoint, int modifiers) {
+            if (!this.open) return false;
+
+            for (AbstractWidget widget : this.widgets) {
+                if (widget.charTyped(codePoint, modifiers)) {
+                    return true;
+                }
+            }
+            return false;
         }
 
         private void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
@@ -1180,6 +1209,19 @@ public class LootStudioScreen extends Screen {
             }
             this.confirmButton.render(graphics, mouseX, mouseY, partialTick);
             this.cancelButton.render(graphics, mouseX, mouseY, partialTick);
+
+            // highlight the id input when the parsed preview is invalid
+            if (!this.previewValid && this.idInput != null) {
+                int ix = this.idInput.getX();
+                int iy = this.idInput.getY();
+                int iw = this.idInput.getWidth();
+                int ih = this.idInput.getHeight();
+                int border = 0xFFFF7B7B; // red
+                graphics.fill(ix, iy, ix + iw, iy + 1, border);
+                graphics.fill(ix, iy + ih - 1, ix + iw, iy + ih, border);
+                graphics.fill(ix, iy, ix + 1, iy + ih, border);
+                graphics.fill(ix + iw - 1, iy, ix + iw, iy + ih, border);
+            }
 
             graphics.fill(this.previewSlotX, this.previewSlotY, this.previewSlotX + this.previewSlotSize, this.previewSlotY + this.previewSlotSize, 0xFF4E6B8D);
             graphics.fill(this.previewSlotX + 1, this.previewSlotY + 1, this.previewSlotX + this.previewSlotSize - 1, this.previewSlotY + this.previewSlotSize - 1, 0xFF1A2434);
