@@ -15,9 +15,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class RoasterThrottlingMixin {
 
     @Inject(method = "tick", at = @At("HEAD"), cancellable = true)
-    private static void throttleTick(Level world, BlockPos pos, BlockState state, Object blockEntity, CallbackInfo ci) {
+    private void throttleTick(Level world, BlockPos pos, BlockState state, Object roasterBlockEntity, CallbackInfo ci) {
         if (!ServerFixesConfig.THROTTLE_FARM_AND_CHARM.get()) return;
-        
+
         int rate = ServerFixesConfig.ROASTER_TICK_RATE.get();
         if (rate > 1 && world.getGameTime() % rate != 0) {
             ci.cancel();

@@ -54,7 +54,7 @@ public class SaveLootTablePacket {
 
                     List<LootDropDTO> refreshed = LootStudioLogic.parseLootTable(server, this.tableId);
                     NetworkHandler.sendToPlayer(sender, new SPSendLootDropsPacket(this.tableId, refreshed));
-                    sender.sendSystemMessage(net.minecraft.network.chat.Component.literal("§aLoot table salva: " + this.tableId));
+                    sender.sendSystemMessage(net.minecraft.network.chat.Component.literal("§aLoot table salva: " + this.tableId + " §e(Requer restart para tags novas)"));
                 }));
         });
         context.setPacketHandled(true);

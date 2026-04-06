@@ -8,7 +8,6 @@ public class ServerFixesConfig {
 
     public static final ForgeConfigSpec.BooleanValue ENABLE_ANTI_SWAP;
     public static final ForgeConfigSpec.BooleanValue ENABLE_INFINITE_TRADES;
-    public static final ForgeConfigSpec.LongValue ANTI_SWAP_COOLDOWN;
     public static final ForgeConfigSpec.IntValue VILLAGER_TICK_RATE;
     public static final ForgeConfigSpec.ConfigValue<String> INFINITE_TRADE_TAG;
     public static final ForgeConfigSpec.BooleanValue FIX_BACKSTABBING_EXPLOIT;
@@ -49,10 +48,6 @@ public class ServerFixesConfig {
         ENABLE_INFINITE_TRADES = BUILDER
                 .comment("Enable or disable the infinite trading system for tagged players.")
                 .define("enableInfiniteTrades", true);
-
-        ANTI_SWAP_COOLDOWN = BUILDER
-                .comment("The duration (in milliseconds) of the damage block after swapping a main hand item.")
-                .defineInRange("antiSwapCooldown", 800L, 0L, 5000L);
 
         VILLAGER_TICK_RATE = BUILDER
                 .comment("Defines every how many ticks the villager brain processes (e.g., 20 = once per second).")

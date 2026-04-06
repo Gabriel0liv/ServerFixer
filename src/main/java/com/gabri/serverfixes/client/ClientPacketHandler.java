@@ -67,6 +67,32 @@ public class ClientPacketHandler {
         minecraft.setScreen(new com.gabri.serverfixes.client.gui.SoundStudioScreen());
     }
 
+    public static void handleOpenTagStudio() {
+        Minecraft minecraft = Minecraft.getInstance();
+        LocalPlayer player = minecraft.player;
+        if (player == null || !player.hasPermissions(2)) {
+            if (player != null) {
+                player.displayClientMessage(Component.literal("§cAcesso negado: requer OP."), true);
+            }
+            return;
+        }
+
+        minecraft.setScreen(new com.gabri.serverfixes.client.gui.TagStudioScreen());
+    }
+
+    public static void handleOpenEntityTagStudio() {
+        Minecraft minecraft = Minecraft.getInstance();
+        LocalPlayer player = minecraft.player;
+        if (player == null || !player.hasPermissions(2)) {
+            if (player != null) {
+                player.displayClientMessage(Component.literal("§cAcesso negado: requer OP."), true);
+            }
+            return;
+        }
+
+        minecraft.setScreen(new com.gabri.serverfixes.client.gui.EntityTagStudioScreen());
+    }
+
     public static void handleOpenLootStudio() {
         Minecraft minecraft = Minecraft.getInstance();
         LocalPlayer player = minecraft.player;
@@ -108,6 +134,27 @@ public class ClientPacketHandler {
         }
         if (minecraft.player != null && message != null && !message.isEmpty()) {
             minecraft.player.displayClientMessage(Component.literal(message), false);
+        }
+    }
+
+    public static void handleItemTags(List<ResourceLocation> tagIds) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.screen instanceof com.gabri.serverfixes.client.gui.LootStudioScreen lootStudioScreen) {
+            lootStudioScreen.applyItemTagsFromServer(tagIds);
+        }
+    }
+
+    public static void handleTags(List<com.gabri.serverfixes.network.RequestTagsPacket.TagDTO> tags) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.screen instanceof com.gabri.serverfixes.client.gui.TagStudioScreen tagStudioScreen) {
+            tagStudioScreen.applyTagsFromServer(tags);
+        }
+    }
+
+    public static void handleEntityTags(List<com.gabri.serverfixes.network.RequestEntityTagsPacket.EntityTagDTO> tags) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.screen instanceof com.gabri.serverfixes.client.gui.EntityTagStudioScreen entityTagStudioScreen) {
+            entityTagStudioScreen.applyTagsFromServer(tags);
         }
     }
 }

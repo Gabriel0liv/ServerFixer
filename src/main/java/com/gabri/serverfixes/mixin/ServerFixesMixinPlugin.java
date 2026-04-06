@@ -22,14 +22,14 @@ public class ServerFixesMixinPlugin implements IMixinConfigPlugin {
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
         // Throttling Mixins for Farm & Charm
         if (mixinClassName.contains("throttling.CookingPot") || mixinClassName.contains("throttling.Roaster") || mixinClassName.contains("throttling.Stove")) {
-            return isClassPresent("net.satisfy.farm_and_charm.registry.EntityTypeRegistry");
+            return isClassPresent("net.satisfy.farm_and_charm.core.registry.EntityTypeRegistry");
         }
-        
+
         // Throttling Mixins for Vinery
         if (mixinClassName.contains("throttling.FermentationBarrel")) {
-            return isClassPresent("net.satisfy.vinery.registry.VineryBlockEntityTypes");
+            return isClassPresent("net.satisfy.vinery.core.registry.EntityTypeRegistry");
         }
-        
+
         return true;
     }
 

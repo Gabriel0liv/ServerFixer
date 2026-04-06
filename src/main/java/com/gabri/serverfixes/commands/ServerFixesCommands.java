@@ -36,7 +36,7 @@ public class ServerFixesCommands {
             .then(Commands.literal("debug").executes(ctx -> showStatus(ctx.getSource(), "debug")))
             .then(Commands.literal("throttle").executes(ctx -> showStatus(ctx.getSource(), "throttle"))));
 
-        // /serverfixes antiswap <bool> | cooldown <ms> | reset
+        // /serverfixes antiswap <bool> | reset
         root.then(Commands.literal("antiswap")
             .then(Commands.argument("enabled", BoolArgumentType.bool())
                 .executes(ctx -> {
@@ -46,15 +46,6 @@ public class ServerFixesCommands {
                         .append(Component.literal(String.valueOf(value)).withStyle(value ? ChatFormatting.GREEN : ChatFormatting.RED)), true);
                     return 1;
                 }))
-            .then(Commands.literal("cooldown")
-                .then(Commands.argument("ms", LongArgumentType.longArg(0, 5000))
-                    .executes(ctx -> {
-                        long value = LongArgumentType.getLong(ctx, "ms");
-                        ServerFixesConfig.ANTI_SWAP_COOLDOWN.set(value);
-                        ctx.getSource().sendSuccess(() -> Component.literal("Anti-Swap Cooldown set to: ").withStyle(ChatFormatting.GRAY)
-                            .append(Component.literal(value + "ms").withStyle(ChatFormatting.GOLD)), true);
-                        return 1;
-                    })))
             .then(Commands.literal("reset")
                 .executes(ctx -> {
                     AntiSwapExploitHandler.resetAll();
@@ -309,6 +300,10 @@ public class ServerFixesCommands {
         root.then(Commands.literal("loot_studio")
             .executes(ctx -> openLootStudio(ctx.getSource())));
 
+        // /serverfixes tag_studio
+        root.then(Commands.literal("tag_studio")
+            .executes(ctx -> openTagStudio(ctx.getSource())));
+
         LiteralCommandNode<CommandSourceStack> baseNode = dispatcher.register(root);
 
         // Alias /sfx -> redireciona para /serverfixes sem duplicar a árvore
@@ -418,6 +413,21 @@ public class ServerFixesCommands {
         return 0;
     }
 
+    private static int openTagStudio(CommandSourceStack source) {
+        if (source.getEntity() instanceof Player player) {
+            if (!player.isCreative()) {
+                source.sendFailure(Component.literal("Este comando só pode ser usado no modo Criativo."));
+                return 0;
+            }
+            com.gabri.serverfixes.network.NetworkHandler.sendToPlayer((net.minecraft.server.level.ServerPlayer) player,
+                new com.gabri.serverfixes.network.OpenTagStudioPacket());
+            source.sendSuccess(() -> Component.literal("Abrindo Tag Studio...").withStyle(ChatFormatting.GREEN), false);
+            return 1;
+        }
+        source.sendFailure(Component.literal("Este comando só pode ser usado por jogadores."));
+        return 0;
+    }
+
     private static int showStatus(CommandSourceStack source, String module) {
         if (module == null || module.equals("villagers")) {
             source.sendSuccess(() -> Component.literal("--- Villager Status ---").withStyle(ChatFormatting.AQUA), false);
@@ -429,8 +439,6 @@ public class ServerFixesCommands {
             boolean enabled = ServerFixesConfig.ENABLE_ANTI_SWAP.get();
             source.sendSuccess(() -> Component.literal("Enabled: ").withStyle(ChatFormatting.GRAY)
                 .append(Component.literal(String.valueOf(enabled)).withStyle(enabled ? ChatFormatting.GREEN : ChatFormatting.RED)), false);
-            source.sendSuccess(() -> Component.literal("Cooldown: ").withStyle(ChatFormatting.GRAY)
-                .append(Component.literal(ServerFixesConfig.ANTI_SWAP_COOLDOWN.get() + "ms").withStyle(ChatFormatting.GOLD)), false);
         }
         if (module == null || module.equals("infinitetrade")) {
             source.sendSuccess(() -> Component.literal("--- Infinite Trade Status ---").withStyle(ChatFormatting.AQUA), false);

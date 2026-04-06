@@ -14,7 +14,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class FermentationBarrelThrottlingMixin {
 
     @Inject(method = "tick", at = @At("HEAD"), cancellable = true)
-    private static void throttleTick(Level world, BlockPos pos, Object blockEntity, CallbackInfo ci) {
+    private static void throttleTick(Level world, BlockPos pos, Object fermentationBarrelBlockEntity, CallbackInfo ci) {
         if (!ServerFixesConfig.THROTTLE_VINERY.get()) return;
         
         int rate = ServerFixesConfig.FERMENTATION_BARREL_TICK_RATE.get();

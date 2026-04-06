@@ -65,6 +65,12 @@ public class ServerFixes {
                 LOGGER.info("[ServerFixes] Late Curios selector registration at FMLLoadComplete...");
                 CuriosSelectorOptions.registerAll();
             }
+            
+            // Register Malum Scythe Fix conditionally
+            if (ModList.get().isLoaded("malum")) {
+                LOGGER.info("[ServerFixes] Malum detected, registering Malum Scythe Fix...");
+                MinecraftForge.EVENT_BUS.register(com.gabri.serverfixes.events.MalumScytheFix.class);
+            }
         });
     }
 

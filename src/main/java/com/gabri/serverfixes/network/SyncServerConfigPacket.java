@@ -37,7 +37,6 @@ public class SyncServerConfigPacket {
     public static CompoundTag getCurrentConfig() {
         CompoundTag tag = new CompoundTag();
         tag.putBoolean("enableAntiSwap", ServerFixesConfig.ENABLE_ANTI_SWAP.get());
-        tag.putLong("antiSwapCooldown", ServerFixesConfig.ANTI_SWAP_COOLDOWN.get());
         tag.putBoolean("enableInfiniteTrades", ServerFixesConfig.ENABLE_INFINITE_TRADES.get());
         String infiniteTradeTag = normalizeStringValue(ServerFixesConfig.INFINITE_TRADE_TAG.get());
         tag.putString("infiniteTradeTag", infiniteTradeTag != null ? infiniteTradeTag : "");

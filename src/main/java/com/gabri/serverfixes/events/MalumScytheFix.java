@@ -8,6 +8,8 @@ import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.registries.ForgeRegistries;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * Fixes Malum scythe's double magic damage bug.
@@ -19,24 +21,30 @@ import net.minecraftforge.registries.ForgeRegistries;
  */
 @SuppressWarnings("all")
 public class MalumScytheFix {
+    private static final Logger LOGGER = LogManager.getLogger("ServerFixes/MalumFix");
 
     private static final ResourceLocation SCYTHE_SWEEP_RL = new ResourceLocation("malum", "scythe_sweep");
     private static final ResourceLocation MAGIC_DAMAGE_RL = new ResourceLocation("lodestone", "magic_damage");
 
     private static Attribute magicDamageAttr = null;
-    private static boolean lookedUp = false;
 
     private static Attribute getMagicDamageAttribute() {
-        if (!lookedUp) {
-            lookedUp = true;
+        // Allow retry if attribute wasn't found yet (no caching flag)
+        if (magicDamageAttr == null) {
             magicDamageAttr = ForgeRegistries.ATTRIBUTES.getValue(MAGIC_DAMAGE_RL);
+            if (magicDamageAttr == null) {
+                LOGGER.warn("[MalumFix] lodestone:magic_damage attribute not found!");
+            }
         }
         return magicDamageAttr;
     }
 
     @SubscribeEvent(priority = EventPriority.LOWEST, receiveCanceled = true)
     public static void onLivingHurt(LivingHurtEvent event) {
-        if (event == null || event.getEntity() == null || event.getEntity().level().isClientSide()) return;
+        if (event == null || event.getEntity() == null) return;
+        
+        // Must run on server side only
+        if (event.getEntity().level().isClientSide()) return;
 
         // Retrieve the damage type location safely
         ResourceLocation damageTypeRL = event.getSource().typeHolder()
@@ -60,7 +68,11 @@ public class MalumScytheFix {
         if (magicDamage <= 0) return;
 
         // Subtract the magic damage that was double-applied to the sweep
-        float corrected = Math.max(0.0f, event.getAmount() - magicDamage);
+        float originalAmount = event.getAmount();
+        float corrected = Math.max(0.0f, originalAmount - magicDamage);
         event.setAmount(corrected);
+        
+        LOGGER.debug("[MalumFix] Corrected scythe sweep damage: {} -> {} (removed {} magic)",
+            originalAmount, corrected, magicDamage);
     }
 }

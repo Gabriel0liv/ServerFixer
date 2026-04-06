@@ -74,6 +74,12 @@ public class NetworkHandler {
                 .consumerMainThread(OpenLootStudioPacket::handle)
                 .add();
 
+        INSTANCE.messageBuilder(OpenTagStudioPacket.class, packetId++, NetworkDirection.PLAY_TO_CLIENT)
+                .decoder(OpenTagStudioPacket::new)
+                .encoder(OpenTagStudioPacket::toBytes)
+                .consumerMainThread(OpenTagStudioPacket::handle)
+                .add();
+
         INSTANCE.messageBuilder(RequestLootDataPacket.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
                 .decoder(RequestLootDataPacket::new)
                 .encoder(RequestLootDataPacket::toBytes)
@@ -150,6 +156,60 @@ public class NetworkHandler {
                 .decoder(SaveBlockEditorPacket::new)
                 .encoder(SaveBlockEditorPacket::toBytes)
                 .consumerMainThread(SaveBlockEditorPacket::handle)
+                .add();
+
+        INSTANCE.messageBuilder(RequestItemTagsPacket.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
+                .decoder(RequestItemTagsPacket::new)
+                .encoder(RequestItemTagsPacket::toBytes)
+                .consumerMainThread(RequestItemTagsPacket::handle)
+                .add();
+
+        INSTANCE.messageBuilder(SPSendItemTagsPacket.class, packetId++, NetworkDirection.PLAY_TO_CLIENT)
+                .decoder(SPSendItemTagsPacket::new)
+                .encoder(SPSendItemTagsPacket::toBytes)
+                .consumerMainThread(SPSendItemTagsPacket::handle)
+                .add();
+
+        INSTANCE.messageBuilder(RequestTagsPacket.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
+                .decoder(RequestTagsPacket::new)
+                .encoder(RequestTagsPacket::toBytes)
+                .consumerMainThread(RequestTagsPacket::handle)
+                .add();
+
+        INSTANCE.messageBuilder(SPSendTagsPacket.class, packetId++, NetworkDirection.PLAY_TO_CLIENT)
+                .decoder(SPSendTagsPacket::new)
+                .encoder(SPSendTagsPacket::toBytes)
+                .consumerMainThread(SPSendTagsPacket::handle)
+                .add();
+
+        INSTANCE.messageBuilder(SaveTagPacket.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
+                .decoder(SaveTagPacket::new)
+                .encoder(SaveTagPacket::toBytes)
+                .consumerMainThread(SaveTagPacket::handle)
+                .add();
+
+        INSTANCE.messageBuilder(RequestEntityTagsPacket.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
+                .decoder(RequestEntityTagsPacket::new)
+                .encoder(RequestEntityTagsPacket::toBytes)
+                .consumerMainThread(RequestEntityTagsPacket::handle)
+                .add();
+
+        INSTANCE.messageBuilder(SPSendEntityTagsPacket.class, packetId++, NetworkDirection.PLAY_TO_CLIENT)
+                .decoder(SPSendEntityTagsPacket::new)
+                .encoder(SPSendEntityTagsPacket::toBytes)
+                .consumerMainThread(SPSendEntityTagsPacket::handle)
+                .add();
+
+        INSTANCE.messageBuilder(SaveEntityTagPacket.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
+                .decoder(SaveEntityTagPacket::new)
+                .encoder(SaveEntityTagPacket::toBytes)
+                .consumerMainThread(SaveEntityTagPacket::handle)
+                .add();
+
+        INSTANCE.messageBuilder(OpenEntityTagStudioPacket.class, packetId++, NetworkDirection.PLAY_TO_CLIENT)
+                .decoder(OpenEntityTagStudioPacket::new)
+                .encoder(OpenEntityTagStudioPacket::toBytes)
+                .consumerMainThread(OpenEntityTagStudioPacket::handle)
                 .add();
     }
 

@@ -175,8 +175,6 @@ public class AdminPanelScreen extends AbstractEditorScreen {
             case SERVER:
                 addToggle("enableAntiSwap", "Anti-Swap Exploit", y, toggleX, resetX);
                 y += ROW_HEIGHT;
-                addInput("antiSwapCooldown", "Cooldown Anti-Swap (ms)", FieldType.LONG, y, inputX, inputWidth, resetX);
-                y += ROW_HEIGHT;
                 addToggle("enableInfiniteTrades", "Trocas Infinitas", y, toggleX, resetX);
                 y += ROW_HEIGHT;
                 addInput("infiniteTradeTag", "Tag p/ Trocas Infinitas", FieldType.STRING, y, inputX, inputWidth, resetX);

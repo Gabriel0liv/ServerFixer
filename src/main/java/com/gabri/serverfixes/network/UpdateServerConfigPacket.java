@@ -41,7 +41,6 @@ public class UpdateServerConfigPacket {
             try {
                 switch (key) {
                     case "enableAntiSwap": ServerFixesConfig.ENABLE_ANTI_SWAP.set(Boolean.parseBoolean(value)); break;
-                    case "antiSwapCooldown": ServerFixesConfig.ANTI_SWAP_COOLDOWN.set(Long.parseLong(value)); break;
                     case "enableInfiniteTrades": ServerFixesConfig.ENABLE_INFINITE_TRADES.set(Boolean.parseBoolean(value)); break;
                     case "infiniteTradeTag": ServerFixesConfig.INFINITE_TRADE_TAG.set(normalizeStringValue(value)); break;
                     case "villagerTickRate": ServerFixesConfig.VILLAGER_TICK_RATE.set(Integer.parseInt(value)); break;

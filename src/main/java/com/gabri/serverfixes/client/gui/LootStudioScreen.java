@@ -61,6 +61,10 @@ public class LootStudioScreen extends Screen {
     private boolean searchItem = true;
     private boolean suppressSearchRequest = false;
 
+    // Tags de itens sincronizadas do servidor
+    private final java.util.Set<ResourceLocation> knownItemTags = new java.util.HashSet<>();
+    private boolean tagsRequested = false;
+
     // right panel widgets
     private final List<AbstractWidget> rightPanelWidgets = new ArrayList<>();
     private final Map<AbstractWidget, Integer> widgetOriginalY = new HashMap<>();
@@ -101,6 +105,8 @@ public class LootStudioScreen extends Screen {
         this.maxCenterScroll = 0;
         this.lootDrops.clear();
         this.cleanLootDrops.clear();
+        this.knownItemTags.clear();
+        this.tagsRequested = false;
 
         this.rightPanelWidgets.clear();
         this.widgetOriginalY.clear();
@@ -262,7 +268,6 @@ public class LootStudioScreen extends Screen {
         this.editingDropIndex = -1;
     }
 
-    // Called from client packet handler when server reports save result
     public void handleSaveResult(boolean success) {
         if (this.saveApplyButton == null) return;
         if (success) {
@@ -276,6 +281,23 @@ public class LootStudioScreen extends Screen {
             // flash red for 900ms
             this.saveApplyButton.pulseError(900);
         }
+    }
+
+    public void applyItemTagsFromServer(List<ResourceLocation> tagIds) {
+        this.knownItemTags.clear();
+        if (tagIds != null) {
+            this.knownItemTags.addAll(tagIds);
+        }
+        // Re-valida o input atual se o modal estiver aberto
+        if (this.editorModal != null && this.editorModal.isOpen()) {
+            this.editorModal.refreshPreview();
+        }
+    }
+
+    private void requestItemTags() {
+        if (this.tagsRequested) return;
+        this.tagsRequested = true;
+        NetworkHandler.sendToServer(new com.gabri.serverfixes.network.RequestItemTagsPacket());
     }
 
     private void rebuildFilterOptions() {
@@ -1027,10 +1049,17 @@ public class LootStudioScreen extends Screen {
         private int modalX, modalY, modalW, modalH;
         private int previewSlotX, previewSlotY, previewSlotSize;
 
+        // Checkbox grid panel bounds
+        private int checkboxGridX, checkboxGridY, checkboxGridW, checkboxGridH;
+
         private void init() {
             this.modalW = 340;
             this.modalH = 292;
             this.previewSlotSize = 24;
+            this.checkboxGridX = 0;
+            this.checkboxGridY = 0;
+            this.checkboxGridW = 0;
+            this.checkboxGridH = 0;
 
             this.idInput = new SelectableEditBox(LootStudioScreen.this.font, 0, 0, 10, 18, Component.literal("item/tag"));
             this.idInput.setMaxLength(140);
@@ -1090,6 +1119,7 @@ public class LootStudioScreen extends Screen {
             this.enchantWithLevelsCheckbox.setSelected(false);
             this.enchantLevelsMinSlider.setCurrentValue(10);
             this.enchantLevelsMaxSlider.setCurrentValue(30);
+            LootStudioScreen.this.requestItemTags();
             refreshPreview();
             this.open = true;
             updateLayout();
@@ -1129,6 +1159,7 @@ public class LootStudioScreen extends Screen {
             this.enchantLevelsMinSlider.setCurrentValue(levels.getMin());
             this.enchantLevelsMaxSlider.setCurrentValue(levels.getMax());
 
+            LootStudioScreen.this.requestItemTags();
             refreshPreview();
             this.open = true;
             updateLayout();
@@ -1211,10 +1242,25 @@ public class LootStudioScreen extends Screen {
             }
 
             // previewHint removed — we only render the preview icon and input outline
-            graphics.drawString(LootStudioScreen.this.font, "Exigir Morte por Jogador", this.requirePlayerKillCheckbox.getX() + 18, this.requirePlayerKillCheckbox.getY() + 3, 0xFFD4E0F0);
+            // Painel de opções 2x2 com borda
+            if (this.checkboxGridW > 0 && this.checkboxGridH > 0) {
+                int gx = this.checkboxGridX;
+                int gy = this.checkboxGridY;
+                int gw = this.checkboxGridW;
+                int gh = this.checkboxGridH;
+                // Background sutil
+                graphics.fill(gx, gy, gx + gw, gy + gh, 0x331A2434);
+                // Borda
+                graphics.fill(gx, gy, gx + gw, gy + 1, 0xFF3A4A5A);
+                graphics.fill(gx, gy + gh - 1, gx + gw, gy + gh, 0xFF3A4A5A);
+                graphics.fill(gx, gy, gx + 1, gy + gh, 0xFF3A4A5A);
+                graphics.fill(gx + gw - 1, gy, gx + gw, gy + gh, 0xFF3A4A5A);
+            }
+            // Labels das checkboxes
+            graphics.drawString(LootStudioScreen.this.font, "Morte por Jogador", this.requirePlayerKillCheckbox.getX() + 18, this.requirePlayerKillCheckbox.getY() + 3, 0xFFD4E0F0);
             graphics.drawString(LootStudioScreen.this.font, "Afetado por Pilhagem", this.affectedByLootingCheckbox.getX() + 18, this.affectedByLootingCheckbox.getY() + 3, 0xFFD4E0F0);
-            graphics.drawString(LootStudioScreen.this.font, "Encantamento Aleatorio", this.enchantRandomlyCheckbox.getX() + 18, this.enchantRandomlyCheckbox.getY() + 3, 0xFFD4E0F0);
-            graphics.drawString(LootStudioScreen.this.font, "Encantamento por Niveis", this.enchantWithLevelsCheckbox.getX() + 18, this.enchantWithLevelsCheckbox.getY() + 3, 0xFFD4E0F0);
+            graphics.drawString(LootStudioScreen.this.font, "Encant. Aleatório", this.enchantRandomlyCheckbox.getX() + 18, this.enchantRandomlyCheckbox.getY() + 3, 0xFFD4E0F0);
+            graphics.drawString(LootStudioScreen.this.font, "Encant. por Níveis", this.enchantWithLevelsCheckbox.getX() + 18, this.enchantWithLevelsCheckbox.getY() + 3, 0xFFD4E0F0);
         }
 
         private void updateLayout() {
@@ -1248,39 +1294,55 @@ public class LootStudioScreen extends Screen {
             this.maxSlider.setX(sliderX);
             this.maxSlider.setY(currentY);
             this.maxSlider.setWidth(sliderW);
-            currentY += 24;
+            currentY += 26;
 
-            this.requirePlayerKillCheckbox.setX(bodyX);
-            this.requirePlayerKillCheckbox.setY(currentY);
-            currentY += 20;
+            // Painel de opções em grid 2x2
+            int panelPadding = 4;
+            int gridGapX = 6;
+            int gridGapY = 2;
+            int checkboxW = 14;
+            int labelMinWidth = 130;
+            int cellW = checkboxW + 4 + labelMinWidth;
+            int gridW = cellW * 2 + gridGapX;
+            int gridH = 14 * 2 + gridGapY;
+            int gridX = bodyX + panelPadding;
+            int gridY = currentY + panelPadding;
 
-            this.affectedByLootingCheckbox.setX(bodyX);
-            this.affectedByLootingCheckbox.setY(currentY);
-            currentY += 20;
+            this.requirePlayerKillCheckbox.setX(gridX);
+            this.requirePlayerKillCheckbox.setY(gridY);
 
-            this.enchantRandomlyCheckbox.setX(bodyX);
-            this.enchantRandomlyCheckbox.setY(currentY);
-            currentY += 20;
+            this.affectedByLootingCheckbox.setX(gridX + cellW + gridGapX);
+            this.affectedByLootingCheckbox.setY(gridY);
 
-            this.enchantWithLevelsCheckbox.setX(bodyX);
-            this.enchantWithLevelsCheckbox.setY(currentY);
-            currentY += 20;
+            this.enchantRandomlyCheckbox.setX(gridX);
+            this.enchantRandomlyCheckbox.setY(gridY + 14 + gridGapY);
+
+            this.enchantWithLevelsCheckbox.setX(gridX + cellW + gridGapX);
+            this.enchantWithLevelsCheckbox.setY(gridY + 14 + gridGapY);
+
+            currentY = gridY + gridH + panelPadding + 2;
 
             boolean showEnchantLevels = this.enchantWithLevelsCheckbox.isSelected();
 
-            this.enchantLevelsMinSlider.setX(bodyX + 18);
+            this.enchantLevelsMinSlider.setX(bodyX + 4);
             this.enchantLevelsMinSlider.setY(currentY);
-            this.enchantLevelsMinSlider.setWidth((sliderW - 22) / 2);
+            this.enchantLevelsMinSlider.setWidth((sliderW - 12) / 2);
 
             this.enchantLevelsMaxSlider.setX(this.enchantLevelsMinSlider.getX() + this.enchantLevelsMinSlider.getWidth() + 4);
             this.enchantLevelsMaxSlider.setY(currentY);
-            this.enchantLevelsMaxSlider.setWidth((sliderW - 22) / 2);
+            this.enchantLevelsMaxSlider.setWidth((sliderW - 12) / 2);
 
             if (showEnchantLevels) {
                 currentY += 24;
             }
 
             updateEnchantControlsVisibility();
+
+            // Store grid bounds for rendering the panel border
+            this.checkboxGridX = gridX - panelPadding;
+            this.checkboxGridY = gridY - panelPadding;
+            this.checkboxGridW = gridW + panelPadding * 2;
+            this.checkboxGridH = gridH + panelPadding * 2;
 
             int buttonY = currentY + 8;
             int maxButtonY = this.modalY + this.modalH - 26;
@@ -1334,7 +1396,17 @@ public class LootStudioScreen extends Screen {
             if (raw.startsWith("#")) {
                 ResourceLocation tag = tryParseResource(raw.substring(1));
                 if (tag == null) return null;
-                return new ParsedInputTarget(TargetType.TAG, null, tag, null, new ItemStack(Items.CHEST), "Tag: #" + tag);
+                // Validação rigorosa: só aceita tags que existem no servidor
+                boolean tagsLoaded = LootStudioScreen.this.tagsRequested && !LootStudioScreen.this.knownItemTags.isEmpty();
+                boolean isKnown = tagsLoaded && LootStudioScreen.this.knownItemTags.contains(tag);
+                if (!tagsLoaded) {
+                    // Tags ainda não carregadas — estado neutro (permitir temporariamente)
+                    return new ParsedInputTarget(TargetType.TAG, null, tag, null, new ItemStack(Items.NAME_TAG), "Tag: #" + tag);
+                }
+                if (!isKnown) {
+                    return null; // Tag não existe no servidor → inválida
+                }
+                return new ParsedInputTarget(TargetType.TAG, null, tag, null, new ItemStack(Items.NAME_TAG), "Tag: #" + tag);
             }
 
             if (raw.startsWith("@")) {
