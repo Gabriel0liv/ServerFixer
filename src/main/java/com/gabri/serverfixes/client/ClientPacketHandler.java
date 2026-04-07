@@ -177,4 +177,32 @@ public class ClientPacketHandler {
             recipeStudioScreen.applyRecipeListFromServer(recipes);
         }
     }
+
+    // ===================== Function Studio Handlers =====================
+
+    public static void handleFunctionList(List<com.gabri.serverfixes.client.gui.FunctionEntry> functions) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.screen instanceof com.gabri.serverfixes.client.gui.FunctionStudioScreen functionStudioScreen) {
+            functionStudioScreen.applyFunctionListFromServer(functions);
+        }
+    }
+
+    public static void handleFunctionContent(net.minecraft.resources.ResourceLocation functionId, List<String> content) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.screen instanceof com.gabri.serverfixes.client.gui.FunctionStudioScreen functionStudioScreen) {
+            functionStudioScreen.applyFunctionContentFromServer(functionId, content);
+        }
+    }
+
+    public static void handleOpenFunctionStudio() {
+        Minecraft minecraft = Minecraft.getInstance();
+        LocalPlayer player = minecraft.player;
+        if (player == null || !player.hasPermissions(2)) {
+            if (player != null) {
+                player.displayClientMessage(Component.literal("§cAcesso negado: requer OP."), true);
+            }
+            return;
+        }
+        minecraft.setScreen(new com.gabri.serverfixes.client.gui.FunctionStudioScreen());
+    }
 }

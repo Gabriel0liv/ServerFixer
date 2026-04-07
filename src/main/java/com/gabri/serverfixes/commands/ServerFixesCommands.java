@@ -308,6 +308,10 @@ public class ServerFixesCommands {
         root.then(Commands.literal("recipe_studio")
             .executes(ctx -> openRecipeStudio(ctx.getSource())));
 
+        // /serverfixes function_studio
+        root.then(Commands.literal("function_studio")
+            .executes(ctx -> openFunctionStudio(ctx.getSource())));
+
         LiteralCommandNode<CommandSourceStack> baseNode = dispatcher.register(root);
 
         // Alias /sfx -> redireciona para /serverfixes sem duplicar a árvore
@@ -441,6 +445,21 @@ public class ServerFixesCommands {
             com.gabri.serverfixes.network.NetworkHandler.sendToPlayer((net.minecraft.server.level.ServerPlayer) player,
                 new com.gabri.serverfixes.network.OpenRecipeStudioPacket());
             source.sendSuccess(() -> Component.literal("Abrindo Recipe Studio...").withStyle(ChatFormatting.GREEN), false);
+            return 1;
+        }
+        source.sendFailure(Component.literal("Este comando só pode ser usado por jogadores."));
+        return 0;
+    }
+
+    private static int openFunctionStudio(CommandSourceStack source) {
+        if (source.getEntity() instanceof Player player) {
+            if (!player.isCreative()) {
+                source.sendFailure(Component.literal("Este comando só pode ser usado no modo Criativo."));
+                return 0;
+            }
+            com.gabri.serverfixes.network.NetworkHandler.sendToPlayer((net.minecraft.server.level.ServerPlayer) player,
+                new com.gabri.serverfixes.network.OpenFunctionStudioPacket());
+            source.sendSuccess(() -> Component.literal("Abrindo Function Studio...").withStyle(ChatFormatting.GREEN), false);
             return 1;
         }
         source.sendFailure(Component.literal("Este comando só pode ser usado por jogadores."));

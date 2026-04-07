@@ -229,6 +229,43 @@ public class NetworkHandler {
                 .encoder(OpenRecipeStudioPacket::toBytes)
                 .consumerMainThread(OpenRecipeStudioPacket::handle)
                 .add();
+
+        // Function Studio packets
+        INSTANCE.messageBuilder(RequestFunctionListPacket.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
+                .decoder(RequestFunctionListPacket::new)
+                .encoder(RequestFunctionListPacket::toBytes)
+                .consumerMainThread(RequestFunctionListPacket::handle)
+                .add();
+
+        INSTANCE.messageBuilder(SPSendFunctionListPacket.class, packetId++, NetworkDirection.PLAY_TO_CLIENT)
+                .decoder(SPSendFunctionListPacket::new)
+                .encoder(SPSendFunctionListPacket::toBytes)
+                .consumerMainThread(SPSendFunctionListPacket::handle)
+                .add();
+
+        INSTANCE.messageBuilder(RequestFunctionContentPacket.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
+                .decoder(RequestFunctionContentPacket::new)
+                .encoder(RequestFunctionContentPacket::toBytes)
+                .consumerMainThread(RequestFunctionContentPacket::handle)
+                .add();
+
+        INSTANCE.messageBuilder(SPSendFunctionContentPacket.class, packetId++, NetworkDirection.PLAY_TO_CLIENT)
+                .decoder(SPSendFunctionContentPacket::new)
+                .encoder(SPSendFunctionContentPacket::toBytes)
+                .consumerMainThread(SPSendFunctionContentPacket::handle)
+                .add();
+
+        INSTANCE.messageBuilder(SaveFunctionPacket.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
+                .decoder(SaveFunctionPacket::new)
+                .encoder(SaveFunctionPacket::toBytes)
+                .consumerMainThread(SaveFunctionPacket::handle)
+                .add();
+
+        INSTANCE.messageBuilder(OpenFunctionStudioPacket.class, packetId++, NetworkDirection.PLAY_TO_CLIENT)
+                .decoder(OpenFunctionStudioPacket::new)
+                .encoder(OpenFunctionStudioPacket::toBytes)
+                .consumerMainThread(OpenFunctionStudioPacket::handle)
+                .add();
     }
 
     public static void sendToPlayer(ServerPlayer player, Object message) {

@@ -1,17 +1,19 @@
 package com.gabri.serverfixes.client.gui;
 
-import com.gabri.serverfixes.client.gui.editor.AbstractEditorScreen;
-import com.gabri.serverfixes.client.gui.editor.SelectableEditBox;
 import com.gabri.serverfixes.network.NetworkHandler;
 import com.gabri.serverfixes.network.UpdateServerConfigPacket;
-import net.minecraft.client.gui.GuiGraphics;
+import com.gabri.serverfixes.client.gui.editor.SelectableEditBox;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.Mth;
 import org.jetbrains.annotations.NotNull;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -20,91 +22,71 @@ import java.util.Map;
 import java.util.Objects;
 
 @SuppressWarnings("all")
-public class AdminPanelScreen extends AbstractEditorScreen {
+public class AdminPanelScreen extends Screen {
     private final CompoundTag configData;
+    
+    // Layout Constants
     private static final int OUTER_MARGIN = 8;
     private static final int INNER_MARGIN = 8;
-    private static final int HEADER_HEIGHT = 20;
-    private static final int BAR_HEIGHT = 16;
-    private static final int FOOTER_HEIGHT = 24;
-    private static final int FIXED_SIDEBAR_WIDTH = 150;
     private static final int CATEGORY_BUTTON_HEIGHT = 20;
     private static final int CATEGORY_BUTTON_GAP = 4;
+    private static final int FOOTER_BUTTON_WIDTH = 100;
+    private static final int FOOTER_BUTTON_GAP = 10;
+    private static final int TOGGLE_WIDTH = 50;
+    private static final int RESET_BUTTON_WIDTH = 20;
+    private static final int RESET_BUTTON_GAP = 4;
     private static final int ROW_HEIGHT = 32;
-    private static final int RESET_BUTTON_WIDTH = 24;
-    private static final int RESET_BUTTON_GAP = 6;
+    private static final int FORM_RIGHT_MARGIN = 16;
     private static final int FIELD_LABEL_MARGIN = 10;
-    private static final int FORM_RIGHT_MARGIN = 12;
-    private static final int TOGGLE_WIDTH = 60;
-    private static final int FOOTER_BUTTON_WIDTH = 90;
-    private static final int FOOTER_BUTTON_GAP = 20;
-    private static final int SCROLLBAR_WIDTH = 6;
-    private final List<RowInfo> rowInfos = new ArrayList<>();
-    private final Map<String, FieldType> fieldTypes = new LinkedHashMap<>();
-    private final Map<String, Object> baselineValues = new LinkedHashMap<>();
-    private final Map<String, Object> pendingValues = new LinkedHashMap<>();
-    private final List<String> activeCategoryKeys = new ArrayList<>();
+    private static final int BAR_HEIGHT = 26;
+    private static final int SCROLLBAR_WIDTH = 8;
+
+    // Dimensions
     private int frameX, frameY, frameW, frameH, headerY, barY, sidebarX, sidebarY, sidebarW, sidebarH;
-    private int contentX, contentY, contentW, contentH, footerY;
+    private int contentX, contentY, contentW, contentH;
+    private int footerY;
     private Category currentCategory = Category.MAIN;
 
-    // Scroll
+    // Scroll State
     private int scrollOffset = 0;
     private int maxScroll = 0;
     private int contentStartY = 0;
     private boolean isDraggingScrollbar = false;
 
-    // Tooltips - mapeia widget -> tooltip
+    // Widgets tracking
+    private final List<RowInfo> rowInfos = new ArrayList<>();
+    private final List<String> activeCategoryKeys = new ArrayList<>();
+    private final Map<String, FieldType> fieldTypes = new LinkedHashMap<>();
     private final Map<Object, List<String>> widgetTooltips = new java.util.IdentityHashMap<>();
-    // Y original de cada widget (para scroll)
     private final Map<Object, Integer> widgetOriginalY = new java.util.IdentityHashMap<>();
+    private final Map<String, Object> baselineValues = new LinkedHashMap<>();
+    private final Map<String, Object> pendingValues = new LinkedHashMap<>();
+    
+    // Sidebar Buttons
+    private final List<Button> sidebarButtons = new ArrayList<>();
     private List<String> currentHoverTooltip = null;
 
     public enum Category {
         MAIN("Painel Administrativo"),
         SERVER("Configurações do Servidor"),
         THROTTLE("Otimizações & Perf"),
-        FIXES("Fixes & Balanço"),
-        DEBUG("Debug & Status");
+        FIXES("Correções & Tweaks"),
+        DEBUG("Depuração");
 
-        public final String title;
+        final String title;
         Category(String title) { this.title = title; }
     }
 
+    private static class RowInfo {
+        final String label;
+        final int y;
+        RowInfo(String label, int y) { this.label = label; this.y = y; }
+    }
+
     public AdminPanelScreen(CompoundTag configData) {
-        super(Component.literal("ServerFixes Admin Hub"));
+        super(Component.literal("§6§lAdmin Panel"));
         this.configData = configData;
-        initTooltips();
     }
-
-    private void initTooltips() {
-        tooltips.clear();
-        tooltips.put("throttleFarmAndCharm", List.of("§6Throttle Farm & Charm", "§7Reduz ticking dos blocos do mod Farm & Charm."));
-        tooltips.put("cookingPotTickRate", List.of("§6Rate Cooking Pot", "§7Frequência que o Cooking Pot processa comida (segundos)."));
-        tooltips.put("roasterTickRate", List.of("§6Rate Roaster", "§7Frequência que o Roaster processa comida (segundos)."));
-        tooltips.put("throttleVinery", List.of("§6Throttle Vinery", "§7Reduz ticking do Barril de Fermentação do mod Vinery."));
-        tooltips.put("fermentationBarrelTickRate", List.of("§6Rate Fermentation Barrel", "§7Frequência que o Barril fermenta (segundos)."));
-        tooltips.put("enableEntityCulling", List.of("§6Entity Culling", "§7Entities param de tickar quando players estão longe."));
-        tooltips.put("entityCullingDistance", List.of("§6Distância Culling", "§7Distância (blocos) para entities pararem de tickar."));
-        tooltips.put("cullSuperGlue", List.of("§6Cull SuperGlue", "§7Pula tick de Super Glues do Create sem players perto."));
-        tooltips.put("cullBotania", List.of("§6Cull Botania", "§7Pula tick de Mana Bursts e Portals sem players perto."));
-        tooltips.put("throttleIdleContraptions", List.of("§6Throttle Contraptions AFK", "§7Reduz ticking de contraptions paradas sem players."));
-        tooltips.put("contraptionIdleThrottleRate", List.of("§6Rate Throttle AFK", "§7Frequência que contraptions AFK são verificadas (segundos)."));
-        tooltips.put("enableAntiSwap", List.of("§6Anti-Swap Exploit", "§7Previne troca de arma no mesmo tick para dano indevido."));
-        tooltips.put("enableInfiniteTrades", List.of("§6Trocas Infinitas", "§7Players com tag resetam usos de villagers."));
-        tooltips.put("infiniteTradeTag", List.of("§6Tag p/ Trocas Infinitas", "§7Tag NBT necessária no player."));
-        tooltips.put("fixBackstabbingExploit", List.of("§6Fix Backstabbing", "§7Corrige bug de magias abusando Backstabbing."));
-        tooltips.put("nerfTurtleMaster", List.of("§6Nerf Turtle Master", "§7Limita níveis de Resistance e Slowness."));
-        tooltips.put("turtleMasterResistance", List.of("§6Res. Turtle (Padrão)", "§7Nível máximo de Resistance da poção normal."));
-        tooltips.put("strongTurtleMasterResistance", List.of("§6Res. Turtle (Forte)", "§7Nível máximo de Resistance da poção forte."));
-        tooltips.put("debugDamageReceived", List.of("§6Debug Dano Recebido", "§7Loga dano recebido no chat."));
-        tooltips.put("debugDamageDealt", List.of("§6Debug Dano Causado", "§7Loga dano causado no chat."));
-        tooltips.put("debugDamageBreakdown", List.of("§6Detalhamento de Dano", "§7Mostra reduções de armadura/proteção."));
-        tooltips.put("debugVillagers", List.of("§6Debug Villagers", "§7Loga interações com villagers."));
-        tooltips.put("debugAntiSwap", List.of("§6Debug Anti-Swap", "§7Loga ataques cancelados pelo Anti-Swap."));
-    }
-
-    private final Map<String, List<String>> tooltips = new LinkedHashMap<>();
 
     @Override
     protected void init() {
@@ -112,15 +94,14 @@ public class AdminPanelScreen extends AbstractEditorScreen {
         if (this.minecraft == null) return;
         this.clearWidgets();
         this.rowInfos.clear();
-        this.widgetTooltips.clear();
-        this.widgetOriginalY.clear();
+        
         computeLayout();
         buildSidebar();
 
         if (currentCategory == Category.MAIN) {
             initMainPage(this.contentX, this.contentY, this.contentW, this.contentH);
         } else {
-            initCategoryPage(this.contentX, this.contentW, this.contentY + 16);
+            initCategoryPage(this.contentX, this.contentW, this.contentY);
         }
 
         int totalButtonsW = FOOTER_BUTTON_WIDTH * 2 + FOOTER_BUTTON_GAP;
@@ -133,12 +114,16 @@ public class AdminPanelScreen extends AbstractEditorScreen {
                 if (client != null) client.setScreen(null);
             } else {
                 this.currentCategory = Category.MAIN;
+                this.scrollOffset = 0;
                 this.init();
             }
         }).bounds(leftX, this.footerY, FOOTER_BUTTON_WIDTH, 20).build());
 
         PulsingButton saveBtn = new PulsingButton(rightX, this.footerY, FOOTER_BUTTON_WIDTH, 20, Component.literal("§bSalvar"), (btn) -> {
-            if (!hasPendingChanges()) { ((PulsingButton)btn).pulseError(800); return; }
+            if (!hasPendingChanges()) {
+                ((PulsingButton)btn).pulseError(800);
+                return;
+            }
             savePendingChanges();
         });
         saveBtn.active = this.currentCategory != Category.MAIN && hasPendingChanges();
@@ -146,52 +131,68 @@ public class AdminPanelScreen extends AbstractEditorScreen {
     }
 
     private void computeLayout() {
-        this.frameX = OUTER_MARGIN;
-        this.frameY = OUTER_MARGIN;
-        this.frameW = Math.max(240, this.width - OUTER_MARGIN * 2);
-        this.frameH = Math.max(170, this.height - OUTER_MARGIN * 2);
-        this.headerY = this.frameY + 6;
-        this.barY = this.headerY + HEADER_HEIGHT + 4;
-        this.footerY = this.frameY + this.frameH - FOOTER_HEIGHT;
+        int screenWidth = this.width;
+        int screenHeight = this.height;
+
+        this.frameW = Math.min(900, screenWidth - OUTER_MARGIN * 2);
+        this.frameH = Math.min(600, screenHeight - OUTER_MARGIN * 2);
+
+        this.frameX = (screenWidth - this.frameW) / 2;
+        this.frameY = (screenHeight - this.frameH) / 2;
+
+        this.headerY = this.frameY;
+        this.barY = this.frameY + BAR_HEIGHT;
 
         this.sidebarX = this.frameX + INNER_MARGIN;
-        this.sidebarY = this.barY + BAR_HEIGHT + 6;
-        this.sidebarH = Math.max(90, this.footerY - this.sidebarY - 8);
-
-        int maxSidebarAllowed = Math.max(120, this.frameW - 260);
+        this.sidebarY = this.barY + INNER_MARGIN; 
+        this.sidebarH = this.frameH - (this.barY - this.frameY) - INNER_MARGIN * 2;
+        int FIXED_SIDEBAR_WIDTH = 160;
+        int maxSidebarAllowed = (this.frameW / 3) - INNER_MARGIN;
         this.sidebarW = Math.min(FIXED_SIDEBAR_WIDTH, maxSidebarAllowed);
 
         this.contentX = this.sidebarX + this.sidebarW + INNER_MARGIN;
-        this.contentY = this.sidebarY;
-        this.contentW = Math.max(140, this.frameX + this.frameW - INNER_MARGIN - this.contentX);
-        this.contentH = Math.max(90, this.footerY - this.contentY - 8);
+        this.contentY = this.barY + INNER_MARGIN;
+        this.contentW = (this.frameX + this.frameW) - this.contentX - INNER_MARGIN;
+        this.contentH = this.frameH - (this.barY - this.frameY) - INNER_MARGIN * 2;
+        
+        this.contentStartY = this.contentY; 
+        this.footerY = this.frameY + this.frameH - 30;
     }
 
     private void buildSidebar() {
         int y = this.sidebarY + 4;
         int buttonX = this.sidebarX + 4;
         int buttonW = Math.max(80, this.sidebarW - 8);
+        sidebarButtons.clear();
+        
         for (Category category : Category.values()) {
             final Category cat = category;
             boolean active = this.currentCategory == cat;
             Component label = Component.literal((active ? "§6> " : "") + cat.title);
-            this.addRenderableWidget(Button.builder(label, (btn) -> {
+            
+            Button btn = Button.builder(label, (btn2) -> {
                 this.currentCategory = cat;
-                this.scrollOffset = 0; // Reset scroll ao trocar de categoria
+                this.scrollOffset = 0; 
                 this.init();
-            }).bounds(buttonX, y, buttonW, CATEGORY_BUTTON_HEIGHT).build());
+            }).bounds(buttonX, y, buttonW, CATEGORY_BUTTON_HEIGHT).build();
+            
+            sidebarButtons.add(btn);
             y += CATEGORY_BUTTON_HEIGHT + CATEGORY_BUTTON_GAP;
         }
     }
 
     private void initMainPage(int contentStartX, int contentStartY, int contentWidth, int contentHeight) {
-        // Home usa apenas o painel de conteúdo único para evitar redundância visual.
     }
 
     private void initCategoryPage(int contentStartX, int contentWidth, int startY) {
         this.activeCategoryKeys.clear();
+        this.widgetOriginalY.clear();
+        this.widgetTooltips.clear();
+        
+        loadBaselineForCategory();
+
         int y = startY;
-        this.contentStartY = startY;
+        this.contentStartY = startY; 
         int totalContentHeight = 0;
 
         int labelX = contentStartX + FIELD_LABEL_MARGIN;
@@ -210,76 +211,54 @@ public class AdminPanelScreen extends AbstractEditorScreen {
                 addRow("enableInfiniteTrades", "Trocas Infinitas", FieldType.BOOLEAN, y, toggleX, resetX, inputX, inputWidth); y += ROW_HEIGHT;
                 addRow("infiniteTradeTag", "Tag p/ Trocas Infinitas", FieldType.STRING, y, toggleX, resetX, inputX, inputWidth); y += ROW_HEIGHT;
                 totalContentHeight = y - startY;
-                this.maxScroll = Math.max(0, totalContentHeight - this.contentH);
-                this.scrollOffset = Math.max(0, Math.min(scrollOffset, maxScroll));
-                applyScroll();
                 break;
             case THROTTLE:
-                // Farm & Charm
                 addSectionLabel("§6§lFarm & Charm", y); y += 24;
                 addRow("throttleFarmAndCharm", "Throttle Farm&Charm", FieldType.BOOLEAN, y, toggleX, resetX, inputX, inputWidth); y += ROW_HEIGHT;
-                addRow("cookingPotTickRate", "Rate Cooking Pot", FieldType.SECONDS_TO_TICKS, y, toggleX, resetX, inputX, inputWidth); y += ROW_HEIGHT;
-                addRow("roasterTickRate", "Rate Roaster", FieldType.SECONDS_TO_TICKS, y, toggleX, resetX, inputX, inputWidth); y += ROW_HEIGHT + 4;
+                addRow("cookingPotTickRate", "Rate Cooking Pot (Seg)", FieldType.SECONDS_TO_TICKS, y, toggleX, resetX, inputX, inputWidth); y += ROW_HEIGHT;
+                addRow("roasterTickRate", "Rate Roaster (Seg)", FieldType.SECONDS_TO_TICKS, y, toggleX, resetX, inputX, inputWidth); y += ROW_HEIGHT + 4;
 
-                // Vinery
                 addSectionLabel("§6§lVinery", y); y += 24;
                 addRow("throttleVinery", "Throttle Vinery", FieldType.BOOLEAN, y, toggleX, resetX, inputX, inputWidth); y += ROW_HEIGHT;
-                addRow("fermentationBarrelTickRate", "Rate Barrel", FieldType.SECONDS_TO_TICKS, y, toggleX, resetX, inputX, inputWidth); y += ROW_HEIGHT + 4;
+                addRow("fermentationBarrelTickRate", "Rate Barrel (Seg)", FieldType.SECONDS_TO_TICKS, y, toggleX, resetX, inputX, inputWidth); y += ROW_HEIGHT + 4;
 
-                // Entity Culling
                 addSectionLabel("§6§lEntity Culling", y); y += 24;
                 addRow("enableEntityCulling", "Entity Culling", FieldType.BOOLEAN, y, toggleX, resetX, inputX, inputWidth); y += ROW_HEIGHT;
-                addRow("entityCullingDistance", "Distância Culling (Blocos)", FieldType.INTEGER, y, toggleX, resetX, inputX, inputWidth); y += ROW_HEIGHT;
+                addRow("entityCullingDistance", "Distância (Blocos)", FieldType.INTEGER, y, toggleX, resetX, inputX, inputWidth); y += ROW_HEIGHT;
                 addRow("cullSuperGlue", "Cull SuperGlue", FieldType.BOOLEAN, y, toggleX, resetX, inputX, inputWidth); y += ROW_HEIGHT;
                 addRow("cullBotania", "Cull Botania", FieldType.BOOLEAN, y, toggleX, resetX, inputX, inputWidth); y += ROW_HEIGHT + 4;
 
-                // Create Contraptions
                 addSectionLabel("§6§lCreate - Contraptions", y); y += 24;
                 addRow("throttleIdleContraptions", "Throttle Contraptions AFK", FieldType.BOOLEAN, y, toggleX, resetX, inputX, inputWidth); y += ROW_HEIGHT;
-                addRow("contraptionIdleThrottleRate", "Rate Throttle AFK", FieldType.SECONDS_TO_TICKS, y, toggleX, resetX, inputX, inputWidth);
-                totalContentHeight = y - startY + ROW_HEIGHT;
-
-                this.maxScroll = Math.max(0, totalContentHeight - this.contentH);
-                this.scrollOffset = Math.max(0, Math.min(scrollOffset, maxScroll));
-
-                // Aplica scroll a todos os widgets
-                applyScroll();
+                addRow("contraptionIdleThrottleRate", "Rate Throttle AFK (Seg)", FieldType.SECONDS_TO_TICKS, y, toggleX, resetX, inputX, inputWidth); y += ROW_HEIGHT + 12;
+                totalContentHeight = y - startY;
                 break;
             case FIXES:
                 addRow("fixBackstabbingExploit", "Fix Backstabbing", FieldType.BOOLEAN, y, toggleX, resetX, inputX, inputWidth); y += ROW_HEIGHT;
                 addRow("nerfTurtleMaster", "Nerf Turtle Master", FieldType.BOOLEAN, y, toggleX, resetX, inputX, inputWidth); y += ROW_HEIGHT;
                 addRow("turtleMasterResistance", "Res. Turtle (Padrão)", FieldType.INTEGER, y, toggleX, resetX, inputX, inputWidth); y += ROW_HEIGHT;
-                addRow("strongTurtleMasterResistance", "Res. Turtle (Forte)", FieldType.INTEGER, y, toggleX, resetX, inputX, inputWidth);
+                addRow("strongTurtleMasterResistance", "Res. Turtle (Forte)", FieldType.INTEGER, y, toggleX, resetX, inputX, inputWidth); y += ROW_HEIGHT;
                 totalContentHeight = y - startY;
-                this.maxScroll = Math.max(0, totalContentHeight - this.contentH);
-                this.scrollOffset = Math.max(0, Math.min(scrollOffset, maxScroll));
-                applyScroll();
                 break;
             case DEBUG:
                 addRow("debugDamageReceived", "Debug Dano Recebido", FieldType.BOOLEAN, y, toggleX, resetX, inputX, inputWidth); y += ROW_HEIGHT;
                 addRow("debugDamageDealt", "Debug Dano Causado", FieldType.BOOLEAN, y, toggleX, resetX, inputX, inputWidth); y += ROW_HEIGHT;
                 addRow("debugDamageBreakdown", "Detalhamento de Dano", FieldType.BOOLEAN, y, toggleX, resetX, inputX, inputWidth); y += ROW_HEIGHT;
                 addRow("debugVillagers", "Debug Villagers", FieldType.BOOLEAN, y, toggleX, resetX, inputX, inputWidth); y += ROW_HEIGHT;
-                addRow("debugAntiSwap", "Debug Anti-Swap", FieldType.BOOLEAN, y, toggleX, resetX, inputX, inputWidth);
+                addRow("debugAntiSwap", "Debug Anti-Swap", FieldType.BOOLEAN, y, toggleX, resetX, inputX, inputWidth); y += ROW_HEIGHT;
                 totalContentHeight = y - startY;
-                this.maxScroll = Math.max(0, totalContentHeight - this.contentH);
-                this.scrollOffset = Math.max(0, Math.min(scrollOffset, maxScroll));
-                applyScroll();
                 break;
-            default:
-                this.maxScroll = 0;
-                this.scrollOffset = 0;
-                break;
+            default: break;
         }
+
+        this.maxScroll = Math.max(0, totalContentHeight - this.contentH);
+        this.scrollOffset = Math.max(0, Math.min(scrollOffset, maxScroll));
+        applyScroll();
     }
 
-    private void addSectionLabel(String label, int y) {
-        registerRow(label, y);
-    }
-
-    /** Adiciona uma linha completa: label + widget (toggle ou input) + reset */
     private void addRow(String key, String label, FieldType type, int y, int toggleX, int resetX, int inputX, int inputWidth) {
         registerRow(label, y);
+        
         activeCategoryKeys.add(key);
         fieldTypes.put(key, type);
 
@@ -293,7 +272,7 @@ public class AdminPanelScreen extends AbstractEditorScreen {
                 .create(toggleX, y, TOGGLE_WIDTH, 20, Component.empty(), (btn, val) -> pendingValues.put(key, val));
             this.addRenderableWidget(cycleBtn);
             widgetOriginalY.put(cycleBtn, y);
-            widgetTooltips.put(cycleBtn, tooltips.get(key));
+            widgetTooltips.put(cycleBtn, tooltips.getOrDefault(key, List.of("Configuração: " + label)));
         } else {
             String baseline = getBaselineString(key, type);
             String pending = getPendingString(key, baseline);
@@ -304,7 +283,7 @@ public class AdminPanelScreen extends AbstractEditorScreen {
             box.setResponder(newValue -> pendingValues.put(key, newValue));
             this.addRenderableWidget(box);
             widgetOriginalY.put(box, y);
-            widgetTooltips.put(box, tooltips.get(key));
+            widgetTooltips.put(box, tooltips.getOrDefault(key, List.of("Configuração: " + label)));
         }
 
         Button resetBtn = Button.builder(Component.literal("↺"), (btn) -> {
@@ -314,15 +293,24 @@ public class AdminPanelScreen extends AbstractEditorScreen {
         }).bounds(resetX, y, RESET_BUTTON_WIDTH, 20).build();
         this.addRenderableWidget(resetBtn);
         widgetOriginalY.put(resetBtn, y);
-        widgetTooltips.put(resetBtn, tooltips.get(key));
+        widgetTooltips.put(resetBtn, List.of("Resetar para o padrão"));
+    }
+
+    private void addSectionLabel(String label, int y) {
+        registerRow(label, y);
+    }
+
+    private void registerRow(String label, int y) {
+        this.rowInfos.add(new RowInfo(label, y));
     }
 
     private void applyScroll() {
+        int offset = -scrollOffset;
         for (var widget : this.children()) {
-            if (widget instanceof net.minecraft.client.gui.components.AbstractWidget w) {
+            if (widget instanceof AbstractWidget w) {
                 Integer origY = widgetOriginalY.get(w);
                 if (origY != null && origY >= this.contentStartY) {
-                    w.setY(origY - scrollOffset);
+                    w.setY(origY + offset);
                 }
             }
         }
@@ -331,32 +319,49 @@ public class AdminPanelScreen extends AbstractEditorScreen {
     @Override
     public void render(@NotNull GuiGraphics graphics, int mouseX, int mouseY, float partialTicks) {
         this.renderBackground(graphics);
+        
+        // 1. Fundo e Borda Externa
         renderEditorFrame(graphics, Component.literal("§6§l" + currentCategory.title),
             this.frameX, this.frameY, this.frameW, this.frameH,
             this.headerY, this.barY, this.contentY, this.footerY);
-
-        // Painéis de fundo (UMA VEZ SÓ)
+        
+        // 2. PAINÉIS INTERNOS (Desenha os fundos da sidebar e conteúdo)
         GuiLayoutUtils.drawPanel(graphics, this.sidebarX, this.sidebarY, this.sidebarW, this.sidebarH, 0xBF071014, 0xFF3D5564);
         GuiLayoutUtils.drawPanel(graphics, this.contentX, this.contentY, this.contentW, this.contentH, 0xD9182432, 0xFF4E6B8D);
+        
+        // 3. Labels (com scroll offset)
+        renderContentLabels(graphics);
 
-        boolean hasScroll = maxScroll > 0;
+        // 4. Widgets (botões, inputs, etc)
+        super.render(graphics, mouseX, mouseY, partialTicks);
+        
+        // 5. Mascaramento para o Scroll (Cobre o que vaza para fora do painel)
+        graphics.fill(this.contentX, this.frameY, this.contentX + this.contentW, this.contentY, 0xFF12161B);
+        int bottomLimit = this.contentY + this.contentH;
+        graphics.fill(this.contentX, bottomLimit, this.contentX + this.contentW, this.frameY + this.frameH - 30, 0xFF12161B);
 
-        // Renderiza labels (clipping manual)
-        if (currentCategory == Category.MAIN) {
-            renderMainOverview(graphics);
-        } else if (!rowInfos.isEmpty()) {
+        // 6. Scrollbar e Tooltip
+        if (maxScroll > 0) {
+            renderScrollbar(graphics);
+        }
+        renderTooltip(graphics, mouseX, mouseY);
+    }
+
+    private void renderContentLabels(GuiGraphics graphics) {
+        if (currentCategory != Category.MAIN && !rowInfos.isEmpty()) {
             int x = this.contentX + 8;
-            int rowWidth = this.contentW - 16 - SCROLLBAR_WIDTH;
+            int rowWidth = this.contentW - 16;
             int evenOdd = 0;
+            
+            int clipMinY = this.contentY;
+            int clipMaxY = this.contentY + this.contentH;
 
-            for (int i = 0; i < rowInfos.size(); i++) {
-                RowInfo row = rowInfos.get(i);
-                int drawY = row.y;
-                if (hasScroll) {
-                    drawY = row.y - scrollOffset;
-                    if (drawY < this.contentY - ROW_HEIGHT || drawY > this.contentY + this.contentH + ROW_HEIGHT) {
-                        continue;
-                    }
+            for (RowInfo row : rowInfos) {
+                int drawY = row.y - scrollOffset;
+
+                if (drawY + ROW_HEIGHT < clipMinY || drawY > clipMaxY) {
+                    if (!row.label.startsWith("§6§l")) evenOdd++;
+                    continue;
                 }
 
                 boolean isSection = row.label.startsWith("§6§l");
@@ -372,127 +377,65 @@ public class AdminPanelScreen extends AbstractEditorScreen {
                     graphics.fill(x, drawY + 18, x + rowWidth, drawY + 19, 0x44FFD700);
                 }
             }
-        } else {
-            graphics.drawCenteredString(this.font, "§7Selecione uma categoria à esquerda para configurar.", this.contentX + this.contentW / 2, this.contentY + this.contentH / 2, 0xAAAAAA);
         }
+    }
 
-        // Aplica scissor em toda a área do frame (inclui sidebar + conteúdo + footer)
-        // Isso corta widgets que vazaram para fora do frame, mas mantém sidebar/footer visíveis
-        if (hasScroll) {
-            graphics.enableScissor(this.frameX, this.sidebarY, this.frameX + this.frameW, this.footerY + FOOTER_HEIGHT);
-        }
+    private void renderScrollbar(GuiGraphics graphics) {
+        int scrollbarX = this.contentX + this.contentW - SCROLLBAR_WIDTH; 
+        int scrollTrackHeight = this.contentH;
+        
+        graphics.fill(scrollbarX, this.contentY, scrollbarX + SCROLLBAR_WIDTH, this.contentY + this.contentH, 0x33000000);
+        
+        float scrollRatio = (float) scrollOffset / maxScroll;
+        int scrollbarHeight = Math.max(20, (int) (scrollTrackHeight * ((float) (this.contentH) / (this.contentH + maxScroll))));
+        int scrollbarY = this.contentY + (int) (scrollRatio * (scrollTrackHeight - scrollbarHeight));
+        
+        int color = isDraggingScrollbar ? 0xCCFFFFFF : 0xAAFFFFFF;
+        graphics.fill(scrollbarX + 1, scrollbarY, scrollbarX + SCROLLBAR_WIDTH - 1, scrollbarY + scrollbarHeight, color);
+    }
 
-        // Renderiza TODOS os widgets (com scissor ativo se necessário)
-        super.render(graphics, mouseX, mouseY, partialTicks);
-
-        // Remove scissor
-        if (hasScroll) {
-            graphics.disableScissor();
-
-            // Desenha scrollbar por cima
-            int scrollbarX = this.contentX + this.contentW - SCROLLBAR_WIDTH;
-            int scrollTrackHeight = this.contentH;
-            float scrollRatio = (float) scrollOffset / maxScroll;
-            int scrollbarHeight = Math.max(20, (int) (scrollTrackHeight * ((float) (this.contentH) / (this.contentH + maxScroll))));
-            int scrollbarY = this.contentY + (int) (scrollRatio * (scrollTrackHeight - scrollbarHeight));
-
-            graphics.fill(scrollbarX, this.contentY, scrollbarX + SCROLLBAR_WIDTH, this.contentY + this.contentH, 0x33000000);
-            graphics.fill(scrollbarX + 1, scrollbarY, scrollbarX + SCROLLBAR_WIDTH - 1, scrollbarY + scrollbarHeight, 0xAAFFFFFF);
-        }
-
-        // Detecta tooltip (só widgets na área de conteúdo)
+    private void renderTooltip(GuiGraphics graphics, int mouseX, int mouseY) {
         currentHoverTooltip = null;
-        for (var child : this.children()) {
-            if (child instanceof net.minecraft.client.gui.components.AbstractWidget w) {
-                Integer origY = widgetOriginalY.get(w);
-                if (origY != null && origY >= this.contentStartY) {
-                    if (hasScroll) {
-                        int widgetScreenY = w.getY();
-                        if (widgetScreenY < this.contentY - 2 || widgetScreenY + w.getHeight() > this.contentY + this.contentH + 2) {
-                            continue;
-                        }
+        
+        for (Button btn : sidebarButtons) {
+            if (btn.isMouseOver(mouseX, mouseY)) {
+                currentHoverTooltip = List.of("Categoria: " + btn.getMessage().getString());
+                break;
+            }
+        }
+        
+        if (currentHoverTooltip == null) {
+            for (var child : this.children()) {
+                if (child instanceof AbstractWidget w) {
+                    int widgetScreenY = w.getY();
+                    if (widgetScreenY < this.contentY || widgetScreenY + w.getHeight() > this.contentY + this.contentH) {
+                        continue;
                     }
                     if (w.isMouseOver(mouseX, mouseY)) {
                         currentHoverTooltip = widgetTooltips.get(w);
-                        if (currentHoverTooltip != null) break;
+                        if (currentHoverTooltip != null && !currentHoverTooltip.isEmpty()) break;
                     }
                 }
             }
         }
 
-        // Renderiza tooltip POR ÚLTIMO (apenas o tooltip, sem limpar fundo)
         if (currentHoverTooltip != null && !currentHoverTooltip.isEmpty()) {
-            renderTooltip(graphics, currentHoverTooltip, mouseX, mouseY);
+            List<net.minecraft.network.chat.Component> lines = new ArrayList<>();
+            for (String s : currentHoverTooltip) lines.add(Component.literal(s));
+            graphics.renderComponentTooltip(this.font, lines, mouseX, mouseY);
         }
-    }
-
-    private void renderTooltip(GuiGraphics graphics, List<String> lines, int mouseX, int mouseY) {
-        if (lines.isEmpty()) return;
-        int maxWidth = 0;
-        for (String line : lines) {
-            String plain = line.replaceAll("§[0-9a-fk-or]", "");
-            int w = this.font.width(plain);
-            if (w > maxWidth) maxWidth = w;
-        }
-        int paddingX = 8, paddingY = 6;
-        int lineHeight = this.font.lineHeight + 2;
-        int tooltipWidth = maxWidth + paddingX * 2;
-        int tooltipHeight = lines.size() * lineHeight + paddingY * 2;
-
-        int tooltipX = mouseX + 12;
-        int tooltipY = mouseY - tooltipHeight - 8;
-        if (tooltipY < this.contentY) tooltipY = mouseY + 12;
-        if (tooltipX + tooltipWidth > this.width) tooltipX = mouseX - tooltipWidth - 12;
-        if (tooltipX < 0) tooltipX = 4;
-        if (tooltipY + tooltipHeight > this.height) tooltipY = this.height - tooltipHeight - 4;
-
-        graphics.fill(tooltipX - 1, tooltipY - 1, tooltipX + tooltipWidth + 1, tooltipY + tooltipHeight + 1, 0xEE000000);
-        graphics.fill(tooltipX, tooltipY, tooltipX + tooltipWidth, tooltipY + tooltipHeight, 0xDD1A1A2E);
-        graphics.fill(tooltipX - 1, tooltipY - 1, tooltipX + tooltipWidth, tooltipY, 0x665588FF);
-        graphics.fill(tooltipX - 1, tooltipY, tooltipX, tooltipY + tooltipHeight, 0x665588FF);
-        graphics.fill(tooltipX + tooltipWidth, tooltipY, tooltipX + tooltipWidth + 1, tooltipY + tooltipHeight, 0x665588FF);
-        graphics.fill(tooltipX - 1, tooltipY + tooltipHeight, tooltipX + tooltipWidth + 1, tooltipY + tooltipHeight + 1, 0x665588FF);
-
-        int textY = tooltipY + paddingY;
-        for (String line : lines) {
-            graphics.drawString(this.font, line, tooltipX + paddingX, textY, 0xFFFFFFFF);
-            textY += lineHeight;
-        }
-    }
-
-    private void renderMainOverview(GuiGraphics graphics) {
-        int areaX = this.contentX + 10;
-        int areaY = this.contentY + 12;
-        int areaW = Math.max(120, this.contentW - 20);
-        int areaH = Math.max(80, this.contentH - 22);
-        GuiLayoutUtils.drawPanel(graphics, areaX, areaY, areaW, areaH, 0xCC1C2532, 0xFF4E6B8D);
-
-        int textX = areaX + 12;
-        int y = areaY + 12;
-        graphics.drawString(this.font, "§bVisão Geral", textX, y, 0xFFE5F6FF);
-        y += 22;
-        graphics.drawString(this.font, "§7Use a coluna da esquerda para navegar entre categorias.", textX, y, 0xFFBECBDD);
-        y += 16;
-        graphics.drawString(this.font, "§7Painel administrativo separado do editor de itens.", textX, y, 0xFFBECBDD);
-        y += 16;
-        graphics.drawString(this.font, "§7A tela segue o formato do IBE: sidebar + area unica de conteudo.", textX, y, 0xFFBECBDD);
-    }
-
-    @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double scrollY) {
-        if (maxScroll > 0) { // Genérico: qualquer categoria com scroll
-            int scrollAmount = (int) (scrollY * 15);
-            int oldScroll = scrollOffset;
-            scrollOffset = Math.max(0, Math.min(maxScroll, scrollOffset - scrollAmount));
-            if (oldScroll != scrollOffset) applyScroll();
-            return true;
-        }
-        return super.mouseScrolled(mouseX, mouseY, scrollY);
     }
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (maxScroll > 0 && button == 0) { // Genérico
+        for (Button btn : sidebarButtons) {
+            if (btn.isMouseOver(mouseX, mouseY)) {
+                btn.onPress();
+                return true;
+            }
+        }
+
+        if (maxScroll > 0 && button == 0) { 
             int scrollbarX = this.contentX + this.contentW - SCROLLBAR_WIDTH;
             int scrollTrackHeight = this.contentH;
             float scrollRatio = maxScroll > 0 ? (float) scrollOffset / maxScroll : 0;
@@ -526,7 +469,6 @@ public class AdminPanelScreen extends AbstractEditorScreen {
         if (isDraggingScrollbar && maxScroll > 0) {
             int scrollTrackHeight = this.contentH;
             int scrollbarHeight = Math.max(20, (int) (scrollTrackHeight * ((float) (this.contentH) / (this.contentH + maxScroll))));
-            int oldScroll = scrollOffset;
             scrollOffset = (int) ((mouseY - this.contentY - scrollbarHeight / 2.0f) / (scrollTrackHeight - scrollbarHeight) * maxScroll);
             scrollOffset = Math.max(0, Math.min(maxScroll, scrollOffset));
             applyScroll();
@@ -536,15 +478,24 @@ public class AdminPanelScreen extends AbstractEditorScreen {
     }
 
     @Override
-    public boolean isPauseScreen() { return false; }
-
-    private void registerRow(String label, int y) { this.rowInfos.add(new RowInfo(label, y)); }
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollY) {
+        if (maxScroll > 0 && mouseX >= this.contentX && mouseX < this.contentX + this.contentW
+                && mouseY >= this.contentY && mouseY < this.contentY + this.contentH) {
+            scrollOffset -= (int) (scrollY * 25.0D);
+            scrollOffset = Mth.clamp(scrollOffset, 0, maxScroll);
+            applyScroll();
+            return true;
+        }
+        return super.mouseScrolled(mouseX, mouseY, scrollY);
+    }
 
     private boolean hasPendingChanges() {
         for (String key : activeCategoryKeys) {
             FieldType type = fieldTypes.get(key);
             if (type == null) continue;
-            if (!Objects.equals(baselineValues.get(key), pendingValues.get(key))) return true;
+            Object baseline = baselineValues.get(key);
+            Object pending = pendingValues.get(key);
+            if (!Objects.equals(baseline, pending)) return true;
         }
         return false;
     }
@@ -554,9 +505,11 @@ public class AdminPanelScreen extends AbstractEditorScreen {
         for (String key : activeCategoryKeys) {
             FieldType type = fieldTypes.get(key);
             if (type == null) continue;
-            if (!Objects.equals(baselineValues.get(key), pendingValues.get(key))) {
-                sendUpdate(key, pendingValues.get(key), type);
-                baselineValues.put(key, pendingValues.get(key));
+            Object baseline = baselineValues.get(key);
+            Object pending = pendingValues.get(key);
+            if (!Objects.equals(baseline, pending)) {
+                sendUpdate(key, pending, type);
+                baselineValues.put(key, pending);
             }
         }
         this.init();
@@ -573,94 +526,82 @@ public class AdminPanelScreen extends AbstractEditorScreen {
         }
     }
 
-    private boolean getBaselineBoolean(String key) {
-        Object stored = baselineValues.get(key);
-        if (stored instanceof Boolean) return (Boolean) stored;
-        boolean value = configData != null ? configData.getBoolean(key) : false;
-        baselineValues.put(key, value);
-        return value;
+    private void loadBaselineForCategory() {
+        baselineValues.clear();
+        pendingValues.clear();
+        
+        List<String> keys = new ArrayList<>();
+        if (currentCategory == Category.SERVER) {
+            keys.addAll(List.of("enableAntiSwap", "enableInfiniteTrades", "infiniteTradeTag"));
+        } else if (currentCategory == Category.THROTTLE) {
+            keys.addAll(List.of("throttleFarmAndCharm", "cookingPotTickRate", "roasterTickRate", 
+                                "throttleVinery", "fermentationBarrelTickRate",
+                                "enableEntityCulling", "entityCullingDistance", "cullSuperGlue", "cullBotania",
+                                "throttleIdleContraptions", "contraptionIdleThrottleRate"));
+        } else if (currentCategory == Category.FIXES) {
+            keys.addAll(List.of("fixBackstabbingExploit", "nerfTurtleMaster", "turtleMasterResistance", "strongTurtleMasterResistance"));
+        } else if (currentCategory == Category.DEBUG) {
+            keys.addAll(List.of("debugDamageReceived", "debugDamageDealt", "debugDamageBreakdown", "debugVillagers", "debugAntiSwap"));
+        }
+
+        for (String key : keys) {
+            if (configData != null && configData.contains(key)) {
+                FieldType type = getTypeForKey(key);
+                if (type == FieldType.BOOLEAN) baselineValues.put(key, configData.getBoolean(key));
+                else if (type == FieldType.INTEGER) baselineValues.put(key, configData.getInt(key));
+                else if (type == FieldType.LONG) baselineValues.put(key, configData.getLong(key));
+                else baselineValues.put(key, configData.getString(key));
+            } else {
+                baselineValues.put(key, getTypeForKey(key).readDefaultValue());
+            }
+            pendingValues.put(key, baselineValues.get(key));
+        }
+    }
+    
+    private FieldType getTypeForKey(String key) {
+        switch (key) {
+            case "enableAntiSwap": case "enableInfiniteTrades": case "throttleFarmAndCharm": case "throttleVinery":
+            case "enableEntityCulling": case "cullSuperGlue": case "cullBotania": case "throttleIdleContraptions":
+            case "fixBackstabbingExploit": case "nerfTurtleMaster": 
+            case "debugDamageReceived": case "debugDamageDealt": case "debugDamageBreakdown": case "debugVillagers": case "debugAntiSwap":
+                return FieldType.BOOLEAN;
+            case "cookingPotTickRate": case "roasterTickRate": case "fermentationBarrelTickRate":
+            case "entityCullingDistance": case "turtleMasterResistance": case "strongTurtleMasterResistance":
+            case "contraptionIdleThrottleRate":
+                return FieldType.INTEGER;
+            case "infiniteTradeTag": return FieldType.STRING;
+            default: return FieldType.STRING;
+        }
     }
 
-    private boolean getPendingBoolean(String key, boolean fallback) {
-        Object stored = pendingValues.get(key);
-        if (stored instanceof Boolean) return (Boolean) stored;
-        pendingValues.put(key, fallback);
-        return fallback;
+    private final Map<String, List<String>> tooltips = new LinkedHashMap<>();
+    {
+        tooltips.put("enableAntiSwap", List.of("§bAnti-Swap", "§7Ativa proteção contra troca rápida de armas.", "§7Evita abusos de dano."));
+        tooltips.put("throttleFarmAndCharm", List.of("§bThrottle Farm&Charm", "§7Reduz processamento de blocos deste mod.", "§7Melhora o TPS."));
     }
 
-    private String getBaselineString(String key, FieldType type) {
-        Object stored = baselineValues.get(key);
-        if (stored instanceof String) return (String) stored;
-        String value = type.readInputValue(configData, key);
-        baselineValues.put(key, value);
-        return value;
-    }
+    private boolean getBaselineBoolean(String key) { Object o = baselineValues.get(key); return o instanceof Boolean && (Boolean) o; }
+    private boolean getPendingBoolean(String key, boolean def) { Object o = pendingValues.get(key); return o instanceof Boolean ? (Boolean) o : def; }
+    private String getBaselineString(String key, FieldType type) { Object o = baselineValues.get(key); return o != null ? o.toString() : type.readDefaultValue(); }
+    private String getPendingString(String key, String def) { Object o = pendingValues.get(key); return o != null ? o.toString() : def; }
+    
+    private static int parseIntSafe(String s, int def) { try { return Integer.parseInt(s); } catch (Exception e) { return def; } }
+    private static long parseLongSafe(String s, long def) { try { return Long.parseLong(s); } catch (Exception e) { return def; } }
+    private static boolean isValidIntegerInput(String s) { return s.matches("-?\\d*"); }
+    private static boolean isValidSecondsInput(String s) { return s.matches("\\d+"); }
 
-    private String getPendingString(String key, String fallback) {
-        Object stored = pendingValues.get(key);
-        if (stored instanceof String) return (String) stored;
-        String safe = fallback != null ? fallback : "";
-        pendingValues.put(key, safe);
-        return safe;
-    }
-
-    private static String stripWrappingQuotes(String value) {
-        if (value == null) return "";
-        String trimmed = value.trim();
-        if (trimmed.length() >= 2 && trimmed.startsWith("\"") && trimmed.endsWith("\""))
-            return trimmed.substring(1, trimmed.length() - 1);
-        return trimmed;
-    }
-
-    private static int parseIntSafe(String value, int fallback) {
-        try { return Integer.parseInt(stripWrappingQuotes(value)); } catch (Exception ignored) { return fallback; }
-    }
-
-    private static long parseLongSafe(String value, long fallback) {
-        try { return Long.parseLong(stripWrappingQuotes(value)); } catch (Exception ignored) { return fallback; }
-    }
-
-    private static double parseDoubleSafe(String value, double fallback) {
-        try { return Double.parseDouble(stripWrappingQuotes(value).replace(',', '.')); } catch (Exception ignored) { return fallback; }
-    }
-
-    private static boolean isValidIntegerInput(String value) {
-        if (value == null || value.isEmpty() || "-".equals(value)) return true;
-        try { Long.parseLong(value); return true; } catch (Exception ignored) { return false; }
-    }
-
-    private static boolean isValidSecondsInput(String value) {
-        if (value == null || value.isEmpty()) return true;
-        String normalized = value.replace(',', '.');
-        if (".".equals(normalized)) return true;
-        try { double seconds = Double.parseDouble(normalized); return seconds >= 0.05D; } catch (Exception ignored) { return false; }
-    }
-
-    private static int secondsToTicks(String value) {
-        double seconds = parseDoubleSafe(value, 1.0D);
-        if (seconds < 0.05D) seconds = 0.05D;
-        return Math.max(1, (int) Math.round(seconds * 20.0D));
-    }
-
-    private static String ticksToSecondsInput(int ticks) {
-        double seconds = Math.max(1, ticks) / 20.0D;
-        if (Math.abs(seconds - Math.rint(seconds)) < 0.0000001D) return String.valueOf((int) Math.rint(seconds));
-        String value = String.format(java.util.Locale.US, "%.2f", seconds);
-        while (value.endsWith("0")) value = value.substring(0, value.length() - 1);
-        if (value.endsWith(".")) value = value.substring(0, value.length() - 1);
-        return value;
-    }
-
-    private static final class RowInfo {
-        private final String label;
-        private final int y;
-        private RowInfo(String label, int y) { this.label = label; this.y = y; }
+    private void renderEditorFrame(GuiGraphics graphics, Component title, int x, int y, int w, int h, int headerY, int barY, int contentY, int footerY) {
+        graphics.fill(x, y, x + w, y + h, 0xCC12161B);
+        graphics.fill(x, y, x + w, y + BAR_HEIGHT, 0xFF2C3440);
+        graphics.drawString(this.font, title, x + 10, y + 8, 0xFFE5F6FF);
+        graphics.renderOutline(x, y, w, h, 0xFF4E6B8D);
     }
 
     private enum FieldType {
         BOOLEAN("bool") {
             @Override String format(Object value) { return String.valueOf(value instanceof Boolean ? value : false); }
             @Override String readInputValue(CompoundTag source, String key) { return String.valueOf(source != null && source.getBoolean(key)); }
+            @Override String readDefaultValue() { return "false"; }
         },
         STRING("string") {
             @Override String format(Object value) { return stripWrappingQuotes(value != null ? value.toString() : ""); }
@@ -670,34 +611,49 @@ public class AdminPanelScreen extends AbstractEditorScreen {
                 Tag tag = source.get(key);
                 return tag != null ? stripWrappingQuotes(tag.getAsString()) : "";
             }
+            @Override String readDefaultValue() { return ""; }
         },
         INTEGER("int") {
             @Override String format(Object value) { return String.valueOf(parseIntSafe(value != null ? value.toString() : "", 0)); }
             @Override String readInputValue(CompoundTag source, String key) {
                 if (source == null || !source.contains(key)) return "0";
-                return String.valueOf(source.getInt(key));
+                if (source.contains(key, Tag.TAG_INT) || source.contains(key, Tag.TAG_SHORT) || source.contains(key, Tag.TAG_BYTE)) return String.valueOf(source.getInt(key));
+                Tag tag = source.get(key);
+                return String.valueOf(parseIntSafe(tag != null ? tag.getAsString() : "", 0));
             }
+            @Override String readDefaultValue() { return "0"; }
         },
         LONG("long") {
             @Override String format(Object value) { return String.valueOf(parseLongSafe(value != null ? value.toString() : "", 0L)); }
             @Override String readInputValue(CompoundTag source, String key) {
                 if (source == null || !source.contains(key)) return "0";
-                return String.valueOf(source.getLong(key));
+                if (source.contains(key, Tag.TAG_LONG) || source.contains(key, Tag.TAG_INT) || source.contains(key, Tag.TAG_SHORT) || source.contains(key, Tag.TAG_BYTE)) return String.valueOf(source.getLong(key));
+                Tag tag = source.get(key);
+                return String.valueOf(parseLongSafe(tag != null ? tag.getAsString() : "", 0L));
             }
+            @Override String readDefaultValue() { return "0"; }
         },
         SECONDS_TO_TICKS("int") {
             @Override String format(Object value) { return String.valueOf(secondsToTicks(value != null ? value.toString() : "")); }
             @Override String readInputValue(CompoundTag source, String key) {
                 if (source == null || !source.contains(key)) return "1";
-                int ticks = source.contains(key, Tag.TAG_INT) ? source.getInt(key) : 20;
-                return ticksToSecondsInput(ticks);
+                int ticks;
+                if (source.contains(key, Tag.TAG_INT) || source.contains(key, Tag.TAG_SHORT) || source.contains(key, Tag.TAG_BYTE) || source.contains(key, Tag.TAG_LONG)) ticks = source.getInt(key);
+                else { Tag tag = source.get(key); ticks = parseIntSafe(tag != null ? tag.getAsString() : "", 20); }
+                return String.valueOf(Math.max(1, ticks / 20));
             }
+            @Override String readDefaultValue() { return "1"; }
         };
 
         private final String packetName;
         FieldType(String packetName) { this.packetName = packetName; }
         abstract String format(Object value);
         String readInputValue(CompoundTag source, String key) { if (source == null || !source.contains(key)) return ""; Tag tag = source.get(key); return tag != null ? stripWrappingQuotes(tag.getAsString()) : ""; }
+        abstract String readDefaultValue();
         public String packetName() { return packetName; }
     }
+
+    private static String stripWrappingQuotes(String s) { if (s.length() >= 2 && s.startsWith("\"") && s.endsWith("\"")) return s.substring(1, s.length() - 1); return s; }
+    private static String secondsToTicks(String s) { try { return String.valueOf(Integer.parseInt(s) * 20); } catch (Exception e) { return "20"; } }
+    private static String ticksToSecondsInput(String ticks) { try { return String.valueOf(Math.max(1, Integer.parseInt(ticks) / 20)); } catch (Exception e) { return "1"; } }
 }

@@ -40,6 +40,16 @@ public class ServerFixesMixinPlugin implements IMixinConfigPlugin {
             return isClassPresent("vazkii.botania.common.entity.ManaBurstEntity");
         }
 
+        // Entity Culling - Alfheim Portal (Botania)
+        if (mixinClassName.contains("AlfheimPortalCullingMixin")) {
+            return isClassPresent("vazkii.botania.common.block.tile.TileAlfheimPortal");
+        }
+
+        // Contraption Idle Throttling (Create)
+        if (mixinClassName.contains("ContraptionIdleThrottlingMixin")) {
+            return isClassPresent("com.simibubi.create.content.contraptions.ContraptionEntity");
+        }
+
         return true;
     }
 
