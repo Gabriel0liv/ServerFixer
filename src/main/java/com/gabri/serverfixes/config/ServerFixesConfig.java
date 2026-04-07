@@ -38,6 +38,14 @@ public class ServerFixesConfig {
     public static final ForgeConfigSpec.BooleanValue THROTTLE_VINERY;
     public static final ForgeConfigSpec.IntValue FERMENTATION_BARREL_TICK_RATE;
 
+    // Entity Culling (NOVO - Otimizações seguras)
+    public static final ForgeConfigSpec.BooleanValue ENABLE_ENTITY_CULLING;
+    public static final ForgeConfigSpec.IntValue ENTITY_CULLING_DISTANCE;
+    public static final ForgeConfigSpec.BooleanValue CULL_SUPER_GLUE;
+    public static final ForgeConfigSpec.BooleanValue CULL_BOTANIA;
+    public static final ForgeConfigSpec.BooleanValue THROTTLE_IDLE_CONTRAPTIONS;
+    public static final ForgeConfigSpec.IntValue CONTRAPTION_IDLE_THROTTLE_RATE;
+
     static {
         BUILDER.push("General Settings");
 
@@ -142,6 +150,47 @@ public class ServerFixesConfig {
         FERMENTATION_BARREL_TICK_RATE = BUILDER
                 .comment("Tick rate for Fermentation Barrel (e.g., 20 = once per second).")
                 .defineInRange("fermentationBarrelTickRate", 20, 1, 1000);
+
+        BUILDER.pop();
+
+        BUILDER.push("Entity Culling");
+
+        ENABLE_ENTITY_CULLING = BUILDER
+                .comment("Enable entity culling optimization. Entities far from players will skip unnecessary processing.",
+                         "Does NOT affect contraptions, farms, or trains - only cosmetic/superficial entities.",
+                         "Default: true")
+                .define("enableEntityCulling", true);
+
+        ENTITY_CULLING_DISTANCE = BUILDER
+                .comment("Distance (in blocks) from players at which entities start being culled.",
+                         "Lower = more aggressive culling. Higher = more entities kept active.",
+                         "Default: 64 blocks")
+                .defineInRange("entityCullingDistance", 64, 32, 256);
+
+        CULL_SUPER_GLUE = BUILDER
+                .comment("Cull Super Glue entities from Create when no players are nearby.",
+                         "Safe: Does NOT affect assembled contraptions or farms.",
+                         "Only skips glue connection checks when nobody is around.")
+                .define("cullSuperGlue", true);
+
+        CULL_BOTANIA = BUILDER
+                .comment("Cull Botania entities (Mana Bursts, Alfheim Portals) when no players are nearby.",
+                         "Mana Bursts: Stop particle sync and movement checks.",
+                         "Alheim Portals: Pause entity transformation checks.",
+                         "WARNING: May affect AFK farms using Botania.")
+                .define("cullBotania", false);
+
+        THROTTLE_IDLE_CONTRAPTIONS = BUILDER
+                .comment("Throttle idle contraptions (elevators, stationary structures) when no players are nearby.",
+                         "Safe: Does NOT affect moving trains or active farms.",
+                         "Only reduces processing for stationary contraptions.")
+                .define("throttleIdleContraptions", true);
+
+        CONTRAPTION_IDLE_THROTTLE_RATE = BUILDER
+                .comment("Tick rate for idle contraptions (e.g., 100 = check every 5 seconds).",
+                         "Higher = less CPU usage but slower response when players return.",
+                         "Default: 100 ticks (5 seconds)")
+                .defineInRange("contraptionIdleThrottleRate", 100, 20, 400);
 
         BUILDER.pop();
         SPEC = BUILDER.build();

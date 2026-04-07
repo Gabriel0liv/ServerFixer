@@ -30,6 +30,16 @@ public class ServerFixesMixinPlugin implements IMixinConfigPlugin {
             return isClassPresent("net.satisfy.vinery.core.registry.EntityTypeRegistry");
         }
 
+        // Entity Culling - Super Glue (Create)
+        if (mixinClassName.contains("SuperGlueCullingMixin")) {
+            return isClassPresent("com.simibubi.create.content.contraptions.glue.SuperGlueEntity");
+        }
+
+        // Entity Culling - Mana Burst (Botania)
+        if (mixinClassName.contains("ManaBurstCullingMixin")) {
+            return isClassPresent("vazkii.botania.common.entity.ManaBurstEntity");
+        }
+
         return true;
     }
 

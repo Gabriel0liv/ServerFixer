@@ -93,6 +93,19 @@ public class ClientPacketHandler {
         minecraft.setScreen(new com.gabri.serverfixes.client.gui.EntityTagStudioScreen());
     }
 
+    public static void handleOpenRecipeStudio() {
+        Minecraft minecraft = Minecraft.getInstance();
+        LocalPlayer player = minecraft.player;
+        if (player == null || !player.hasPermissions(2)) {
+            if (player != null) {
+                player.displayClientMessage(Component.literal("§cAcesso negado: requer OP."), true);
+            }
+            return;
+        }
+
+        minecraft.setScreen(new com.gabri.serverfixes.client.gui.RecipeStudioScreen());
+    }
+
     public static void handleOpenLootStudio() {
         Minecraft minecraft = Minecraft.getInstance();
         LocalPlayer player = minecraft.player;
@@ -155,6 +168,13 @@ public class ClientPacketHandler {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.screen instanceof com.gabri.serverfixes.client.gui.EntityTagStudioScreen entityTagStudioScreen) {
             entityTagStudioScreen.applyTagsFromServer(tags);
+        }
+    }
+
+    public static void handleRecipeList(List<com.gabri.serverfixes.client.gui.RecipeBasicDTO> recipes) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.screen instanceof com.gabri.serverfixes.client.gui.RecipeStudioScreen recipeStudioScreen) {
+            recipeStudioScreen.applyRecipeListFromServer(recipes);
         }
     }
 }
