@@ -35,7 +35,6 @@ import java.util.Objects;
  */
 @SuppressWarnings("all")
 public class AdminPanelScreen extends Screen {
-    private static final org.apache.logging.log4j.Logger LOGGER = org.apache.logging.log4j.LogManager.getLogger("ServerFixes/AdminPanel");
     private final CompoundTag configData;
 
     // Layout Constants
@@ -44,10 +43,16 @@ public class AdminPanelScreen extends Screen {
     private static final int FOOTER_HEIGHT = 32;
     private static final int SIDEBAR_WIDTH = 160;
     private static final int ROW_HEIGHT = 28;
-    private static final int SECTION_HEIGHT = 24;
     private static final int SCROLLBAR_WIDTH = 6;
     private static final int FOOTER_BTN_W = 90;
     private static final int FOOTER_GAP = 10;
+
+    // Widget positioning offsets (relative to entry left edge x)
+    private static final int LABEL_OFFSET = 5;
+    private static final int TOGGLE_OFFSET = 130;
+    private static final int RESET_BTN_SIZE = 20;
+    private static final int INPUT_WIDTH = 80;
+    private static final int TOGGLE_WIDTH = 44;
 
     // Dimensions
     private int frameX, frameY, frameW, frameH;
@@ -57,7 +62,6 @@ public class AdminPanelScreen extends Screen {
     private Category currentCategory = Category.MAIN;
 
     // Data
-    private final List<RowInfo> rowInfos = new ArrayList<>();
     private final List<String> activeCategoryKeys = new ArrayList<>();
     private final Map<String, FieldType> fieldTypes = new LinkedHashMap<>();
     private final Map<Object, List<String>> widgetTooltips = new java.util.IdentityHashMap<>();
@@ -81,12 +85,6 @@ public class AdminPanelScreen extends Screen {
         Category(String title) { this.title = title; }
     }
 
-    private static class RowInfo {
-        final String label;
-        final boolean isSection;
-        RowInfo(String label, boolean isSection) { this.label = label; this.isSection = isSection; }
-    }
-
     public AdminPanelScreen(CompoundTag configData) {
         super(Component.literal("Admin Panel"));
         this.configData = configData;
@@ -99,42 +97,31 @@ public class AdminPanelScreen extends Screen {
     protected void init() {
         super.init();
         if (this.minecraft == null) return;
-        LOGGER.info("[AdminPanel] === init() iniciado === | currentCategory={} | minecraft={}", currentCategory, this.minecraft != null);
         this.clearWidgets();
         this.sidebarButtons.clear();
-        this.rowInfos.clear();
         this.activeCategoryKeys.clear();
         this.fieldTypes.clear();
         this.widgetTooltips.clear();
 
         computeLayout();
-        LOGGER.info("[AdminPanel] computeLayout() feito | contentX={} contentY={} contentW={} contentH={}", contentX, contentY, contentW, contentH);
-
         buildSidebar();
-        LOGGER.info("[AdminPanel] buildSidebar() feito | sidebarButtons.size={}", sidebarButtons.size());
 
-        // Create content list (vanilla handles scroll + clipping)
         this.contentList = new AdminContentList(this.minecraft, contentW, contentH, contentX, contentY, ROW_HEIGHT);
         this.addRenderableWidget(this.contentList);
-        LOGGER.info("[AdminPanel] contentList criada e adicionada como RENDERABLE widget | contentListNotNull={}", contentList != null);
 
         if (currentCategory != Category.MAIN) {
-            LOGGER.info("[AdminPanel] Categoria != MAIN ({}), chamando populateContentList()", currentCategory);
             populateContentList();
         } else {
-            LOGGER.info("[AdminPanel] Categoria == MAIN, populando lista vazia");
             contentList.clearEntries();
         }
 
         buildFooter();
-        LOGGER.info("[AdminPanel] buildFooter() feito | FINAL entries.size={}", contentList.children().size());
     }
 
     private void computeLayout() {
         int sw = this.width;
         int sh = this.height;
 
-        // Frame proporcional (85% da tela), com mínimos
         int targetW = Math.max(600, (int) (sw * 0.85));
         int targetH = Math.max(450, (int) (sh * 0.85));
         this.frameW = Math.min(targetW, sw - 20);
@@ -142,19 +129,16 @@ public class AdminPanelScreen extends Screen {
         this.frameX = (sw - frameW) / 2;
         this.frameY = (sh - frameH) / 2;
 
-        // Sidebar
         this.sidebarX = frameX + FRAME_PAD;
         this.sidebarY = frameY + HEADER_HEIGHT + FRAME_PAD;
         this.sidebarW = SIDEBAR_WIDTH;
         this.sidebarH = frameH - HEADER_HEIGHT - FOOTER_HEIGHT - FRAME_PAD * 2;
 
-        // Content area
         this.contentX = sidebarX + sidebarW + FRAME_PAD;
         this.contentY = sidebarY;
         this.contentW = (frameX + frameW) - contentX - FRAME_PAD;
         this.contentH = sidebarH;
 
-        // Footer
         this.footerY = frameY + frameH - FOOTER_HEIGHT;
     }
 
@@ -178,70 +162,50 @@ public class AdminPanelScreen extends Screen {
     }
 
     private void populateContentList() {
-        LOGGER.info("[AdminPanel] >>> populateContentList() INICIADA para categoria: {}", currentCategory);
         loadBaselineForCategory();
         contentList.clearEntries();
 
-        int toggleX = 120 + 10;
-        int resetX = contentW - 24;
-        int inputX = resetX - 84;
-        LOGGER.info("[AdminPanel] Coordenadas calculadas: toggleX={} resetX={} inputX={} contentW={}", toggleX, resetX, inputX, contentW);
-
-        int entriesAdded = 0;
         switch (currentCategory) {
             case SERVER:
-                LOGGER.info("[AdminPanel] Switch case SERVER");
-                addConfigEntry("enableAntiSwap", "Anti-Swap Exploit", FieldType.BOOLEAN, toggleX, resetX, inputX); entriesAdded++;
-                addConfigEntry("enableInfiniteTrades", "Trocas Infinitas", FieldType.BOOLEAN, toggleX, resetX, inputX); entriesAdded++;
-                addConfigEntry("infiniteTradeTag", "Tag p/ Trocas Infinitas", FieldType.STRING, toggleX, resetX, inputX); entriesAdded++;
+                addConfigEntry("enableAntiSwap", "Anti-Swap Exploit", FieldType.BOOLEAN);
+                addConfigEntry("enableInfiniteTrades", "Trocas Infinitas", FieldType.BOOLEAN);
+                addConfigEntry("infiniteTradeTag", "Tag p/ Trocas Infinitas", FieldType.STRING);
                 break;
             case THROTTLE:
-                LOGGER.info("[AdminPanel] Switch case THROTTLE");
-                contentList.addEntry(new SectionEntry("Farm & Charm")); entriesAdded++;
-                addConfigEntry("throttleFarmAndCharm", "Throttle Farm&Charm", FieldType.BOOLEAN, toggleX, resetX, inputX); entriesAdded++;
-                addConfigEntry("cookingPotTickRate", "Rate Cooking Pot (Seg)", FieldType.SECONDS_TO_TICKS, toggleX, resetX, inputX); entriesAdded++;
-                addConfigEntry("roasterTickRate", "Rate Roaster (Seg)", FieldType.SECONDS_TO_TICKS, toggleX, resetX, inputX); entriesAdded++;
-                contentList.addEntry(new SectionEntry("Vinery")); entriesAdded++;
-                addConfigEntry("throttleVinery", "Throttle Vinery", FieldType.BOOLEAN, toggleX, resetX, inputX); entriesAdded++;
-                addConfigEntry("fermentationBarrelTickRate", "Rate Barrel (Seg)", FieldType.SECONDS_TO_TICKS, toggleX, resetX, inputX); entriesAdded++;
-                contentList.addEntry(new SectionEntry("Entity Culling")); entriesAdded++;
-                addConfigEntry("enableEntityCulling", "Entity Culling", FieldType.BOOLEAN, toggleX, resetX, inputX); entriesAdded++;
-                addConfigEntry("entityCullingDistance", "Distância (Blocos)", FieldType.INTEGER, toggleX, resetX, inputX); entriesAdded++;
-                addConfigEntry("cullSuperGlue", "Cull SuperGlue", FieldType.BOOLEAN, toggleX, resetX, inputX); entriesAdded++;
-                addConfigEntry("cullBotania", "Cull Botania", FieldType.BOOLEAN, toggleX, resetX, inputX); entriesAdded++;
-                contentList.addEntry(new SectionEntry("Create - Contraptions")); entriesAdded++;
-                addConfigEntry("throttleIdleContraptions", "Throttle Contraptions AFK", FieldType.BOOLEAN, toggleX, resetX, inputX); entriesAdded++;
-                addConfigEntry("contraptionIdleThrottleRate", "Rate Throttle AFK (Seg)", FieldType.SECONDS_TO_TICKS, toggleX, resetX, inputX); entriesAdded++;
+                contentList.addEntry(new SectionEntry("Farm & Charm"));
+                addConfigEntry("throttleFarmAndCharm", "Throttle Farm&Charm", FieldType.BOOLEAN);
+                addConfigEntry("cookingPotTickRate", "Rate Cooking Pot (Seg)", FieldType.SECONDS_TO_TICKS);
+                addConfigEntry("roasterTickRate", "Rate Roaster (Seg)", FieldType.SECONDS_TO_TICKS);
+                contentList.addEntry(new SectionEntry("Vinery"));
+                addConfigEntry("throttleVinery", "Throttle Vinery", FieldType.BOOLEAN);
+                addConfigEntry("fermentationBarrelTickRate", "Rate Barrel (Seg)", FieldType.SECONDS_TO_TICKS);
+                contentList.addEntry(new SectionEntry("Entity Culling"));
+                addConfigEntry("enableEntityCulling", "Entity Culling", FieldType.BOOLEAN);
+                addConfigEntry("entityCullingDistance", "Distância (Blocos)", FieldType.INTEGER);
+                addConfigEntry("cullSuperGlue", "Cull SuperGlue", FieldType.BOOLEAN);
+                addConfigEntry("cullBotania", "Cull Botania", FieldType.BOOLEAN);
+                contentList.addEntry(new SectionEntry("Create - Contraptions"));
+                addConfigEntry("throttleIdleContraptions", "Throttle Contraptions AFK", FieldType.BOOLEAN);
+                addConfigEntry("contraptionIdleThrottleRate", "Rate Throttle AFK (Seg)", FieldType.SECONDS_TO_TICKS);
                 break;
             case FIXES:
-                LOGGER.info("[AdminPanel] Switch case FIXES");
-                addConfigEntry("fixBackstabbingExploit", "Fix Backstabbing", FieldType.BOOLEAN, toggleX, resetX, inputX); entriesAdded++;
-                addConfigEntry("nerfTurtleMaster", "Nerf Turtle Master", FieldType.BOOLEAN, toggleX, resetX, inputX); entriesAdded++;
-                addConfigEntry("turtleMasterResistance", "Res. Turtle (Padrão)", FieldType.INTEGER, toggleX, resetX, inputX); entriesAdded++;
-                addConfigEntry("strongTurtleMasterResistance", "Res. Turtle (Forte)", FieldType.INTEGER, toggleX, resetX, inputX); entriesAdded++;
+                addConfigEntry("fixBackstabbingExploit", "Fix Backstabbing", FieldType.BOOLEAN);
+                addConfigEntry("nerfTurtleMaster", "Nerf Turtle Master", FieldType.BOOLEAN);
+                addConfigEntry("turtleMasterResistance", "Res. Turtle (Padrão)", FieldType.INTEGER);
+                addConfigEntry("strongTurtleMasterResistance", "Res. Turtle (Forte)", FieldType.INTEGER);
                 break;
             case DEBUG:
-                LOGGER.info("[AdminPanel] Switch case DEBUG");
-                addConfigEntry("debugDamageReceived", "Debug Dano Recebido", FieldType.BOOLEAN, toggleX, resetX, inputX); entriesAdded++;
-                addConfigEntry("debugDamageDealt", "Debug Dano Causado", FieldType.BOOLEAN, toggleX, resetX, inputX); entriesAdded++;
-                addConfigEntry("debugDamageBreakdown", "Detalhamento de Dano", FieldType.BOOLEAN, toggleX, resetX, inputX); entriesAdded++;
-                addConfigEntry("debugVillagers", "Debug Villagers", FieldType.BOOLEAN, toggleX, resetX, inputX); entriesAdded++;
-                addConfigEntry("debugAntiSwap", "Debug Anti-Swap", FieldType.BOOLEAN, toggleX, resetX, inputX); entriesAdded++;
+                addConfigEntry("debugDamageReceived", "Debug Dano Recebido", FieldType.BOOLEAN);
+                addConfigEntry("debugDamageDealt", "Debug Dano Causado", FieldType.BOOLEAN);
+                addConfigEntry("debugDamageBreakdown", "Detalhamento de Dano", FieldType.BOOLEAN);
+                addConfigEntry("debugVillagers", "Debug Villagers", FieldType.BOOLEAN);
+                addConfigEntry("debugAntiSwap", "Debug Anti-Swap", FieldType.BOOLEAN);
                 break;
-            default:
-                LOGGER.warn("[AdminPanel] Switch case DEFAULT! Categoria não reconhecida: {}", currentCategory);
-                break;
+            default: break;
         }
-        LOGGER.info("[AdminPanel] <<< populateContentList() CONCLUÍDA | entriesAdded={} | contentList.children().size()={}", entriesAdded, contentList.children().size());
     }
 
-    private void addSectionEntry(String title) {
-        contentList.addEntry(new SectionEntry(title));
-    }
-
-    private void addConfigEntry(String key, String label, FieldType type, int toggleX, int resetX, int inputX) {
-        LOGGER.info("[AdminPanel] addConfigEntry() | key={} type={} toggleX={} resetX={} inputX={}", key, type, toggleX, resetX, inputX);
-        rowInfos.add(new RowInfo(label, false));
+    private void addConfigEntry(String key, String label, FieldType type) {
         activeCategoryKeys.add(key);
         fieldTypes.put(key, type);
 
@@ -253,20 +217,19 @@ public class AdminPanelScreen extends Screen {
             ).withValues(true, false)
              .withInitialValue(pending)
              .displayOnlyValue()
-             .create(toggleX, 0, 44, 20, Component.empty(), (btn, val) -> pendingValues.put(key, val));
+             .create(0, 0, TOGGLE_WIDTH, 20, Component.empty(), (btn, val) -> pendingValues.put(key, val));
 
             final Object bl = baselineValues.get(key);
             Button resetBtn = Button.builder(Component.literal("§7↺"), (btn) -> {
                 if (bl != null) pendingValues.put(key, bl);
                 this.init();
-            }).bounds(resetX, 0, 20, 20).build();
+            }).bounds(0, 0, RESET_BTN_SIZE, 20).build();
 
             contentList.addEntry(new ConfigEntry(label, cycleBtn, null, resetBtn, key));
-            LOGGER.info("[AdminPanel] ConfigEntry BOOLEAN adicionada | key={} | children.size={}", key, contentList.children().size());
         } else {
             String baseline = getBaselineString(key, type);
             String pending = getPendingString(key, baseline);
-            EditBox box = new SelectableEditBox(this.font, inputX, 0, 80, 20, Component.literal(label));
+            EditBox box = new SelectableEditBox(this.font, 0, 0, INPUT_WIDTH, 20, Component.literal(label));
             if (type == FieldType.INTEGER || type == FieldType.LONG)
                 box.setFilter(AdminPanelScreen::isValidIntegerInput);
             else if (type == FieldType.SECONDS_TO_TICKS)
@@ -278,10 +241,9 @@ public class AdminPanelScreen extends Screen {
             Button resetBtn = Button.builder(Component.literal("§7↺"), (btn) -> {
                 if (bl != null) pendingValues.put(key, bl);
                 this.init();
-            }).bounds(resetX, 0, 20, 20).build();
+            }).bounds(0, 0, RESET_BTN_SIZE, 20).build();
 
             contentList.addEntry(new ConfigEntry(label, null, box, resetBtn, key));
-            LOGGER.info("[AdminPanel] ConfigEntry STRING/NUMERIC adicionada | key={} | children.size={}", key, contentList.children().size());
         }
     }
 
@@ -322,10 +284,8 @@ public class AdminPanelScreen extends Screen {
     // ================================================================
     @Override
     public void render(@NotNull GuiGraphics graphics, int mouseX, int mouseY, float partialTicks) {
-        // Background
         this.renderBackground(graphics);
 
-        // Frame
         int fr = frameX + frameW;
         int fb = frameY + frameH;
         graphics.fill(frameX, frameY, fr, fb, 0xFF0D1117);
@@ -334,11 +294,9 @@ public class AdminPanelScreen extends Screen {
         graphics.fill(frameX, frameY, frameX + 2, fb, 0xFF30363D);
         graphics.fill(fr - 2, frameY, fr, fb, 0xFF30363D);
 
-        // Header
         graphics.fill(frameX + 2, frameY + 2, fr - 2, frameY + HEADER_HEIGHT, 0xFF161B22);
         graphics.drawString(this.font, "§6§l" + currentCategory.title, frameX + 12, frameY + 7, 0xFFFFAA00, false);
 
-        // Sidebar panel
         int sb = sidebarY + sidebarH;
         int sr = sidebarX + sidebarW;
         graphics.fill(sidebarX, sidebarY, sr, sb, 0xBF0D1117);
@@ -347,7 +305,6 @@ public class AdminPanelScreen extends Screen {
         graphics.vLine(sidebarX - 1, sidebarY, sb, 0xFF30363D);
         graphics.vLine(sr, sidebarY, sb, 0xFF30363D);
 
-        // Content panel
         int cr = contentX + contentW;
         int cb = contentY + contentH;
         graphics.fill(contentX, contentY, cr, cb, 0xBF0D1117);
@@ -356,19 +313,9 @@ public class AdminPanelScreen extends Screen {
         graphics.vLine(contentX - 1, contentY, cb, 0xFF30363D);
         graphics.vLine(cr, contentY, cb, 0xFF30363D);
 
-        // Footer panel
         graphics.fill(frameX + 2, footerY, fr - 2, footerY + FOOTER_HEIGHT, 0xFF161B22);
         graphics.hLine(frameX + 2, fr - 2, footerY - 1, 0xFF30363D);
 
-        // === DEBUG VISUAL ===
-        // 1. Retângulo verde ao redor da lista
-        graphics.fill(contentX - 2, contentY - 2, contentX + contentW + 2, contentY + contentH + 2, 0xFF00FF00);
-        // 2. Contagem de entries
-        graphics.drawString(this.font, "Entries: " + contentList.children().size(), 5, 5, 0xFF00FF00, false);
-        // 3. Debug info da lista
-        graphics.drawString(this.font, "List Y: " + contentY + " H: " + contentH, 5, 15, 0xFF00FF00, false);
-
-        // Vanilla renders everything (list + sidebar/footer buttons + tooltip)
         super.render(graphics, mouseX, mouseY, partialTicks);
     }
 
@@ -380,27 +327,65 @@ public class AdminPanelScreen extends Screen {
             super(mc, w, h, y, y + h, ih);
             setLeftPos(x);
             setRenderHeader(false, 0);
-            LOGGER.info("[AdminPanel] AdminContentList construída | w={} h={} x={} y={} ih={} y0={} y1={}", w, h, x, y, ih, this.y0, this.y1);
-        }
-
-        @Override
-        public void render(@NotNull GuiGraphics graphics, int mouseX, int mouseY, float partialTicks) {
-            LOGGER.info("[AdminPanel] >>> LIST.render() CHAMADO | children.size={} | y0={} y1={} scrollAmount={} itemCount={}",
-                children().size(), y0, y1, getScrollAmount(), getItemCount());
-            super.render(graphics, mouseX, mouseY, partialTicks);
-            LOGGER.info("[AdminPanel] <<< LIST.render() CONCLUÍDO");
         }
 
         @Override
         public int addEntry(AdminEntry entry) {
-            int idx = super.addEntry(entry);
-            LOGGER.info("[AdminPanel] addEntry() vanilla | idx={} | novo size={}", idx, children().size());
-            return idx;
+            return super.addEntry(entry);
         }
 
         public void clearEntries() {
             children().clear();
             setScrollAmount(0);
+        }
+
+        // Remover dirt — override renderList() em vez de renderBackground()
+        @Override
+        protected void renderList(@NotNull GuiGraphics graphics, int mouseX, int mouseY, float partialTicks) {
+            // NÃO chamar super — vanilla desenha dirt aqui
+            int y = this.y0 + 4 - (int) this.getScrollAmount();
+            int rowWidth = this.getRowWidth();
+            for (int i = 0; i < this.children().size(); ++i) {
+                AdminEntry entry = this.children().get(i);
+                int entryTop = y;
+                int rowLeft = this.getRowLeft();
+                boolean hovered = mouseX >= rowLeft && mouseX <= rowLeft + rowWidth && mouseY >= entryTop && mouseY <= entryTop + this.itemHeight;
+                entry.render(graphics, i, entryTop, rowLeft, rowWidth, this.itemHeight, mouseX, mouseY, hovered, partialTicks);
+                y += this.itemHeight;
+            }
+        }
+
+        // Delegar cliques para widgets filhos primeiro
+        @Override
+        public boolean mouseClicked(double mouseX, double mouseY, int button) {
+            for (AdminEntry entry : children()) {
+                if (entry.mouseClicked(mouseX, mouseY, button)) return true;
+            }
+            return super.mouseClicked(mouseX, mouseY, button);
+        }
+        @Override
+        public boolean mouseReleased(double mouseX, double mouseY, int button) {
+            for (AdminEntry entry : children()) entry.mouseReleased(mouseX, mouseY, button);
+            return super.mouseReleased(mouseX, mouseY, button);
+        }
+        @Override
+        public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+            for (AdminEntry entry : children()) entry.mouseDragged(mouseX, mouseY, button, dragX, dragY);
+            return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
+        }
+        @Override
+        public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+            for (AdminEntry entry : children()) {
+                if (entry.keyPressed(keyCode, scanCode, modifiers)) return true;
+            }
+            return super.keyPressed(keyCode, scanCode, modifiers);
+        }
+        @Override
+        public boolean charTyped(char codePoint, int modifiers) {
+            for (AdminEntry entry : children()) {
+                if (entry.charTyped(codePoint, modifiers)) return true;
+            }
+            return super.charTyped(codePoint, modifiers);
         }
 
         @Override
@@ -411,6 +396,11 @@ public class AdminPanelScreen extends Screen {
         @Override
         public int getRowWidth() {
             return Math.max(50, width - SCROLLBAR_WIDTH - 8);
+        }
+
+        @Override
+        protected void renderBackground(@NotNull GuiGraphics graphics) {
+            // Sem background de dirt
         }
     }
 
@@ -423,12 +413,11 @@ public class AdminPanelScreen extends Screen {
     public class SectionEntry extends AdminEntry {
         private final String title;
         public SectionEntry(String title) { this.title = title; }
+
         @Override
         public void render(@NotNull GuiGraphics graphics, int index, int y, int x, int entryWidth, int entryHeight, int mouseX, int mouseY, boolean hovered, float tickDelta) {
-            // DEBUG: Quadrado vermelho para confirmar que entry está a ser renderizada
-            graphics.fill(x, y, x + 6, y + 6, 0xFFFF0000);
-            graphics.drawString(AdminPanelScreen.this.font, title, x + 5, y + 4, 0xFFFFD700, false);
-            graphics.fill(x + 5, y + 18, x + entryWidth - 5, y + 19, 0x44FFD700);
+            graphics.drawString(AdminPanelScreen.this.font, title, x + LABEL_OFFSET, y + 4, 0xFFFFD700, false);
+            graphics.fill(x + LABEL_OFFSET, y + 18, x + entryWidth - LABEL_OFFSET, y + 19, 0x44FFD700);
         }
         @Override public boolean mouseClicked(double mouseX, double mouseY, int button) { return false; }
         @Override public net.minecraft.network.chat.MutableComponent getNarration() { return Component.literal(title); }
@@ -448,14 +437,39 @@ public class AdminPanelScreen extends Screen {
 
         @Override
         public void render(@NotNull GuiGraphics graphics, int index, int y, int x, int entryWidth, int entryHeight, int mouseX, int mouseY, boolean hovered, float tickDelta) {
-            // DEBUG: Quadrado vermelho para confirmar que entry está a ser renderizada
-            graphics.fill(x, y, x + 6, y + 6, 0xFFFF0000);
             if (index % 2 == 0) graphics.fill(x, y, x + entryWidth, y + entryHeight, 0x18FFFFFF);
-            graphics.drawString(AdminPanelScreen.this.font, label, x + 5, y + 4, 0xE3E6EE, false);
-            if (toggleBtn != null) { toggleBtn.setY(y + 4); toggleBtn.render(graphics, mouseX, mouseY, tickDelta); }
-            if (inputBox != null) { inputBox.setY(y + 4); inputBox.render(graphics, mouseX, mouseY, tickDelta); }
-            resetBtn.setY(y + 4); resetBtn.render(graphics, mouseX, mouseY, tickDelta);
-            if (hovered) { hoverTimer++; if (hoverTimer > 10) { List<Component> lines = new ArrayList<>(); for (String s : widgetTooltips.getOrDefault(key, List.of("Configuração: " + label))) lines.add(Component.literal(s)); graphics.renderComponentTooltip(AdminPanelScreen.this.font, lines, mouseX, mouseY); } } else hoverTimer = 0;
+
+            // Label
+            graphics.drawString(AdminPanelScreen.this.font, label, x + LABEL_OFFSET, y + 4, 0xE3E6EE, false);
+
+            // Widgets posicionados RELATIVAMENTE ao entry (x + offset)
+            int toggleX = x + TOGGLE_OFFSET;
+            int resetX = x + entryWidth - RESET_BTN_SIZE - LABEL_OFFSET;
+            int inputX = resetX - INPUT_WIDTH - 4;
+
+            if (toggleBtn != null) {
+                toggleBtn.setPosition(toggleX, y + 4);
+                toggleBtn.setWidth(TOGGLE_WIDTH);
+                toggleBtn.render(graphics, mouseX, mouseY, tickDelta);
+            }
+            if (inputBox != null) {
+                inputBox.setPosition(inputX, y + 4);
+                inputBox.setWidth(INPUT_WIDTH);
+                inputBox.render(graphics, mouseX, mouseY, tickDelta);
+            }
+            resetBtn.setPosition(resetX, y + 4);
+            resetBtn.setWidth(RESET_BTN_SIZE);
+            resetBtn.render(graphics, mouseX, mouseY, tickDelta);
+
+            // Tooltip
+            if (hovered) {
+                hoverTimer++;
+                if (hoverTimer > 10) {
+                    List<Component> lines = new ArrayList<>();
+                    for (String s : widgetTooltips.getOrDefault(key, List.of("Configuração: " + label))) lines.add(Component.literal(s));
+                    graphics.renderComponentTooltip(AdminPanelScreen.this.font, lines, mouseX, mouseY);
+                }
+            } else hoverTimer = 0;
         }
 
         @Override public boolean mouseClicked(double mouseX, double mouseY, int button) {
