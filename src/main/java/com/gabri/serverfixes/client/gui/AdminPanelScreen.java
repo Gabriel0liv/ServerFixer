@@ -7,9 +7,9 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.ObjectSelectionList;
 import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.gui.components.ObjectSelectionList;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.nbt.ByteTag;
 import net.minecraft.nbt.CompoundTag;
@@ -28,10 +28,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 /**
  * Painel Administrativo do ServerFixes.
- * Usa ObjectSelectionList do vanilla para scrolling/clipping corretos.
+ * Usa ContainerObjectSelectionList para gestão automática de foco e inputs.
  */
 @SuppressWarnings("all")
 public class AdminPanelScreen extends Screen {
@@ -47,7 +48,7 @@ public class AdminPanelScreen extends Screen {
     private static final int FOOTER_BTN_W = 90;
     private static final int FOOTER_GAP = 10;
 
-    // Widget positioning offsets (relative to entry left edge x)
+    // Widget positioning offsets
     private static final int LABEL_OFFSET = 5;
     private static final int TOGGLE_OFFSET = 130;
     private static final int RESET_BTN_SIZE = 20;
@@ -90,9 +91,6 @@ public class AdminPanelScreen extends Screen {
         this.configData = configData;
     }
 
-    // ================================================================
-    // INIT
-    // ================================================================
     @Override
     protected void init() {
         super.init();
@@ -121,7 +119,6 @@ public class AdminPanelScreen extends Screen {
     private void computeLayout() {
         int sw = this.width;
         int sh = this.height;
-
         int targetW = Math.max(600, (int) (sw * 0.85));
         int targetH = Math.max(450, (int) (sh * 0.85));
         this.frameW = Math.min(targetW, sw - 20);
@@ -279,9 +276,6 @@ public class AdminPanelScreen extends Screen {
         this.addRenderableWidget(this.saveButton);
     }
 
-    // ================================================================
-    // RENDER
-    // ================================================================
     @Override
     public void render(@NotNull GuiGraphics graphics, int mouseX, int mouseY, float partialTicks) {
         this.renderBackground(graphics);
@@ -320,13 +314,16 @@ public class AdminPanelScreen extends Screen {
     }
 
     // ================================================================
-    // CONTENT LIST (vanilla ObjectSelectionList)
+    // CONTENT LIST
     // ================================================================
     public class AdminContentList extends ObjectSelectionList<AdminEntry> {
         public AdminContentList(Minecraft mc, int w, int h, int x, int y, int ih) {
             super(mc, w, h, y, y + h, ih);
             setLeftPos(x);
-            setRenderHeader(false, 0);
+            // Remove backgrounds and headers
+            this.setRenderBackground(false);
+            this.setRenderTopAndBottom(false);
+            this.setRenderHeader(false, 0);
         }
 
         @Override
@@ -339,10 +336,9 @@ public class AdminPanelScreen extends Screen {
             setScrollAmount(0);
         }
 
-        // Remover dirt — override renderList() em vez de renderBackground()
+        // Renderização manual para evitar fundo de terra
         @Override
         protected void renderList(@NotNull GuiGraphics graphics, int mouseX, int mouseY, float partialTicks) {
-            // NÃO chamar super — vanilla desenha dirt aqui
             int y = this.y0 + 4 - (int) this.getScrollAmount();
             int rowWidth = this.getRowWidth();
             for (int i = 0; i < this.children().size(); ++i) {
@@ -355,37 +351,9 @@ public class AdminPanelScreen extends Screen {
             }
         }
 
-        // Delegar cliques para widgets filhos primeiro
         @Override
-        public boolean mouseClicked(double mouseX, double mouseY, int button) {
-            for (AdminEntry entry : children()) {
-                if (entry.mouseClicked(mouseX, mouseY, button)) return true;
-            }
-            return super.mouseClicked(mouseX, mouseY, button);
-        }
-        @Override
-        public boolean mouseReleased(double mouseX, double mouseY, int button) {
-            for (AdminEntry entry : children()) entry.mouseReleased(mouseX, mouseY, button);
-            return super.mouseReleased(mouseX, mouseY, button);
-        }
-        @Override
-        public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
-            for (AdminEntry entry : children()) entry.mouseDragged(mouseX, mouseY, button, dragX, dragY);
-            return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
-        }
-        @Override
-        public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-            for (AdminEntry entry : children()) {
-                if (entry.keyPressed(keyCode, scanCode, modifiers)) return true;
-            }
-            return super.keyPressed(keyCode, scanCode, modifiers);
-        }
-        @Override
-        public boolean charTyped(char codePoint, int modifiers) {
-            for (AdminEntry entry : children()) {
-                if (entry.charTyped(codePoint, modifiers)) return true;
-            }
-            return super.charTyped(codePoint, modifiers);
+        protected void renderBackground(@NotNull GuiGraphics graphics) {
+            // Empty to prevent any background rendering
         }
 
         @Override
@@ -396,11 +364,6 @@ public class AdminPanelScreen extends Screen {
         @Override
         public int getRowWidth() {
             return Math.max(50, width - SCROLLBAR_WIDTH - 8);
-        }
-
-        @Override
-        protected void renderBackground(@NotNull GuiGraphics graphics) {
-            // Sem background de dirt
         }
     }
 
@@ -419,7 +382,7 @@ public class AdminPanelScreen extends Screen {
             graphics.drawString(AdminPanelScreen.this.font, title, x + LABEL_OFFSET, y + 4, 0xFFFFD700, false);
             graphics.fill(x + LABEL_OFFSET, y + 18, x + entryWidth - LABEL_OFFSET, y + 19, 0x44FFD700);
         }
-        @Override public boolean mouseClicked(double mouseX, double mouseY, int button) { return false; }
+        @Override public boolean mouseClicked(double mouseX, double mouseY, int button) { return true; }
         @Override public net.minecraft.network.chat.MutableComponent getNarration() { return Component.literal(title); }
     }
 
@@ -438,11 +401,8 @@ public class AdminPanelScreen extends Screen {
         @Override
         public void render(@NotNull GuiGraphics graphics, int index, int y, int x, int entryWidth, int entryHeight, int mouseX, int mouseY, boolean hovered, float tickDelta) {
             if (index % 2 == 0) graphics.fill(x, y, x + entryWidth, y + entryHeight, 0x18FFFFFF);
-
-            // Label
             graphics.drawString(AdminPanelScreen.this.font, label, x + LABEL_OFFSET, y + 4, 0xE3E6EE, false);
 
-            // Widgets posicionados RELATIVAMENTE ao entry (x + offset)
             int toggleX = x + TOGGLE_OFFSET;
             int resetX = x + entryWidth - RESET_BTN_SIZE - LABEL_OFFSET;
             int inputX = resetX - INPUT_WIDTH - 4;
@@ -461,7 +421,6 @@ public class AdminPanelScreen extends Screen {
             resetBtn.setWidth(RESET_BTN_SIZE);
             resetBtn.render(graphics, mouseX, mouseY, tickDelta);
 
-            // Tooltip
             if (hovered) {
                 hoverTimer++;
                 if (hoverTimer > 10) {
@@ -472,32 +431,45 @@ public class AdminPanelScreen extends Screen {
             } else hoverTimer = 0;
         }
 
-        @Override public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        @Override
+        public boolean mouseClicked(double mouseX, double mouseY, int button) {
+            // Prioridade ao toggle
             if (toggleBtn != null && toggleBtn.mouseClicked(mouseX, mouseY, button)) return true;
-            if (inputBox != null && inputBox.mouseClicked(mouseX, mouseY, button)) return true;
+            
+            // Lógica de foco do input
+            if (inputBox != null) {
+                if (inputBox.mouseClicked(mouseX, mouseY, button)) {
+                    AdminPanelScreen.this.setFocused(inputBox);
+                    inputBox.setFocused(true);
+                    return true;
+                } else {
+                    inputBox.setFocused(false);
+                }
+            }
+            
+            // Clique no botão de reset ou na linha
             return resetBtn.mouseClicked(mouseX, mouseY, button);
         }
-        @Override public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        
+        @Override
+        public boolean mouseReleased(double mouseX, double mouseY, int button) {
             if (toggleBtn != null) toggleBtn.mouseReleased(mouseX, mouseY, button);
             if (inputBox != null) inputBox.mouseReleased(mouseX, mouseY, button);
             resetBtn.mouseReleased(mouseX, mouseY, button);
             return false;
         }
-        @Override public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+
+        @Override
+        public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
             if (toggleBtn != null && toggleBtn.mouseDragged(mouseX, mouseY, button, dragX, dragY)) return true;
             if (inputBox != null && inputBox.mouseDragged(mouseX, mouseY, button, dragX, dragY)) return true;
             return resetBtn.mouseDragged(mouseX, mouseY, button, dragX, dragY);
         }
-        @Override public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-            return inputBox != null && inputBox.isFocused() && inputBox.keyPressed(keyCode, scanCode, modifiers);
+
+        @Override
+        public net.minecraft.network.chat.MutableComponent getNarration() {
+            return Component.literal(label);
         }
-        @Override public boolean charTyped(char codePoint, int modifiers) {
-            return inputBox != null && inputBox.isFocused() && inputBox.charTyped(codePoint, modifiers);
-        }
-        public @Nullable net.minecraft.client.gui.components.events.GuiEventListener getFocused() {
-            return inputBox != null && inputBox.isFocused() ? inputBox : null;
-        }
-        @Override public net.minecraft.network.chat.MutableComponent getNarration() { return Component.literal(label); }
     }
 
     // ================================================================
