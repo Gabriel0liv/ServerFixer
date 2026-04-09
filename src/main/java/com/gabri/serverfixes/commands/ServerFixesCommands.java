@@ -276,7 +276,9 @@ public class ServerFixesCommands {
             .then(Commands.literal("loot")
                 .executes(ctx -> executeReload(ctx.getSource(), "loot")))
             .then(Commands.literal("functions")
-                .executes(ctx -> executeReload(ctx.getSource(), "functions"))));
+                .executes(ctx -> executeReload(ctx.getSource(), "functions")))
+            .then(Commands.literal("kubejs")
+                .executes(ctx -> executeKubeJSReload(ctx.getSource()))));
 
         // /serverfixes admin_ui
         root.then(Commands.literal("admin_ui")
@@ -303,10 +305,6 @@ public class ServerFixesCommands {
         // /serverfixes tag_studio
         root.then(Commands.literal("tag_studio")
             .executes(ctx -> openTagStudio(ctx.getSource())));
-
-        // /serverfixes recipe_studio
-        root.then(Commands.literal("recipe_studio")
-            .executes(ctx -> openRecipeStudio(ctx.getSource())));
 
         // /serverfixes function_studio
         root.then(Commands.literal("function_studio")
@@ -376,6 +374,54 @@ public class ServerFixesCommands {
         return 1;
     }
 
+    /**
+     * Ponto de entrada para o subcomando /sfx reload kubejs.
+     *
+     * Recarrega apenas os server_scripts do KubeJS e sincroniza
+     * receitas/tags com todos os clientes online.
+     */
+    private static int executeKubeJSReload(CommandSourceStack source) {
+        MinecraftServer server = source.getServer();
+
+        // Feedback imediato antes do processamento assíncrono
+        source.sendSuccess(() -> Component.literal("[ServerFixes] ")
+            .withStyle(ChatFormatting.DARK_AQUA)
+            .append(Component.literal("Iniciando reload cirúrgico de: ")
+                .withStyle(ChatFormatting.GRAY))
+            .append(Component.literal("KUBEJS (server_scripts)")
+                .withStyle(ChatFormatting.YELLOW)), false);
+
+        java.util.concurrent.CompletableFuture<Void> reloadFuture;
+
+        if (!com.gabri.serverfixes.commands.KubeJSReloadHandler.isKubeJSLoaded()) {
+            source.sendFailure(Component.literal(
+                "[ServerFixes] KubeJS não está instalado. Adicione o mod KubeJS para usar este comando."));
+            return 0;
+        }
+
+        reloadFuture = KubeJSReloadHandler.reloadKubeJS(server);
+
+        // Resposta final na main thread após o reload assíncrono completar
+        reloadFuture.thenRunAsync(() ->
+            source.sendSuccess(() -> Component.literal("[ServerFixes] ")
+                .withStyle(ChatFormatting.DARK_AQUA)
+                .append(Component.literal("✔ Reload de ")
+                    .withStyle(ChatFormatting.GREEN))
+                .append(Component.literal("KUBEJS (server_scripts)")
+                    .withStyle(ChatFormatting.GOLD))
+                .append(Component.literal(" concluído com sucesso! Receitas/tags sincronizadas.")
+                    .withStyle(ChatFormatting.GREEN)), true),
+            server::execute
+        ).exceptionally(ex -> {
+            source.sendFailure(Component.literal(
+                "[ServerFixes] Falha no reload do KubeJS: " + ex.getMessage()));
+            LOGGER.error("[KubeJSReload] Erro ao recarregar KubeJS:", ex);
+            return null;
+        });
+
+        return 1;
+    }
+
     private static int openParticleStudio(CommandSourceStack source) {
         if (source.getEntity() instanceof Player player) {
             if (!player.isCreative()) {
@@ -430,21 +476,6 @@ public class ServerFixesCommands {
             com.gabri.serverfixes.network.NetworkHandler.sendToPlayer((net.minecraft.server.level.ServerPlayer) player,
                 new com.gabri.serverfixes.network.OpenTagStudioPacket());
             source.sendSuccess(() -> Component.literal("Abrindo Tag Studio...").withStyle(ChatFormatting.GREEN), false);
-            return 1;
-        }
-        source.sendFailure(Component.literal("Este comando só pode ser usado por jogadores."));
-        return 0;
-    }
-
-    private static int openRecipeStudio(CommandSourceStack source) {
-        if (source.getEntity() instanceof Player player) {
-            if (!player.isCreative()) {
-                source.sendFailure(Component.literal("Este comando só pode ser usado no modo Criativo."));
-                return 0;
-            }
-            com.gabri.serverfixes.network.NetworkHandler.sendToPlayer((net.minecraft.server.level.ServerPlayer) player,
-                new com.gabri.serverfixes.network.OpenRecipeStudioPacket());
-            source.sendSuccess(() -> Component.literal("Abrindo Recipe Studio...").withStyle(ChatFormatting.GREEN), false);
             return 1;
         }
         source.sendFailure(Component.literal("Este comando só pode ser usado por jogadores."));

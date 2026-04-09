@@ -212,24 +212,6 @@ public class NetworkHandler {
                 .consumerMainThread(OpenEntityTagStudioPacket::handle)
                 .add();
 
-        INSTANCE.messageBuilder(RequestRecipeListPacket.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
-                .decoder(RequestRecipeListPacket::new)
-                .encoder(RequestRecipeListPacket::toBytes)
-                .consumerMainThread(RequestRecipeListPacket::handle)
-                .add();
-
-        INSTANCE.messageBuilder(SPSendRecipeListPacket.class, packetId++, NetworkDirection.PLAY_TO_CLIENT)
-                .decoder(SPSendRecipeListPacket::new)
-                .encoder(SPSendRecipeListPacket::toBytes)
-                .consumerMainThread(SPSendRecipeListPacket::handle)
-                .add();
-
-        INSTANCE.messageBuilder(OpenRecipeStudioPacket.class, packetId++, NetworkDirection.PLAY_TO_CLIENT)
-                .decoder(OpenRecipeStudioPacket::new)
-                .encoder(OpenRecipeStudioPacket::toBytes)
-                .consumerMainThread(OpenRecipeStudioPacket::handle)
-                .add();
-
         // Function Studio packets
         INSTANCE.messageBuilder(RequestFunctionListPacket.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
                 .decoder(RequestFunctionListPacket::new)
